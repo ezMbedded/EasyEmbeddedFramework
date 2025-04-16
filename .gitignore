@@ -14,3 +14,4 @@ extern/threadx/
 extern/freertos
 extern/fff
 docs/_build/
+targets/nucleo_f746/.settings/
