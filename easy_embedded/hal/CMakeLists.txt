@@ -20,6 +20,7 @@ target_sources(ez_hal_lib
     PRIVATE
         ez_hal.c
         $<$<BOOL:${ENABLE_EZ_UART}>:uart/ez_uart.c>
+        $<$<BOOL:${ENABLE_EZ_GPIO}>:gpio/ez_gpio.c>
 )
 
 
@@ -29,6 +30,7 @@ target_compile_definitions(ez_hal_lib
         EZ_HAL=$<BOOL:${ENABLE_EZ_HAL}>
         EZ_DRIVER=$<BOOL:${ENABLE_EZ_HAL_DRIVER}>
         EZ_UART=$<BOOL:${ENABLE_EZ_UART}>
+        EZ_GPIO=$<BOOL:${ENABLE_EZ_GPIO}>
     PRIVATE
         EZ_BUILD_WITH_CMAKE=$<BOOL:${BUILD_WITH_CMAKE}>
 )
@@ -39,6 +41,7 @@ target_include_directories(ez_hal_lib
     PUBLIC
         ${CMAKE_CURRENT_LIST_DIR}
         ${CMAKE_CURRENT_LIST_DIR}/uart
+        ${CMAKE_CURRENT_LIST_DIR}/gpio
     PRIVATE
         # Please add private folders here
     INTERFACE
@@ -52,6 +55,7 @@ target_link_libraries(ez_hal_lib
         # Please add public libraries
     PRIVATE
         ez_utilities_lib
+        ez_service_lib
     INTERFACE
         # Please add interface libraries
 )
