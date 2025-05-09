@@ -71,16 +71,25 @@ EZ_DRV_STATUS ezGpio_SystemRegisterHwDriver(struct ezGpioDriver *hw_gpio_driver)
     EZTRACE("ezGpio_SystemRegisterHwDriver()");
     if(hw_gpio_driver == NULL)
     {
-        status = STATUS_ERR_ARG;
         EZERROR("hw_gpio_driver == NULL");
+        return STATUS_ERR_ARG;
     }
     else
     {
         EZ_LINKEDLIST_ADD_TAIL(&hw_driver_list, &hw_gpio_driver->ll_node);
-        status = ezEventNotifier_CreateSubject(&hw_gpio_driver->gpio_event);;
+        if(ezEventNotifier_CreateSubject(&hw_gpio_driver->gpio_event) == ezSUCCESS)
+        {
+            EZDEBUG("  Register OK");
+            return STATUS_OK;
+        }
+        else
+        {
+            EZERROR("  Cannot create subject for GPIO driver %s", hw_gpio_driver->common.name);
+            return STATUS_ERR_GENERIC;
+        }
     }
 
-    return status;
+    return STATUS_ERR_GENERIC;
 }
 
 
@@ -88,7 +97,7 @@ EZ_DRV_STATUS ezGpio_SystemUnregisterHwDriver(struct ezGpioDriver *hw_gpio_drive
 {
         EZ_DRV_STATUS status = STATUS_ERR_GENERIC;
 
-    EZTRACE("ezUart_SystemUnregisterHwDriver()");
+    EZTRACE("ezGpio_SystemUnregisterHwDriver()");
     if(hw_gpio_driver == NULL)
     {
         status = STATUS_ERR_ARG;
@@ -146,7 +155,7 @@ EZ_DRV_STATUS ezGpio_RegisterInstance(ezGpioDrvInstance_t *inst,
 }
 
 
-EZ_DRV_STATUS ezUart_UnregisterInstance(ezGpioDrvInstance_t *inst)
+EZ_DRV_STATUS ezGpio_UnregisterInstance(ezGpioDrvInstance_t *inst)
 {
     EZ_DRV_STATUS status = STATUS_ERR_GENERIC;
 
@@ -195,7 +204,7 @@ EZ_DRV_STATUS ezGpio_WritePin(ezGpioDrvInstance_t *inst, uint16_t port_index, ui
     EZ_DRV_STATUS status = STATUS_ERR_DRV_NOT_FOUND;
     struct ezGpioDriver *drv = NULL;
 
-    EZTRACE("ezUart_AsyncTransmit()");
+    EZTRACE("ezGpio_WritePin()");
     drv = (struct ezGpioDriver*)ezDriver_GetDriverFromInstance(inst);
     if(drv != NULL)
     {

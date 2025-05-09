@@ -130,7 +130,7 @@ EZ_DRV_STATUS ezGpio_RegisterInstance(ezGpioDrvInstance_t *inst,
                                       ezObserver *event_subcriber,
                                       EVENT_CALLBACK callback);
 
-EZ_DRV_STATUS ezUart_UnregisterInstance(ezGpioDrvInstance_t *inst);
+EZ_DRV_STATUS ezGpio_UnregisterInstance(ezGpioDrvInstance_t *inst);
 
 EZ_GPIO_PIN_STATE ezGpio_ReadPin(ezGpioDrvInstance_t *inst, uint16_t port_index, uint16_t pin_index);
 
