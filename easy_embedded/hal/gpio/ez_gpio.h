@@ -74,11 +74,21 @@ typedef enum
     EZ_GPIO_NO_PULL,   /**< no pull */
 }EZ_GPIO_PULL;
 
+/** @brief GPIO interrupt mode */
+typedef enum
+{
+    EZ_INTTERTUP_RISING,    /**< rising edge */
+    EZ_INTTERTUP_FALLING,   /**< falling edge */
+    EZ_INTTERTUP_BOTH,      /**< both edges */
+    EZ_INTTERTUP_NONE,      /**< no interrupt */
+}EZ_INTTERTUP_MODE;
+
 /** @brief Configuration to intialize the pin */
 typedef struct ezHwGpioConfig
 {
-    EZ_GPIO_MODE mode;    /**< mode of the GPIO pin */
-    EZ_GPIO_PULL pull;    /**< pull mode of the GPIO pin */
+    EZ_GPIO_MODE mode;              /**< mode of the GPIO pin */
+    EZ_GPIO_PULL pull;              /**< pull mode of the GPIO pin */
+    EZ_INTTERTUP_MODE intr_mode;    /**< interrupt mode of the GPIO pin */
 }ezHwGpioConfig_t;
 
 /****************************************************************************/
