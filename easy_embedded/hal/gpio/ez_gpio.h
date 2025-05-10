@@ -15,9 +15,9 @@
 /** @file   ez_gpio.h
  *  @author Hai Nguyen
  *  @date   09.05.2025
- *  @brief  One line description of the component
+ *  @brief  Public API of the GPIO component
  *
- *  @details Detail description of the component
+ *  @details -
  */
 
 #ifndef _EZ_GPIO_H
@@ -66,6 +66,7 @@ typedef enum
 }EZ_GPIO_PIN_STATE;
 
 
+/** @brief GPIO pull mode */
 typedef enum
 {
     EZ_GPIO_PULL_UP,   /**< pull up */
@@ -73,30 +74,55 @@ typedef enum
     EZ_GPIO_NO_PULL,   /**< no pull */
 }EZ_GPIO_PULL;
 
+/** @brief Configuration to intialize the pin */
+typedef struct ezHwGpioConfig
+{
+    EZ_GPIO_MODE mode;    /**< mode of the GPIO pin */
+    EZ_GPIO_PULL pull;    /**< pull mode of the GPIO pin */
+}ezHwGpioConfig_t;
+
 /****************************************************************************/
 /* List of API implemented by the HW driver. Users are not supposed to use
  * these API.
  */
 
+ /** @brief Initialize a pin 
+  * @param[in]  pin_index: index of the GPIO pin
+  * @param[in]  config: configuration of the GPIO pin
+  * @return     EZ_DRV_STATUS
+  */
+typedef EZ_DRV_STATUS (*ezHwGpio_Initialize)(uint16_t pin_index, ezHwGpioConfig_t *config);
+
 /** @brief Read state of a pin
- *  @param[in]  port_index: index of the GPIO port
  *  @param[in]  pin_index: index of the GPIO pin
  *  @return     EZ_GPIO_PIN_LOW or EZ_GPIO_PIN_HIGH
  */
-typedef EZ_GPIO_PIN_STATE(*ezHwGpio_ReadPin)(uint16_t port_index, uint16_t pin_index);
+typedef EZ_GPIO_PIN_STATE(*ezHwGpio_ReadPin)(uint16_t pin_index);
 
 /** @brief Write state of a pin
- *  @param[in]  port_index: index of the GPIO port
  *  @param[in]  pin_index: index of the GPIO pin
  *  @param[in]  state: state of the pin
  *  @return     EZ_DRV_STATUS
  */
-typedef EZ_DRV_STATUS(*ezHwGpio_WritePin)(uint16_t port_index, uint16_t pin_index, EZ_GPIO_PIN_STATE state);
+typedef EZ_DRV_STATUS(*ezHwGpio_WritePin)(uint16_t pin_index, EZ_GPIO_PIN_STATE state);
 
+/** @brief Toggle state of a pin
+ *  @param[in]  pin_index: index of the GPIO pin
+ *  @return     EZ_DRV_STATUS
+ */
+typedef EZ_DRV_STATUS(*ezHwGpio_TogglePin)(uint16_t pin_index);
+
+
+/** @brief GPIO driver interface
+ *  @details This structure contains the list of API implemented by the HW driver.
+ *           Users are not supposed to use these API.
+ */
 struct ezHwGpioInterface
 {
-    ezHwGpio_ReadPin   read_pin;   /**< Read pin */
-    ezHwGpio_WritePin  write_pin;  /**< Write pin */
+    ezHwGpio_Initialize init_pin;   /**< Initialize pin */
+    ezHwGpio_ReadPin    read_pin;   /**< Read pin */
+    ezHwGpio_WritePin   write_pin;  /**< Write pin */
+    ezHwGpio_TogglePin  toggle_pin; /**< Toggle pin */
 };
 
 struct ezGpioDriver
@@ -105,11 +131,15 @@ struct ezGpioDriver
     struct ezDriverCommon       common;     /* Common data of driver */
     struct ezHwGpioInterface    interface;  /* HW API */
     ezSubject                   gpio_event; /* Subject for event notification */
+    bool                        initialized; /* Flag to check if the driver is initialized */
 };
 
 /** @brief Define Uart Driver Instance
  */
-typedef struct ezDrvInstance ezGpioDrvInstance_t;
+typedef struct{
+    struct ezDrvInstance    drv_instance;    /**< Driver instance */
+    ezObserver              event_subcriber; /**< Pointer to the event subscriber */
+} ezGpioDrvInstance_t;
 
 
 /*****************************************************************************
@@ -127,15 +157,17 @@ EZ_DRV_STATUS ezGpio_SystemUnregisterHwDriver(struct ezGpioDriver *hw_gpio_drive
 
 EZ_DRV_STATUS ezGpio_RegisterInstance(ezGpioDrvInstance_t *inst,
                                       const char *driver_name,
-                                      ezObserver *event_subcriber,
                                       EVENT_CALLBACK callback);
 
 EZ_DRV_STATUS ezGpio_UnregisterInstance(ezGpioDrvInstance_t *inst);
 
-EZ_GPIO_PIN_STATE ezGpio_ReadPin(ezGpioDrvInstance_t *inst, uint16_t port_index, uint16_t pin_index);
+EZ_DRV_STATUS ezGpio_Initialize(ezGpioDrvInstance_t *inst, uint16_t pin_index, ezHwGpioConfig_t *config);
 
-EZ_DRV_STATUS ezGpio_WritePin(ezGpioDrvInstance_t *inst, uint16_t port_index, uint16_t pin_index, EZ_GPIO_PIN_STATE state);
+EZ_GPIO_PIN_STATE ezGpio_ReadPin(ezGpioDrvInstance_t *inst, uint16_t pin_index);
 
+EZ_DRV_STATUS ezGpio_WritePin(ezGpioDrvInstance_t *inst, uint16_t pin_index, EZ_GPIO_PIN_STATE state);
+
+EZ_DRV_STATUS ezGpio_TogglePin(ezGpioDrvInstance_t *inst, uint16_t pin_index);
 
 #endif /* EZ_GPIO == 1 */
 
