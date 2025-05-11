@@ -5,7 +5,6 @@ __maintainer__ =    "Hai Nguyen"
 __email__ =         "hainguyen.eeit@gmail.com"
 
 
-from distutils.log import debug
 import logging
 import argparse
 import os
