@@ -58,4 +58,8 @@ if(ENABLE_EZ_RING_BUFFER)
     add_subdirectory(utilities/ring_buffer)
 endif()
 
+if(ENABLE_EZ_GPIO)
+    add_subdirectory(hal/gpio)
+endif()
+
 # End of file
