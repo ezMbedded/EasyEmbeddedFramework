@@ -110,7 +110,7 @@ bool ezSM_Run(ezStateMachine_t *sm)
     {
         success = true;
 
-        /* We have a state change*/
+        /* Clear next_state variable which is set by the previous state */
         if(NULL != sm->next_state )
         {
             EZTRACE("sm_Run(state name = %s)", sm->curr_state->name);
@@ -155,18 +155,41 @@ bool ezSM_Run(ezStateMachine_t *sm)
         /* Detect state change*/
         if(NULL != sm->next_state)
         {
+            ezState_t* tmp_state = NULL;
             EZDEBUG("  State changed! Next state = %s", sm->next_state->name);
+
             if(NULL != sm->curr_state->exit)
             {
                 EZDEBUG("  Calling exit function...");
-                sm->curr_state->exit(sm);
+                tmp_state = sm->curr_state->exit(sm);
             }
-            sm->curr_state = sm->next_state;
+
+            if(tmp_state != NULL && tmp_state != sm->next_state)
+            {
+                /* Exit state report a different state from sm->next_state
+                 * meaning that there is an issue with the operation within exit function
+                 * So we enter the tmp state instead of next_state
+                 */
+                sm->curr_state = tmp_state;
+            }
+            else
+            {
+                sm->curr_state = sm->next_state;
+            }
 
             if(NULL != sm->curr_state->enter)
             {
                 EZDEBUG("  Calling enter function...");
-                sm->curr_state->enter(sm);
+                tmp_state = sm->curr_state->enter(sm);
+                while(tmp_state != NULL && tmp_state != sm->curr_state)
+                {
+                    /* Enter state report a different state from sm->curr_state
+                     * meaning that there is an issue with the operation within entry function
+                     * So we enter the tmp_state instead of the above curr_state
+                     */
+                    sm->curr_state = tmp_state;
+                    tmp_state = sm->curr_state->enter(sm);
+                }
             }
         }
     }

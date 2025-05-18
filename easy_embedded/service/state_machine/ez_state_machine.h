@@ -51,11 +51,11 @@ extern "C" {
 
 /* Macro to define an entry function */
 #define DEFINE_ENTRY_FUNCTION(state_name) \
-    static void state_name##Entry(ezStateMachine_t *sm)
+    static ezState_t* state_name##Entry(ezStateMachine_t *sm)
 
 /* Macro to define an exit function */
 #define DEFINE_EXIT_FUNCTION(state_name) \
-    static void state_name##Exit(ezStateMachine_t *sm)
+    static ezState_t* state_name##Exit(ezStateMachine_t *sm)
 
 /* Macro to define an event handler function */
 #define DEFINE_EVENT_HANDLER_FUNCTION(state_name) \
@@ -64,8 +64,8 @@ extern "C" {
 /* Macro to initialize a state */
 #define INIT_STATE(state_name, sub_state_machine)           \
     static ezState_t* state_name##Action(ezStateMachine_t *sm); \
-    static void state_name##Entry(ezStateMachine_t *sm);      \
-    static void state_name##Exit(ezStateMachine_t *sm);       \
+    static ezState_t* state_name##Entry(ezStateMachine_t *sm);      \
+    static ezState_t* state_name##Exit(ezStateMachine_t *sm);       \
     static ezState_t* state_name##HandleEvent(uint8_t event); \
     static ezState_t state_name = {                           \
         .name = #state_name,                                \
@@ -100,7 +100,7 @@ typedef ezState_t* (*ezSM_DoFunction)(ezStateMachine_t *sm);
  * 
  *  @return None
  */
-typedef void (*ezSM_EntryFunction)(ezStateMachine_t *sm);
+typedef ezState_t* (*ezSM_EntryFunction)(ezStateMachine_t *sm);
 
 
 /** @brief  Define a pointer to a function executed when the state machine exits
@@ -110,7 +110,7 @@ typedef void (*ezSM_EntryFunction)(ezStateMachine_t *sm);
  * 
  *  @return None
  */
-typedef void (*ezSM_ExitFunction)(ezStateMachine_t *sm);
+typedef ezState_t* (*ezSM_ExitFunction)(ezStateMachine_t *sm);
 
 
 /** @brief  Define a pointer to a function handling the incomming event
