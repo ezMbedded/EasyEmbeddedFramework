@@ -89,7 +89,15 @@ bool ezSM_Init(ezStateMachine_t *sm,
 
         if(NULL != sm->curr_state->enter)
         {
-            sm->curr_state->enter(sm);
+            sm->next_state = sm->curr_state->enter(sm);
+            if(sm->next_state != NULL && sm->next_state != sm->curr_state)
+            {
+                /* Enter state report a different state from sm->curr_state
+                 * meaning that there is an issue with the operation within entry function
+                 * So we enter the next_state instead of curr_state
+                 */
+                sm->curr_state = sm->next_state;
+            }
         }
     }
     else
