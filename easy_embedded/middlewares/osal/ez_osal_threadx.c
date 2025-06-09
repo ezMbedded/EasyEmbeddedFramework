@@ -26,8 +26,9 @@
 #include "ez_osal_threadx.h"
 
 #if (EZ_THREADX_PORT == 1)
+#include "ez_default_logging_level.h"
 
-#define DEBUG_LVL   LVL_TRACE   /**< logging level */
+#define DEBUG_LVL   EZ_OSAL_THREADX_LOGGING_LEVEL   /**< logging level */
 #define MOD_NAME    "ez_osal_threadx"       /**< module name */
 #include "ez_logging.h"
 #include "tx_api.h"

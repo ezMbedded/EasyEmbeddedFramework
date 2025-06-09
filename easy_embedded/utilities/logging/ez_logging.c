@@ -26,7 +26,7 @@
 /******************************************************************************
 * Includes
 *******************************************************************************/
-#define DEBUG_LVL   LVL_TRACE  /**< logging level */
+#define DEBUG_LVL   LVL_ERROR  /**< logging level */
 #define MOD_NAME    "LOGGING"   /**< module name */
 #include "ez_logging.h"
 

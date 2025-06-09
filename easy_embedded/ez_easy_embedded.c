@@ -25,7 +25,7 @@
 *****************************************************************************/
 #include "ez_easy_embedded.h"
 
-#define DEBUG_LVL   LVL_TRACE   /**< logging level */
+#define DEBUG_LVL   LVL_ERROR   /**< logging level */
 #define MOD_NAME    "ez_easy_embedded"       /**< module name */
 #include "ez_logging.h"
 #include "ez_middlewares.h"

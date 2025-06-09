@@ -27,8 +27,9 @@
 
 #if (DATA_MODEL == 1U)
 #include <string.h>
+#include "ez_default_logging_level.h"
 
-#define DEBUG_LVL   LVL_DEBUG       /**< logging level */
+#define DEBUG_LVL   EZ_DATA_MODEL_LOGGING_LEVEL       /**< logging level */
 #define MOD_NAME    "DATA_MODEL"    /**< module name */
 #include "ez_logging.h"
 

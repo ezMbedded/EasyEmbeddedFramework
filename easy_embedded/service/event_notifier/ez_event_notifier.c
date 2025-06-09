@@ -26,8 +26,9 @@
 #include "ez_event_notifier.h"
 
 #if(EZ_EVENT_NOTIFIER == 1U)
+#include "ez_default_logging_level.h"
 
-#define DEBUG_LVL   LVL_NO_LOG      /**< logging level */
+#define DEBUG_LVL   EZ_EVENT_LOGGING_LEVEL      /**< logging level */
 #define MOD_NAME    "EVENT_NOTIFY"  /**< module name */
 
 #include "ez_logging.h"

@@ -26,9 +26,10 @@
 #include "ez_i2c.h"
 
 #if (EZ_I2C == 1)
+#include "ez_default_logging_level.h"
 
-#define DEBUG_LVL   LVL_TRACE   /**< logging level */
-#define MOD_NAME    "ez_i2c"       /**< module name */
+#define DEBUG_LVL   EZ_I2C_LOGGING_LEVEL    /**< logging level */
+#define MOD_NAME    "ez_i2c"                /**< module name */
 #include "ez_logging.h"
 
 #include <string.h>
