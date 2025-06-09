@@ -26,8 +26,9 @@
 #include "ez_middlewares.h"
 
 #if (EZ_MIDDLEWARES == 1)
+#include "ez_default_logging_level.h"
 
-#define DEBUG_LVL   LVL_TRACE   /**< logging level */
+#define DEBUG_LVL   EZ_MIDDLEWARE_LOGGING_LEVEL   /**< logging level */
 #define MOD_NAME    "ez_middlewares"       /**< module name */
 #include "ez_logging.h"
 

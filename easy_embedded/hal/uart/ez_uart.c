@@ -26,8 +26,9 @@
 #include "ez_uart.h"
 
 #if (EZ_UART == 1)
+#include "ez_default_logging_level.h"
 
-#define DEBUG_LVL   LVL_TRACE       /**< logging level */
+#define DEBUG_LVL   EZ_UART_LOGGING_LEVEL       /**< logging level */
 #define MOD_NAME    "ez_uart"       /**< module name */
 #include "ez_logging.h"
 

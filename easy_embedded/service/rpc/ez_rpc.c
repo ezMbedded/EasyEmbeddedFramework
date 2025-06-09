@@ -27,8 +27,9 @@
 #include "ez_rpc.h"
 
 #if (EZ_RPC == 1)
+#include "ez_default_logging_level.h"
 
-#define DEBUG_LVL   LVL_TRACE   /**< logging level */
+#define DEBUG_LVL   EZ_RPC_LOGGING_LEVEL   /**< logging level */
 #define MOD_NAME    "ez_rpc"       /**< module name */
 #include "ez_logging.h"
 

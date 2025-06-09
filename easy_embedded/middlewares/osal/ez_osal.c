@@ -26,8 +26,9 @@
 #include "ez_osal.h"
 
 #if (EZ_OSAL == 1)
+#include "ez_default_logging_level.h"
 
-#define DEBUG_LVL   LVL_ERROR   /**< logging level */
+#define DEBUG_LVL   EZ_OSAL_LOGGING_LEVEL   /**< logging level */
 #define MOD_NAME    "ez_osal"       /**< module name */
 #include "ez_logging.h"
 

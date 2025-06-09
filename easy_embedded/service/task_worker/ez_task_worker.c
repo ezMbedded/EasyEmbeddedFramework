@@ -28,8 +28,9 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
+#include "ez_default_logging_level.h"
 
-#define DEBUG_LVL   LVL_TRACE   /**< logging level */
+#define DEBUG_LVL   EZ_TASK_WORKER_LOGGING_LEVEL   /**< logging level */
 #define MOD_NAME    "ez_task_worker"       /**< module name */
 #include "ez_logging.h"
 #include "ez_utilities_common.h"

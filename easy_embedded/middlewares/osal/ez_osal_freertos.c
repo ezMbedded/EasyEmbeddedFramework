@@ -26,8 +26,9 @@
 #include "ez_osal_freertos.h"
 
 #if (EZ_FREERTOS_PORT == 1)
+#include "ez_default_logging_level.h"
 
-#define DEBUG_LVL   LVL_TRACE           /**< logging level */
+#define DEBUG_LVL   EZ_OSAL_FREERTOS_LOGGING_LEVEL /**< logging level */
 #define MOD_NAME    "ez_osal_freertos"  /**< module name */
 #include "ez_logging.h"
 #include "FreeRTOS.h"

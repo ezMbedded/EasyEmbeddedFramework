@@ -26,9 +26,10 @@
 #include "ez_hal.h"
 
 #if (EZ_HAL == 1)
+#include "ez_default_logging_level.h"
 
-#define DEBUG_LVL   LVL_TRACE   /**< logging level */
-#define MOD_NAME    "ez_hal"       /**< module name */
+#define DEBUG_LVL   EZ_HAL_LOGGING_LEVEL    /**< logging level */
+#define MOD_NAME    "ez_hal"                /**< module name */
 #include "ez_logging.h"
 
 /*the rest of include go here*/

@@ -28,8 +28,9 @@
 #include "ez_queue.h"
 
 #if (EZ_QUEUE == 1U)
+#include "ez_default_logging_level.h"
 
-#define DEBUG_LVL   LVL_INFO       /**< logging level */
+#define DEBUG_LVL   EZ_QUEUE_LOGGING_LEVEL       /**< logging level */
 #define MOD_NAME    "ez_queue"     /**< module name */
 
 #include "ez_logging.h"
