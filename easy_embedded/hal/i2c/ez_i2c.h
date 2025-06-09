@@ -86,27 +86,32 @@ typedef struct
 } ezI2cConfig_t;
 
 
-typedef EZ_DRV_STATUS (*ezHwI2c_Initialize)(ezI2cConfig_t *config);
-typedef EZ_DRV_STATUS (*ezHwI2c_TransmitSync)(uint16_t address,
+typedef EZ_DRV_STATUS (*ezHwI2c_Initialize)(void *driver_h, ezI2cConfig_t *config);
+typedef EZ_DRV_STATUS (*ezHwI2c_TransmitSync)(void *driver_h,
+                                              uint16_t address,
                                               const uint8_t *data,
                                               size_t length,
                                               uint32_t timeout_millis);
 
-typedef EZ_DRV_STATUS (*ezHwI2c_TransmitAsync)(uint16_t address,
+typedef EZ_DRV_STATUS (*ezHwI2c_TransmitAsync)(void *driver_h,
+                                               uint16_t address,
                                                const uint8_t *data,
                                                size_t length);
 
-typedef EZ_DRV_STATUS (*ezHwI2c_ReceiveSync)(uint16_t address,
+typedef EZ_DRV_STATUS (*ezHwI2c_ReceiveSync)(void *driver_h,
+                                             uint16_t address,
                                              uint8_t *data,
                                              size_t length,
                                              uint32_t timeout_millis);
 
-typedef EZ_DRV_STATUS (*ezHwI2c_ReceiveAsync)(uint16_t address,
+typedef EZ_DRV_STATUS (*ezHwI2c_ReceiveAsync)(void *driver_h,
+                                              uint16_t address,
                                               uint8_t *data,
                                               size_t length);
 
 struct ezHwI2cInterface
 {
+    void                   *driver_h;       /**< Pointer to the HW driver handle to identify which hw driver is used */
     ezHwI2c_Initialize     initialize;      /**< Initialize I2C interface */
     ezHwI2c_TransmitSync   transmit_sync;   /**< Transmit data synchronously */
     ezHwI2c_TransmitAsync  transmit_async;  /**< Transmit data asynchronously */

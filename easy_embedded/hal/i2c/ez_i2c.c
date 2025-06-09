@@ -168,7 +168,7 @@ EZ_DRV_STATUS ezI2c_Initialize(ezI2cDrvInstance_t *inst, ezI2cConfig_t *config)
     ezDriver_LockDriver((struct ezDrvInstance*)inst, &drv->common);
     if(drv->interface.initialize != NULL)
     {
-        status = drv->interface.initialize(config);
+        status = drv->interface.initialize(drv->interface.driver_h, config);
     }
     ezDriver_UnlockDriver(&drv->common);
 
@@ -200,7 +200,7 @@ EZ_DRV_STATUS ezI2c_TransmitSync(ezI2cDrvInstance_t *inst,
             ezDriver_LockDriver((struct ezDrvInstance*)inst, &drv->common);
             if(drv->interface.transmit_sync)
             {
-                status = drv->interface.transmit_sync(address, data, length, timeout_millis);
+                status = drv->interface.transmit_sync(drv->interface.driver_h, address, data, length, timeout_millis);
             }
             ezDriver_UnlockDriver(&drv->common);
         }
@@ -226,7 +226,7 @@ EZ_DRV_STATUS ezI2c_TransmitAsync(ezI2cDrvInstance_t *inst,
             ezDriver_LockDriver((struct ezDrvInstance*)inst, &drv->common);
             if(drv->interface.transmit_async)
             {
-                status = drv->interface.transmit_async(address, data, length);
+                status = drv->interface.transmit_async(drv->interface.driver_h, address, data, length);
             }
             ezDriver_UnlockDriver(&drv->common);
         }
@@ -253,7 +253,7 @@ EZ_DRV_STATUS ezI2c_ReceiveSync(ezI2cDrvInstance_t *inst,
             ezDriver_LockDriver((struct ezDrvInstance*)inst, &drv->common);
             if(drv->interface.receive_sync)
             {
-                status = drv->interface.receive_sync(address, data, length, timeout_millis);
+                status = drv->interface.receive_sync(drv->interface.driver_h, address, data, length, timeout_millis);
             }
             ezDriver_UnlockDriver(&drv->common);
         }
@@ -279,7 +279,7 @@ EZ_DRV_STATUS ezI2c_ReceiveAsync(ezI2cDrvInstance_t *inst,
             ezDriver_LockDriver((struct ezDrvInstance*)inst, &drv->common);
             if(drv->interface.receive_async)
             {
-                status = drv->interface.receive_async(address, data, length);
+                status = drv->interface.receive_async(drv->interface.driver_h, address, data, length);
             }
             ezDriver_UnlockDriver(&drv->common);
         }
