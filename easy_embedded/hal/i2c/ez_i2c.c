@@ -287,6 +287,32 @@ EZ_DRV_STATUS ezI2c_ReceiveAsync(ezI2cDrvInstance_t *inst,
     }
     return status;
 }
+
+
+EZ_DRV_STATUS ezI2c_Probe(void *driver_h,
+                          uint16_t address,
+                          uint32_t timeout_millis)
+{
+    EZTRACE("ezI2c_Probe()");
+    EZ_DRV_STATUS status = STATUS_ERR_DRV_NOT_FOUND;
+    struct ezI2cDriver *drv = (struct ezI2cDriver*)driver_h;
+
+    if(drv != NULL)
+    {
+        status = STATUS_BUSY;
+        if(ezDriver_IsDriverAvailable(NULL, &drv->common) == true)
+        {
+            status = STATUS_ERR_INF_NOT_EXIST;
+            ezDriver_LockDriver(NULL, &drv->common);
+            if(drv->interface.probe)
+            {
+                status = drv->interface.probe(drv->interface.driver_h, address, timeout_millis);
+            }
+            ezDriver_UnlockDriver(&drv->common);
+        }
+    }
+    return status;
+}
 /*****************************************************************************
 * Local functions
 *****************************************************************************/

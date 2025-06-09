@@ -109,6 +109,10 @@ typedef EZ_DRV_STATUS (*ezHwI2c_ReceiveAsync)(void *driver_h,
                                               uint8_t *data,
                                               size_t length);
 
+typedef EZ_DRV_STATUS (*ezHwI2c_Probe)(void *driver_h,
+                                  uint16_t address,
+                                  uint32_t timeout_millis);
+
 struct ezHwI2cInterface
 {
     void                   *driver_h;       /**< Pointer to the HW driver handle to identify which hw driver is used */
@@ -117,6 +121,7 @@ struct ezHwI2cInterface
     ezHwI2c_TransmitAsync  transmit_async;  /**< Transmit data asynchronously */
     ezHwI2c_ReceiveSync    receive_sync;    /**< Receive data synchronously */
     ezHwI2c_ReceiveAsync   receive_async;   /**< Receive data asynchronously */
+    ezHwI2c_Probe          probe;           /**< Probe the I2C device at a specific address */
 };
 
 struct ezI2cDriver
@@ -177,7 +182,9 @@ EZ_DRV_STATUS ezI2c_ReceiveAsync(ezI2cDrvInstance_t *inst,
                                  uint8_t *data,
                                  size_t length);
 
-
+EZ_DRV_STATUS ezI2c_Probe(void *driver_h,
+                          uint16_t address,
+                          uint32_t timeout_millis);
 #endif /* EZ_I2C == 1 */
 
 #ifdef __cplusplus
