@@ -14,6 +14,12 @@ message(STATUS "**********************************************************")
 
 set(FRAMEWORK_ROOT_DIR ${CMAKE_SOURCE_DIR}/easy_embedded)
 
+set (LWIP_INCLUDE_DIRS
+    "${LWIP_PATH}/src/include"
+    "${LWIP_PATH}/contrib/"
+    "${LWIP_PATH}/contrib/ports/unix/port/include"
+    "${LWIP_PATH}/contrib/examples/example_app"
+)
 
 # Source files ---------------------------------------------------------------
 target_sources(ez_lwip_lib
@@ -35,6 +41,7 @@ target_compile_definitions(ez_lwip_lib
 target_include_directories(ez_lwip_lib
     PUBLIC
         ${CMAKE_CURRENT_LIST_DIR}
+        ${LWIP_INCLUDE_DIRS}
     PRIVATE
         # Please add private folders here
     INTERFACE

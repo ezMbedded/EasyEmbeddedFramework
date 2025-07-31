@@ -105,6 +105,23 @@ if(BUILD_TESTING)
     endif()
 endif()
 
+if(ENABLE_LWIP)
+    FetchContent_Declare(
+        lwip
+        GIT_REPOSITORY    https://github.com/lwip-tcpip/lwip.git
+        GIT_TAG           STABLE-2_2_1_RELEASE
+        SOURCE_DIR        ${CMAKE_CURRENT_SOURCE_DIR}/lwip
+    )
+
+    if(NOT lwip_POPULATED)
+        message(STATUS "lwip is not available, downloading...")
+        FetchContent_Populate(lwip)
+        message(STATUS "Download completed")
+        SET(LWIP_PATH ${CMAKE_CURRENT_SOURCE_DIR}/lwip CACHE STRING "Path to lwip framework")
+    endif()
+    add_subdirectory(lwip/contrib/ports/unix/lib)
+endif()
+
 #Adding Catch2 -------------------------------------------------------------
 if(BUILD_TESTING)
     FetchContent_Declare(

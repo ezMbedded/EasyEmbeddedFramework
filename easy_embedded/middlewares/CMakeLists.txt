@@ -19,6 +19,9 @@ if(ENABLE_EZ_OSAL)
     add_subdirectory(osal)
 endif()
 
+if(ENABLE_LWIP)
+    add_subdirectory(network/lwip_port)
+endif()
 
 # Source files ---------------------------------------------------------------
 target_sources(ez_middlewares_lib
@@ -52,6 +55,7 @@ target_include_directories(ez_middlewares_lib
 target_link_libraries(ez_middlewares_lib
     PUBLIC
         $<$<BOOL:${ENABLE_EZ_OSAL}>:ez_osal_lib>
+        $<$<BOOL:${ENABLE_LWIP}>:ez_lwip_lib>
     PRIVATE
         ez_utilities_lib
     INTERFACE
