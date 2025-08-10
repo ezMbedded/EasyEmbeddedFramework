@@ -91,23 +91,27 @@ typedef EZ_DRV_STATUS (*ezHwI2c_TransmitSync)(void *driver_h,
                                               uint16_t address,
                                               const uint8_t *data,
                                               size_t length,
+                                              bool send_stop,
                                               uint32_t timeout_millis);
 
 typedef EZ_DRV_STATUS (*ezHwI2c_TransmitAsync)(void *driver_h,
                                                uint16_t address,
                                                const uint8_t *data,
-                                               size_t length);
+                                               size_t length,
+                                               bool send_stop);
 
 typedef EZ_DRV_STATUS (*ezHwI2c_ReceiveSync)(void *driver_h,
                                              uint16_t address,
                                              uint8_t *data,
                                              size_t length,
+                                             bool send_stop,
                                              uint32_t timeout_millis);
 
 typedef EZ_DRV_STATUS (*ezHwI2c_ReceiveAsync)(void *driver_h,
                                               uint16_t address,
                                               uint8_t *data,
-                                              size_t length);
+                                              size_t length,
+                                              bool send_stop);
 
 typedef EZ_DRV_STATUS (*ezHwI2c_Probe)(void *driver_h,
                                   uint16_t address,
@@ -164,25 +168,29 @@ EZ_DRV_STATUS ezI2c_TransmitSync(ezI2cDrvInstance_t *inst,
                                  uint16_t address,
                                  const uint8_t *data,
                                  size_t length,
+                                 bool send_stop,
                                  uint32_t timeout_millis);
 
 EZ_DRV_STATUS ezI2c_TransmitAsync(ezI2cDrvInstance_t *inst,
                                   uint16_t address,
                                   const uint8_t *data,
-                                  size_t length);
+                                  size_t length,
+                                  bool send_stop);
 
 EZ_DRV_STATUS ezI2c_ReceiveSync(ezI2cDrvInstance_t *inst,
                                 uint16_t address,
                                 uint8_t *data,
                                 size_t length,
+                                bool send_stop,
                                 uint32_t timeout_millis);
 
 EZ_DRV_STATUS ezI2c_ReceiveAsync(ezI2cDrvInstance_t *inst,
                                  uint16_t address,
                                  uint8_t *data,
-                                 size_t length);
+                                 size_t length,
+                                 bool send_stop);
 
-EZ_DRV_STATUS ezI2c_Probe(void *driver_h,
+EZ_DRV_STATUS ezI2c_Probe(ezI2cDrvInstance_t *inst,
                           uint16_t address,
                           uint32_t timeout_millis);
 #endif /* EZ_I2C == 1 */
