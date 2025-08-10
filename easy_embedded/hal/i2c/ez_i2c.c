@@ -186,6 +186,7 @@ EZ_DRV_STATUS ezI2c_TransmitSync(ezI2cDrvInstance_t *inst,
                                  uint16_t address,
                                  const uint8_t *data,
                                  size_t length,
+                                 bool send_stop,
                                  uint32_t timeout_millis)
 {
     EZTRACE("ezI2c_TransmitSync()");
@@ -201,7 +202,12 @@ EZ_DRV_STATUS ezI2c_TransmitSync(ezI2cDrvInstance_t *inst,
             ezDriver_LockDriver((struct ezDrvInstance*)inst, &drv->common);
             if(drv->interface.transmit_sync)
             {
-                status = drv->interface.transmit_sync(drv->interface.driver_h, address, data, length, timeout_millis);
+                status = drv->interface.transmit_sync(drv->interface.driver_h,
+                    address,
+                    data,
+                    length,
+                    send_stop,
+                    timeout_millis);
             }
             ezDriver_UnlockDriver(&drv->common);
         }
@@ -212,7 +218,8 @@ EZ_DRV_STATUS ezI2c_TransmitSync(ezI2cDrvInstance_t *inst,
 EZ_DRV_STATUS ezI2c_TransmitAsync(ezI2cDrvInstance_t *inst,
                                   uint16_t address,
                                   const uint8_t *data,
-                                  size_t length)
+                                  size_t length,
+                                  bool send_stop)
 {
     EZTRACE("ezI2c_TransmitAsync()");
     EZ_DRV_STATUS status = STATUS_ERR_DRV_NOT_FOUND;
@@ -227,7 +234,11 @@ EZ_DRV_STATUS ezI2c_TransmitAsync(ezI2cDrvInstance_t *inst,
             ezDriver_LockDriver((struct ezDrvInstance*)inst, &drv->common);
             if(drv->interface.transmit_async)
             {
-                status = drv->interface.transmit_async(drv->interface.driver_h, address, data, length);
+                status = drv->interface.transmit_async(drv->interface.driver_h,
+                    address,
+                    data,
+                    length,
+                    send_stop);
             }
             ezDriver_UnlockDriver(&drv->common);
         }
@@ -239,6 +250,7 @@ EZ_DRV_STATUS ezI2c_ReceiveSync(ezI2cDrvInstance_t *inst,
                                 uint16_t address,
                                 uint8_t *data,
                                 size_t length,
+                                bool send_stop,
                                 uint32_t timeout_millis)
 {
     EZTRACE("ezI2c_ReceiveSync()");
@@ -254,7 +266,12 @@ EZ_DRV_STATUS ezI2c_ReceiveSync(ezI2cDrvInstance_t *inst,
             ezDriver_LockDriver((struct ezDrvInstance*)inst, &drv->common);
             if(drv->interface.receive_sync)
             {
-                status = drv->interface.receive_sync(drv->interface.driver_h, address, data, length, timeout_millis);
+                status = drv->interface.receive_sync(drv->interface.driver_h,
+                    address,
+                    data,
+                    length,
+                    send_stop,
+                    timeout_millis);
             }
             ezDriver_UnlockDriver(&drv->common);
         }
@@ -265,7 +282,8 @@ EZ_DRV_STATUS ezI2c_ReceiveSync(ezI2cDrvInstance_t *inst,
 EZ_DRV_STATUS ezI2c_ReceiveAsync(ezI2cDrvInstance_t *inst,
                                  uint16_t address,
                                  uint8_t *data,
-                                 size_t length)
+                                 size_t length,
+                                 bool send_stop)
 {
     EZTRACE("ezI2c_ReceiveAsync()");
     EZ_DRV_STATUS status = STATUS_ERR_DRV_NOT_FOUND;
@@ -280,7 +298,11 @@ EZ_DRV_STATUS ezI2c_ReceiveAsync(ezI2cDrvInstance_t *inst,
             ezDriver_LockDriver((struct ezDrvInstance*)inst, &drv->common);
             if(drv->interface.receive_async)
             {
-                status = drv->interface.receive_async(drv->interface.driver_h, address, data, length);
+                status = drv->interface.receive_async(drv->interface.driver_h,
+                    address,
+                    data,
+                    length,
+                    send_stop);
             }
             ezDriver_UnlockDriver(&drv->common);
         }
@@ -289,27 +311,25 @@ EZ_DRV_STATUS ezI2c_ReceiveAsync(ezI2cDrvInstance_t *inst,
 }
 
 
-EZ_DRV_STATUS ezI2c_Probe(void *driver_h,
+EZ_DRV_STATUS ezI2c_Probe(ezI2cDrvInstance_t *inst,
                           uint16_t address,
                           uint32_t timeout_millis)
 {
     EZTRACE("ezI2c_Probe()");
     EZ_DRV_STATUS status = STATUS_ERR_DRV_NOT_FOUND;
-    struct ezI2cDriver *drv = (struct ezI2cDriver*)driver_h;
+    struct ezI2cDriver *drv = (struct ezI2cDriver*)ezDriver_GetDriverFromInstance((struct ezDrvInstance*)inst);
 
-    if(drv != NULL)
+   if(ezDriver_IsDriverAvailable((struct ezDrvInstance*)inst, &drv->common) == true)
     {
-        status = STATUS_BUSY;
-        if(ezDriver_IsDriverAvailable(NULL, &drv->common) == true)
+        status = STATUS_ERR_INF_NOT_EXIST;
+        ezDriver_LockDriver((struct ezDrvInstance*)inst, &drv->common);
+        if(drv->interface.receive_async)
         {
-            status = STATUS_ERR_INF_NOT_EXIST;
-            ezDriver_LockDriver(NULL, &drv->common);
-            if(drv->interface.probe)
-            {
-                status = drv->interface.probe(drv->interface.driver_h, address, timeout_millis);
-            }
-            ezDriver_UnlockDriver(&drv->common);
+            status = drv->interface.probe(drv->interface.driver_h,
+                address,
+                timeout_millis);
         }
+        ezDriver_UnlockDriver(&drv->common);
     }
     return status;
 }
