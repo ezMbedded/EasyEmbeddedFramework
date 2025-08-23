@@ -22,6 +22,7 @@ target_sources(ez_hal_lib
         $<$<BOOL:${ENABLE_EZ_UART}>:uart/ez_uart.c>
         $<$<BOOL:${ENABLE_EZ_GPIO}>:gpio/ez_gpio.c>
         $<$<BOOL:${ENABLE_EZ_I2C}>:i2c/ez_i2c.c>
+        $<$<BOOL:${ENABLE_EZ_SPI}>:spi/ez_spi.c>
 )
 
 
@@ -33,6 +34,7 @@ target_compile_definitions(ez_hal_lib
         EZ_UART=$<BOOL:${ENABLE_EZ_UART}>
         EZ_GPIO=$<BOOL:${ENABLE_EZ_GPIO}>
         EZ_I2C=$<BOOL:${ENABLE_EZ_I2C}>
+        EZ_SPI=$<BOOL:${ENABLE_EZ_SPI}>
     PRIVATE
         EZ_BUILD_WITH_CMAKE=$<BOOL:${BUILD_WITH_CMAKE}>
 )
@@ -45,6 +47,7 @@ target_include_directories(ez_hal_lib
         ${CMAKE_CURRENT_LIST_DIR}/uart
         ${CMAKE_CURRENT_LIST_DIR}/gpio
         ${CMAKE_CURRENT_LIST_DIR}/i2c
+        ${CMAKE_CURRENT_LIST_DIR}/spi
     PRIVATE
         # Please add private folders here
     INTERFACE
