@@ -57,31 +57,27 @@ typedef enum
 {
     RPC_MSG_REQ,            /**< request */
     RPC_MSG_RESP,           /**< response */
+    RPC_MSG_EVENT,          /**< event */
+    RPC_MSG_NUM_OF_TYPE    /**< number of message type */
 }RPC_MSG_TYPE;
 
 
 struct ezRpcMsgHeader
 {
-    uint8_t         tag;            /**< Tag of RPC, indicate type of service */
+    uint16_t        cmd_id;         /**< Command ID, linked to a function which will be executed */
     uint8_t         is_encrypted;   /**< encrpypted flag */
     RPC_MSG_TYPE    type;           /**< RPC message type */
     uint32_t        uuid;           /**< UUID of the message */
     uint32_t        payload_size;   /**< Size of the payload */
 };
 
-/** @brief RPC message struct, omitting the SOF. SOF is set to 0x80
- *
- * |======================================================================================|
- * | 0   | 1...4 | 5        | 6   | 7        | 8...11       | 12 13 ... n | n+1 ... n+m   |
- * |=====|=======|==========|=====|==========|==============|=============|===============|
- * | SOF | UUID  | Msg type | TAG | Encrypt. | Payload size | Payload     | CRC1 ... CRCm |
- * |======================================================================================|
+/** @brief RPC message struct, omitting the SYNC
  */
 struct ezRpcMsg
 {
     struct ezRpcMsgHeader   header;         /**< Message header */
     uint8_t                 *payload;       /**< The pointer to the payload itself*/
-    uint8_t                 *crc;           /**< Pointer to the CRC value */
+    uint16_t                crc;           /**< Pointer to the CRC value */
 };
 
 
@@ -98,7 +94,7 @@ struct ezRpcRequestRecord
 
 typedef uint32_t(*RpcTransmit)  (uint8_t *tx_data, uint32_t tx_size);
 typedef uint32_t(*RpcReceive)   (uint8_t *rx_data, uint32_t rx_size);
-typedef void(*ServiceHandler)   (void *payload, uint32_t payload_size_byte);
+typedef void(*CommandHandler)   (void *payload, uint32_t payload_size_byte);
 typedef bool(*CrcVerify)        (uint8_t *input,
                                  uint32_t input_size,
                                  uint8_t *crc,
@@ -113,10 +109,10 @@ typedef void(*CrcCalculate)     (uint8_t *input,
 /** @brief Rpc service structure
  *
  */
-struct ezRpcService
+struct ezRpcCommandEntry
 {
-    uint8_t          tag;           /**< Stores the command code*/
-    ServiceHandler   pfnService;    /**< pointer to function handling that command */
+    uint8_t          id;                /**< Stores the command code*/
+    CommandHandler   command_handler;   /**< pointer to function handling that command */
 };
 
 
@@ -152,7 +148,7 @@ struct ezRpcCrc
 {
     CrcVerify           IsCorrect;       /**< Pointer to the CRC verification function */
     CrcCalculate        Calculate;       /**< Pointer to the CRC calculation function */
-    uint32_t            size;               /**< Size of the crc value, in bytes*/
+    uint32_t            size;            /**< Size of the crc value, in bytes*/
 };
 
 
@@ -161,8 +157,8 @@ struct ezRpcCrc
  */
 struct ezRpc
 {
-    uint32_t            service_table_size; /**< Size of the command table, how many commands are there in total */
-    struct ezRpcService *service_table;     /**< Poiter to the command table */
+    uint32_t            num_of_commands;    /**< Size of the command table, how many commands are there in total */
+    struct ezRpcCommandEntry *commands;     /**< Poiter to the command table */
     struct ezRpcDeserializer deserializer;  /**< Hold deserializer related data */
     struct ezRpcCrc     crc;                /**< Hold crc related data */
     struct ezRpcEncrypt encrypt;            /**< Hold encryption related data */
@@ -182,29 +178,6 @@ struct ezRpc
 
 /*****************************************************************************
 * Function Prototypes
-*****************************************************************************/
-
-/*****************************************************************************
-* Function: sum
-*//** 
-* @brief one line description
-*
-* @details Detail description
-*
-* @param    a: (IN)pointer to the ring buffer
-* @param    b: (IN)size of the ring buffer
-* @return   None
-*
-* @pre None
-* @post None
-*
-* \b Example
-* @code
-* sum(a, b);
-* @endcode
-*
-* @see sum
-*
 *****************************************************************************/
 
 /*****************************************************************************
@@ -235,8 +208,8 @@ struct ezRpc
 ezSTATUS ezRpc_Initialization(struct ezRpc *rpc_inst,
                                 uint8_t *buff,
                                 uint32_t buff_size,
-                                struct ezRpcService *service_table,
-                                uint32_t service_table_size);
+                                struct ezRpcCommandEntry *commands,
+                                uint32_t num_of_commands);
 
 
 /*****************************************************************************

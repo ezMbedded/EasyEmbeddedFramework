@@ -104,8 +104,8 @@ void ezRpc_PrintCrc(uint8_t *crc, uint32_t size);
 ezSTATUS ezRpc_Initialization(struct ezRpc *rpc_inst,
                                 uint8_t *buff,
                                 uint32_t buff_size,
-                                struct ezRpcService *service_table,
-                                uint32_t service_table_size)
+                                struct ezRpcCommandEntry *commands,
+                                uint32_t num_of_commands)
 {
     ezSTATUS status = ezSUCCESS;
 
@@ -114,8 +114,8 @@ ezSTATUS ezRpc_Initialization(struct ezRpc *rpc_inst,
     if (rpc_inst != NULL
         && buff != NULL
         && buff_size > 0
-        && service_table != NULL
-        && service_table_size > 0)
+        && commands != NULL
+        && num_of_commands > 0)
     {
         /* clean the struct */
         memset(rpc_inst, 0, sizeof(struct ezRpc));
@@ -134,8 +134,8 @@ ezSTATUS ezRpc_Initialization(struct ezRpc *rpc_inst,
 
         if (status == ezSUCCESS)
         {
-            rpc_inst->service_table = service_table;
-            rpc_inst->service_table_size = service_table_size;
+            rpc_inst->commands = commands;
+            rpc_inst->num_of_commands = num_of_commands;
 
             rpc_inst->deserializer.state = STATE_SOF;
             rpc_inst->deserializer.byte_count = 0;
@@ -206,7 +206,7 @@ ezSTATUS ezRPC_CreateRpcRequest(struct ezRpc *rpc_inst,
 
     if (rpc_inst != NULL)
     {
-        temp_header.tag = tag;
+        temp_header.cmd_id = tag;
         temp_header.type = RPC_MSG_REQ;
         temp_header.payload_size = payload_size;
         temp_header.uuid = ++rpc_inst->next_uuid;
@@ -234,7 +234,7 @@ ezSTATUS ezRPC_CreateRpcResponse(struct ezRpc *rpc_inst,
 
     if (rpc_inst != NULL)
     {
-        temp_header.tag = tag;
+        temp_header.cmd_id = tag;
         temp_header.type = RPC_MSG_REQ;
         temp_header.payload_size = payload_size;
         temp_header.uuid = uuid;
@@ -298,8 +298,8 @@ bool ezRpc_IsRpcInstanceReady(struct ezRpc *rpc_inst)
 
     if (rpc_inst != NULL)
     {
-        is_ready = ((rpc_inst->service_table != NULL)
-                    && (rpc_inst->service_table_size > 0)
+        is_ready = ((rpc_inst->commands != NULL)
+                    && (rpc_inst->num_of_commands > 0)
                     && (ezQueue_IsQueueReady(&rpc_inst->rx_msg_queue))
                     && (ezQueue_IsQueueReady(&rpc_inst->tx_msg_queue))
                     && (rpc_inst->RpcTransmit != NULL)
@@ -395,7 +395,7 @@ static ezSTATUS ezRpc_SerializeRpcHeader(uint8_t *buff,
         buff += sizeof(uint32_t);
 
         *(buff++) = (uint8_t)header->type;
-        *(buff++) = header->tag;
+        *(buff++) = header->cmd_id;
         *(buff++) = header->is_encrypted;
 
         *(uint32_t *)buff = header->payload_size;
@@ -533,7 +533,7 @@ static void ezRpc_DeserializedData(struct ezRpc *rpc_inst, uint8_t rx_byte)
 
         case STATE_TAG:
             EZTRACE("STATE_TAG");
-            rpc_inst->deserializer.curr_hdr->tag = rx_byte;
+            rpc_inst->deserializer.curr_hdr->cmd_id = rx_byte;
             rpc_inst->deserializer.state = STATE_ENCRYPT_FLAG;
             break;
 
@@ -906,12 +906,12 @@ static void ezRpc_HandleReceivedMsg(struct ezRpc *rpc_inst)
 
         if (status == ezSUCCESS)
         {
-            for (uint32_t i = 0; i < rpc_inst->service_table_size; i++)
+            for (uint32_t i = 0; i < rpc_inst->num_of_commands; i++)
             {
-                if (rpc_inst->service_table[i].tag == header->tag)
+                if (rpc_inst->commands[i].id == header->cmd_id)
                 {
-                    EZDEBUG("service supported [tag = %d]",
-                        rpc_inst->service_table[i].tag);
+                    EZDEBUG("service supported [cmd_id = %d]",
+                        rpc_inst->commands[i].id);
 
                     /* pop header to read payload */
                     (void)ezQueue_PopFront(&rpc_inst->rx_msg_queue);
@@ -929,9 +929,9 @@ static void ezRpc_HandleReceivedMsg(struct ezRpc *rpc_inst)
 #endif /* DEBUG_LVL == LVL_TRACE */
 
                     if (status == ezSUCCESS &&
-                        rpc_inst->service_table[i].pfnService != NULL)
+                        rpc_inst->commands[i].command_handler != NULL)
                     {
-                        rpc_inst->service_table[i].pfnService(payload, payload_size);
+                        rpc_inst->commands[i].command_handler(payload, payload_size);
                     }
 
                     service_found = true;
