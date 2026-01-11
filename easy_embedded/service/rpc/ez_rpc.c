@@ -33,14 +33,10 @@
 #define MOD_NAME    "ez_rpc"       /**< module name */
 #include "ez_logging.h"
 
-#if 0 /* TODO */
-#include "ezmKernel.h"
-#endif
 
 /*****************************************************************************
 * Component Preprocessor Macros
 *****************************************************************************/
-#define RPC_HEADER_SIZE     12      /**< size of the RPC message header in bytes*/
 #define SOF                 0x80    /**< start of frame, for syncronisation */
 #define RPC_BYTE_READ       1U      /**< number of byte being read by RPC */
 #define WAIT_TIME           3000U   /**< time a request waiting for its response in millisec*/
@@ -387,7 +383,7 @@ static ezSTATUS ezRpc_SerializeRpcHeader(uint8_t *buff,
 {
     ezSTATUS status = ezSUCCESS;
 
-    if (buff != NULL && buff_size >= RPC_HEADER_SIZE)
+    if (buff != NULL && buff_size >= sizeof(struct ezRpcMsgHeader))
     {
         *(buff++) = SOF;
 
@@ -718,7 +714,7 @@ static ezSTATUS ezRPC_CreateRpcMessage(struct ezRpc *rpc_inst,
                                        uint8_t *payload,
                                        uint32_t payload_size)
 {
-    uint32_t alloc_size = RPC_HEADER_SIZE + payload_size;
+    uint32_t alloc_size = sizeof(struct ezRpcMsgHeader) + payload_size;
     uint8_t *buff = NULL;
     ezSTATUS status = ezSUCCESS;
     struct ezRpcRequestRecord *record = NULL;
@@ -767,8 +763,8 @@ static ezSTATUS ezRPC_CreateRpcMessage(struct ezRpc *rpc_inst,
 
         if (status == ezSUCCESS && payload != NULL && payload_size > 0)
         {
-            buff += RPC_HEADER_SIZE;
-            alloc_size -= RPC_HEADER_SIZE;
+            buff += sizeof(struct ezRpcMsgHeader);
+            alloc_size -= sizeof(struct ezRpcMsgHeader);
 
             memcpy(buff, payload, payload_size);
 
@@ -782,7 +778,7 @@ static ezSTATUS ezRPC_CreateRpcMessage(struct ezRpc *rpc_inst,
 
             if (alloc_size >= rpc_inst->crc.size)
             {
-                buff += RPC_HEADER_SIZE + payload_size;
+                buff += sizeof(struct ezRpcMsgHeader) + payload_size;
 
                 rpc_inst->crc.Calculate(payload,
                     payload_size,
