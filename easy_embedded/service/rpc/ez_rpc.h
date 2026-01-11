@@ -64,10 +64,11 @@ typedef enum
 
 struct ezRpcMsgHeader
 {
+    uint16_t        sync_bytes;     /**< sync bytes, must be 0xCAFE */
     uint16_t        cmd_id;         /**< Command ID, linked to a function which will be executed */
     uint8_t         is_encrypted;   /**< encrpypted flag */
     RPC_MSG_TYPE    type;           /**< RPC message type */
-    uint32_t        uuid;           /**< UUID of the message */
+    uint16_t        uuid;           /**< UUID of the message */
     uint32_t        payload_size;   /**< Size of the payload */
 };
 
@@ -94,7 +95,7 @@ struct ezRpcRequestRecord
 
 typedef uint32_t(*RpcTransmit)  (uint8_t *tx_data, uint32_t tx_size);
 typedef uint32_t(*RpcReceive)   (uint8_t *rx_data, uint32_t rx_size);
-typedef void(*CommandHandler)   (void *payload, uint32_t payload_size_byte);
+typedef void(*CommandHandler)   (struct ezRpcMsgHeader *header, void *payload, uint32_t payload_size_byte);
 typedef bool(*CrcVerify)        (uint8_t *input,
                                  uint32_t input_size,
                                  uint8_t *crc,

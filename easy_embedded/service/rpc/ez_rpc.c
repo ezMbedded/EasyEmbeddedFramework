@@ -37,10 +37,17 @@
 /*****************************************************************************
 * Component Preprocessor Macros
 *****************************************************************************/
-#define SOF                 0x80    /**< start of frame, for syncronisation */
+#define SYNC_BYTES          0xCAFE  /**< start of frame, for syncronisation */
 #define RPC_BYTE_READ       1U      /**< number of byte being read by RPC */
 #define WAIT_TIME           3000U   /**< time a request waiting for its response in millisec*/
-
+#define SYNC_SIZE           2U
+#define UUID_SIZE           2U
+#define TYPE_SIZE           1U
+#define ENC_SIZE            1U
+#define CMD_ID_SIZE         2U
+#define LEN_SIZE            4U
+#define CRC_SIZE            2U
+#define HEADER_SIZE         (SYNC_SIZE + UUID_SIZE + TYPE_SIZE + ENC_SIZE + CMD_ID_SIZE + LEN_SIZE)
 
 /*****************************************************************************
 * Component Typedefs
@@ -49,10 +56,10 @@
  */
 typedef enum
 {
-    STATE_SOF,          /**< State parsing SOF */
+    STATE_SYNC,         /**< State parsing SOF */
     STATE_UUID,         /**< State parsing UUID */
     STATE_MSG_TYPE,     /**< State parsing message type */
-    STATE_TAG,          /**< State parsing tag */
+    STATE_CMD_ID,       /**< State parsing tag */
     STATE_ENCRYPT_FLAG, /**< State parsing encryption flag */
     STATE_PAYLOAD_SIZE, /**< State parsing payload size */
     STATE_PAYLOAD,      /**< State parsing payload */
@@ -133,7 +140,7 @@ ezSTATUS ezRpc_Initialization(struct ezRpc *rpc_inst,
             rpc_inst->commands = commands;
             rpc_inst->num_of_commands = num_of_commands;
 
-            rpc_inst->deserializer.state = STATE_SOF;
+            rpc_inst->deserializer.state = STATE_SYNC;
             rpc_inst->deserializer.byte_count = 0;
 
             rpc_inst->encrypt.is_encrypted = 0;
@@ -231,7 +238,7 @@ ezSTATUS ezRPC_CreateRpcResponse(struct ezRpc *rpc_inst,
     if (rpc_inst != NULL)
     {
         temp_header.cmd_id = tag;
-        temp_header.type = RPC_MSG_REQ;
+        temp_header.type = RPC_MSG_RESP;
         temp_header.payload_size = payload_size;
         temp_header.uuid = uuid;
         temp_header.is_encrypted = rpc_inst->encrypt.is_encrypted;
@@ -383,18 +390,24 @@ static ezSTATUS ezRpc_SerializeRpcHeader(uint8_t *buff,
 {
     ezSTATUS status = ezSUCCESS;
 
-    if (buff != NULL && buff_size >= sizeof(struct ezRpcMsgHeader))
+    if (buff != NULL && buff_size >= HEADER_SIZE)
     {
-        *(buff++) = SOF;
+        *(buff++) = (SYNC_BYTES >> 8);
+        *(buff++) = (SYNC_BYTES & 0xFF);
 
-        *(uint32_t *)buff = header->uuid;
-        buff += sizeof(uint32_t);
+        *(buff++) = (header->uuid >> 8);
+        *(buff++) = (header->uuid & 0xFF);
+
 
         *(buff++) = (uint8_t)header->type;
-        *(buff++) = header->cmd_id;
         *(buff++) = header->is_encrypted;
-
-        *(uint32_t *)buff = header->payload_size;
+        *(buff++) = (header->cmd_id >> 8);
+        *(buff++) = (header->cmd_id & 0xFF);
+        
+        *(buff++) = (header->payload_size >24);
+        *(buff++) = ((header->payload_size >> 16 & 0xFF));
+        *(buff++) = ((header->payload_size >>8) & 0xFF);
+        *(buff++) = (header->payload_size & 0xFF);  
     }
     else
     {
@@ -470,26 +483,52 @@ static void ezRpc_DeserializedData(struct ezRpc *rpc_inst, uint8_t rx_byte)
     {
         switch (rpc_inst->deserializer.state)
         {
-        case STATE_SOF:
+        case STATE_SYNC:
             EZTRACE("STATE_SOF");
-
-            if (rx_byte == SOF)
+            if(rpc_inst->deserializer.byte_count == 0)
             {
                 rpc_inst->deserializer.header_elem = ezQueue_ReserveElement(
                     &rpc_inst->rx_msg_queue,
                     (void*)&rpc_inst->deserializer.curr_hdr,
                     sizeof(struct ezRpcMsgHeader));
-
-                if (rpc_inst->deserializer.header_elem != NULL)
+                
+                if (rpc_inst->deserializer.header_elem == NULL)
                 {
-                    rpc_inst->deserializer.byte_count = 0;
-                    rpc_inst->deserializer.curr_hdr->uuid = 0;
-                    rpc_inst->deserializer.curr_hdr->payload_size = 0;
+                    break;
+                    EZERROR("Cannot parse get queue item");
+                }
 
+                rpc_inst->deserializer.curr_hdr->sync_bytes = (rx_byte << 8);
+                rpc_inst->deserializer.curr_hdr->uuid = 0;
+                rpc_inst->deserializer.curr_hdr->payload_size = 0;
+                rpc_inst->deserializer.byte_count++;
+                break;
+            }
+            else if ((rpc_inst->deserializer.byte_count == 1)
+                        && (rpc_inst->deserializer.curr_hdr != NULL))
+            {
+                rpc_inst->deserializer.curr_hdr->sync_bytes |= rx_byte;
+                if(rpc_inst->deserializer.curr_hdr->sync_bytes == SYNC_BYTES)
+                {
                     rpc_inst->deserializer.state = STATE_UUID;
-                    EZDEBUG("Got SOF");
+                    rpc_inst->deserializer.byte_count = 0;
+                    EZDEBUG("Got SYNC_BYTES");
+                    break;
                 }
             }
+            else
+            {
+                /* Do nothing */
+            }
+
+            /* Landing here means we have en error, clean up and exit,
+             * start state machine from begining
+             */
+            EZDEBUG("Parse SYNC_BYTES error ");
+            ezQueue_ReleaseReservedElement(
+                &rpc_inst->rx_msg_queue,
+                (void*)&rpc_inst->deserializer.curr_hdr);
+
             break;
 
         case STATE_UUID:
@@ -500,7 +539,7 @@ static void ezRpc_DeserializedData(struct ezRpc *rpc_inst, uint8_t rx_byte)
                     (rpc_inst->deserializer.curr_hdr->uuid << 8) | rx_byte;
 
                 rpc_inst->deserializer.byte_count++;
-                if (rpc_inst->deserializer.byte_count >= sizeof(uint32_t))
+                if (rpc_inst->deserializer.byte_count >= sizeof(uint16_t))
                 {
                     rpc_inst->deserializer.byte_count = 0;
                     rpc_inst->deserializer.state = STATE_MSG_TYPE;
@@ -508,29 +547,38 @@ static void ezRpc_DeserializedData(struct ezRpc *rpc_inst, uint8_t rx_byte)
             }
             else
             {
-                rpc_inst->deserializer.state = STATE_SOF;
+                rpc_inst->deserializer.state = STATE_SYNC;
             }
             
             break;
 
         case STATE_MSG_TYPE:
             EZTRACE("STATE_MSG_TYPE");
-            if (rx_byte == RPC_MSG_REQ || rx_byte == RPC_MSG_RESP)
+            if (rx_byte < RPC_MSG_NUM_OF_TYPE)
             {
                 rpc_inst->deserializer.curr_hdr->type = rx_byte;
-                rpc_inst->deserializer.state = STATE_TAG;
+                rpc_inst->deserializer.state = STATE_CMD_ID;
             }
             else
             {
                 EZDEBUG("wrong message type");
-                rpc_inst->deserializer.state = STATE_SOF;
+                rpc_inst->deserializer.state = STATE_SYNC;
+                ezQueue_ReleaseReservedElement(
+                    &rpc_inst->rx_msg_queue,
+                    (void*)&rpc_inst->deserializer.curr_hdr);
             }
             break;
 
-        case STATE_TAG:
-            EZTRACE("STATE_TAG");
-            rpc_inst->deserializer.curr_hdr->cmd_id = rx_byte;
-            rpc_inst->deserializer.state = STATE_ENCRYPT_FLAG;
+        case STATE_CMD_ID:
+            EZTRACE("STATE_CMD_ID");
+            rpc_inst->deserializer.curr_hdr->cmd_id = 
+                    (rpc_inst->deserializer.curr_hdr->cmd_id << 8) | rx_byte;
+            rpc_inst->deserializer.byte_count++;
+            if (rpc_inst->deserializer.byte_count >=  sizeof(uint16_t))
+            {
+                rpc_inst->deserializer.state = STATE_ENCRYPT_FLAG;
+                rpc_inst->deserializer.byte_count = 0;
+            }
             break;
 
         case STATE_ENCRYPT_FLAG:
@@ -574,7 +622,7 @@ static void ezRpc_DeserializedData(struct ezRpc *rpc_inst, uint8_t rx_byte)
                         &rpc_inst->rx_msg_queue,
                         rpc_inst->deserializer.header_elem);
 
-                    rpc_inst->deserializer.state = STATE_SOF;
+                    rpc_inst->deserializer.state = STATE_SYNC;
                     EZDEBUG("Queue operation error");
                 }
 
@@ -617,7 +665,7 @@ static void ezRpc_DeserializedData(struct ezRpc *rpc_inst, uint8_t rx_byte)
                             &rpc_inst->rx_msg_queue,
                             rpc_inst->deserializer.payload_elem);
 
-                        rpc_inst->deserializer.state = STATE_SOF;
+                        rpc_inst->deserializer.state = STATE_SYNC;
                         EZDEBUG("Queue operation error");
                     }
                 }
@@ -631,7 +679,7 @@ static void ezRpc_DeserializedData(struct ezRpc *rpc_inst, uint8_t rx_byte)
                         &rpc_inst->rx_msg_queue,
                         rpc_inst->deserializer.payload_elem);
 
-                    rpc_inst->deserializer.state = STATE_SOF;
+                    rpc_inst->deserializer.state = STATE_SYNC;
                 }
             }
             break;
@@ -681,13 +729,13 @@ static void ezRpc_DeserializedData(struct ezRpc *rpc_inst, uint8_t rx_byte)
                     &rpc_inst->rx_msg_queue,
                     rpc_inst->deserializer.crc_elem);
 
-                rpc_inst->deserializer.state = STATE_SOF;
+                rpc_inst->deserializer.state = STATE_SYNC;
 
             }
             break;
         
         default:
-            rpc_inst->deserializer.state = STATE_SOF;
+            rpc_inst->deserializer.state = STATE_SYNC;
             break;
         }
     }
@@ -714,7 +762,7 @@ static ezSTATUS ezRPC_CreateRpcMessage(struct ezRpc *rpc_inst,
                                        uint8_t *payload,
                                        uint32_t payload_size)
 {
-    uint32_t alloc_size = sizeof(struct ezRpcMsgHeader) + payload_size;
+    uint32_t alloc_size = HEADER_SIZE + payload_size;
     uint8_t *buff = NULL;
     ezSTATUS status = ezSUCCESS;
     struct ezRpcRequestRecord *record = NULL;
@@ -736,20 +784,26 @@ static ezSTATUS ezRPC_CreateRpcMessage(struct ezRpc *rpc_inst,
 
         EZDEBUG("[ total size = %d bytes]", alloc_size);
 
-        record = ezRpc_GetAvailRecord(rpc_inst);
-
-        if (record != NULL)
+        if(header->type == RPC_MSG_REQ)
         {
-            elem = ezQueue_ReserveElement(
-                &rpc_inst->tx_msg_queue,
-                (void**)&buff,
-                alloc_size);
-
-            if (elem != NULL)
+            record = ezRpc_GetAvailRecord(rpc_inst);
+            if (record != NULL)
             {
-                status = ezRpc_SerializeRpcHeader(buff,
-                    alloc_size,
-                    header);
+                elem = ezQueue_ReserveElement(
+                    &rpc_inst->tx_msg_queue,
+                    (void**)&buff,
+                    alloc_size);
+
+                if (elem != NULL)
+                {
+                    status = ezRpc_SerializeRpcHeader(buff,
+                        alloc_size,
+                        header);
+                }
+                else
+                {
+                    status = ezFAIL;
+                }
             }
             else
             {
@@ -758,13 +812,27 @@ static ezSTATUS ezRPC_CreateRpcMessage(struct ezRpc *rpc_inst,
         }
         else
         {
-            status = ezFAIL;
+            elem = ezQueue_ReserveElement(
+                    &rpc_inst->tx_msg_queue,
+                    (void**)&buff,
+                    alloc_size);
+
+                if (elem != NULL)
+                {
+                    status = ezRpc_SerializeRpcHeader(buff,
+                        alloc_size,
+                        header);
+                }
+                else
+                {
+                    status = ezFAIL;
+                }
         }
 
         if (status == ezSUCCESS && payload != NULL && payload_size > 0)
         {
-            buff += sizeof(struct ezRpcMsgHeader);
-            alloc_size -= sizeof(struct ezRpcMsgHeader);
+            buff += HEADER_SIZE;
+            alloc_size -= HEADER_SIZE;
 
             memcpy(buff, payload, payload_size);
 
@@ -778,7 +846,7 @@ static ezSTATUS ezRPC_CreateRpcMessage(struct ezRpc *rpc_inst,
 
             if (alloc_size >= rpc_inst->crc.size)
             {
-                buff += sizeof(struct ezRpcMsgHeader) + payload_size;
+                buff += HEADER_SIZE + payload_size;
 
                 rpc_inst->crc.Calculate(payload,
                     payload_size,
@@ -848,7 +916,7 @@ static ezSTATUS ezRPC_CreateRpcMessage(struct ezRpc *rpc_inst,
 *******************************************************************************/
 static void ezRpc_HandleReceivedMsg(struct ezRpc *rpc_inst)
 {
-    struct ezRpcMsgHeader *header = NULL;
+    struct ezRpcMsgHeader *header_ptr = NULL;
     uint32_t header_size = 0U;
     uint8_t *payload = NULL;
     uint32_t payload_size = 0U;
@@ -860,7 +928,7 @@ static void ezRpc_HandleReceivedMsg(struct ezRpc *rpc_inst)
         && ezQueue_GetNumOfElement(&rpc_inst->rx_msg_queue) > 0)
     {
         status = ezQueue_GetFront(&rpc_inst->rx_msg_queue,
-            (void *)&header,
+            (void *)&header_ptr,
             &header_size);
 
         if (status == ezSUCCESS)
@@ -869,14 +937,14 @@ static void ezRpc_HandleReceivedMsg(struct ezRpc *rpc_inst)
             ezRpc_PrintHeader(header);
 #endif /* DEBUG_LVL == LVL_TRACE */
 
-            if (header->type == RPC_MSG_RESP)
+            if (header_ptr->type == RPC_MSG_RESP)
             {
                 status = ezFAIL;
 
                 /* check in the records if we sent it */
                 for (uint32_t i = 0; i < CONFIG_NUM_OF_REQUEST; i++)
                 {
-                    if (rpc_inst->records[i].uuid == header->uuid)
+                    if (rpc_inst->records[i].uuid == header_ptr->uuid)
                     {
                         status = ezSUCCESS;
 
@@ -904,10 +972,13 @@ static void ezRpc_HandleReceivedMsg(struct ezRpc *rpc_inst)
         {
             for (uint32_t i = 0; i < rpc_inst->num_of_commands; i++)
             {
-                if (rpc_inst->commands[i].id == header->cmd_id)
+                if (rpc_inst->commands[i].id == header_ptr->cmd_id)
                 {
                     EZDEBUG("service supported [cmd_id = %d]",
                         rpc_inst->commands[i].id);
+
+                    struct ezRpcMsgHeader header;
+                    memcpy(&header, header_ptr, sizeof(struct ezRpcMsgHeader));
 
                     /* pop header to read payload */
                     (void)ezQueue_PopFront(&rpc_inst->rx_msg_queue);
@@ -924,10 +995,11 @@ static void ezRpc_HandleReceivedMsg(struct ezRpc *rpc_inst)
                     }
 #endif /* DEBUG_LVL == LVL_TRACE */
 
-                    if (status == ezSUCCESS &&
-                        rpc_inst->commands[i].command_handler != NULL)
+                    if ((status == ezSUCCESS)
+                        && (rpc_inst->commands[i].command_handler != NULL)
+                        && (header.payload_size == payload_size)) 
                     {
-                        rpc_inst->commands[i].command_handler(payload, payload_size);
+                        rpc_inst->commands[i].command_handler(&header, payload, payload_size);
                     }
 
                     service_found = true;
@@ -935,16 +1007,14 @@ static void ezRpc_HandleReceivedMsg(struct ezRpc *rpc_inst)
                 }
             }
 
-            if (service_found == false)
-            {
-                /* no service found for the tag, pop header */
-                (void)ezQueue_PopFront(&rpc_inst->rx_msg_queue);
-            }
-
             /* done pop payload */
             (void)ezQueue_PopFront(&rpc_inst->rx_msg_queue);
         }
     }
+
+
+
+
 }
 
 

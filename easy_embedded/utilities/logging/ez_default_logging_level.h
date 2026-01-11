@@ -80,7 +80,7 @@ extern "C" {
 #endif /* EZ_IPC_LOGGING_LEVEL */
 
 #ifndef EZ_RPC_LOGGING_LEVEL
-#define EZ_RPC_LOGGING_LEVEL            LVL_ERROR
+#define EZ_RPC_LOGGING_LEVEL            LVL_DEBUG
 #endif /* EZ_RPC_LOGGING_LEVEL */
 
 #ifndef EZ_STATE_MACHINE_LOGGING_LEVEL
