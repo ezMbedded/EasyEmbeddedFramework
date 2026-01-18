@@ -48,6 +48,7 @@ target_compile_definitions(ez_utilities_lib
 # Include directory -----------------------------------------------------------
 target_include_directories(ez_utilities_lib
     PUBLIC
+        ${CMAKE_CURRENT_LIST_DIR}/endian
         ${CMAKE_CURRENT_LIST_DIR}/assert
         ${CMAKE_CURRENT_LIST_DIR}/hexdump
         ${CMAKE_CURRENT_LIST_DIR}/linked_list

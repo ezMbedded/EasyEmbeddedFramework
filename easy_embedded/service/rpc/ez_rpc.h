@@ -57,31 +57,28 @@ typedef enum
 {
     RPC_MSG_REQ,            /**< request */
     RPC_MSG_RESP,           /**< response */
+    RPC_MSG_EVENT,          /**< event */
+    RPC_MSG_NUM_OF_TYPE    /**< number of message type */
 }RPC_MSG_TYPE;
+
+typedef enum{
+    RPC_ERROR_WRONG_SYNC_BYTES,     /**< wrong sync bytes */
+    RPC_ERROR_WRONG_MSG_TYPE,       /**< wrong message type */
+    RPC_ERROR_UNKNOWN_CMD,          /**< unknown command */
+    RPC_ERROR_CRC_FAILED,           /**< CRC check failed */
+    RPC_ERROR_QUEUE_RESERVE_FAILED, /**< queue reserve failed */
+    RPC_ERROR_MAX,                  /**< maximum error code */
+}RPC_ERROR;
 
 
 struct ezRpcMsgHeader
 {
-    uint8_t         tag;            /**< Tag of RPC, indicate type of service */
+    uint16_t        sync_bytes;     /**< sync bytes, must be 0xCAFE */
+    uint16_t        cmd_id;         /**< Command ID, linked to a function which will be executed */
     uint8_t         is_encrypted;   /**< encrpypted flag */
     RPC_MSG_TYPE    type;           /**< RPC message type */
-    uint32_t        uuid;           /**< UUID of the message */
+    uint16_t        uuid;           /**< UUID of the message */
     uint32_t        payload_size;   /**< Size of the payload */
-};
-
-/** @brief RPC message struct, omitting the SOF. SOF is set to 0x80
- *
- * |======================================================================================|
- * | 0   | 1...4 | 5        | 6   | 7        | 8...11       | 12 13 ... n | n+1 ... n+m   |
- * |=====|=======|==========|=====|==========|==============|=============|===============|
- * | SOF | UUID  | Msg type | TAG | Encrypt. | Payload size | Payload     | CRC1 ... CRCm |
- * |======================================================================================|
- */
-struct ezRpcMsg
-{
-    struct ezRpcMsgHeader   header;         /**< Message header */
-    uint8_t                 *payload;       /**< The pointer to the payload itself*/
-    uint8_t                 *crc;           /**< Pointer to the CRC value */
 };
 
 
@@ -90,15 +87,14 @@ struct ezRpcMsg
  */
 struct ezRpcRequestRecord
 {
-    uint32_t    uuid;           /**< UUID of the request */
+    uint16_t    uuid;           /**< UUID of the request */
     int         timestamp;      /**< Time stamp when the request is created */
-    char        *name;          /**< Name of the request */
     bool        is_available;   /**< Availalbe flag */
 };
 
 typedef uint32_t(*RpcTransmit)  (uint8_t *tx_data, uint32_t tx_size);
 typedef uint32_t(*RpcReceive)   (uint8_t *rx_data, uint32_t rx_size);
-typedef void(*ServiceHandler)   (void *payload, uint32_t payload_size_byte);
+typedef void(*CommandHandler)   (struct ezRpcMsgHeader *header, void *payload, uint32_t payload_size_byte);
 typedef bool(*CrcVerify)        (uint8_t *input,
                                  uint32_t input_size,
                                  uint8_t *crc,
@@ -108,28 +104,39 @@ typedef void(*CrcCalculate)     (uint8_t *input,
                                  uint32_t input_size,
                                  uint8_t *crc_output,
                                  uint32_t crc_output_size);
+typedef void(*RpcErrorCallback) (RPC_ERROR error_code, void *context);
+
+
+/** @brief Communication interface
+ */
+struct ezRpcCommInterface
+{
+    RpcTransmit   transmit; /**< Function to transmit data */
+    RpcReceive    receive;  /**< Function to receive data */
+};
 
 
 /** @brief Rpc service structure
  *
  */
-struct ezRpcService
+struct ezRpcCommandEntry
 {
-    uint8_t          tag;           /**< Stores the command code*/
-    ServiceHandler   pfnService;    /**< pointer to function handling that command */
+    uint16_t         id;                /**< Stores the command code*/
+    CommandHandler   command_handler;   /**< pointer to function handling that command */
 };
 
 
 /** @brief Data structure holding deserializer related data
  *
  */
-struct ezRpcDeserializer
+struct ezRpcUnmarshal
 {
     uint8_t state;                      /**< Store the state of the binary parser statemachine */
+    uint16_t sync_bytes;               /**< temporary storage for sync bytes */
     struct ezRpcMsgHeader *curr_hdr;    /**< pointer to the current header that the parser is working*/
     uint32_t byte_count;                /**< index for deserialize rpc message */
     uint8_t *payload;                   /**< */
-    uint8_t *crc;                       /**< */
+    uint8_t *crc_val;                   /**< */
     ezReservedElement payload_elem;     /**< */
     ezReservedElement crc_elem;         /**< */
     ezReservedElement header_elem;      /**< */
@@ -148,11 +155,11 @@ struct ezRpcEncrypt
 /** @brief Data structure holding crc related data
  *
  */
-struct ezRpcCrc
+struct ezRpcCrcHandler
 {
-    CrcVerify           IsCorrect;       /**< Pointer to the CRC verification function */
-    CrcCalculate        Calculate;       /**< Pointer to the CRC calculation function */
-    uint32_t            size;               /**< Size of the crc value, in bytes*/
+    CrcVerify           verify;     /**< Pointer to the CRC verification function */
+    CrcCalculate        calculate;  /**< Pointer to the CRC calculation function */
+    uint32_t            size;       /**< Size of the crc value, in bytes*/
 };
 
 
@@ -161,17 +168,17 @@ struct ezRpcCrc
  */
 struct ezRpc
 {
-    uint32_t            service_table_size; /**< Size of the command table, how many commands are there in total */
-    struct ezRpcService *service_table;     /**< Poiter to the command table */
-    struct ezRpcDeserializer deserializer;  /**< Hold deserializer related data */
-    struct ezRpcCrc     crc;                /**< Hold crc related data */
-    struct ezRpcEncrypt encrypt;            /**< Hold encryption related data */
-    ezQueue             tx_msg_queue;       /**< Queue to store request */
-    ezQueue             rx_msg_queue;       /**< Queue to store request */
-    uint32_t            next_uuid;          /**< Value of next uuid, assign this value to rpc message */
-    RpcTransmit         RpcTransmit;        /**< Function to transmit RPC message */
-    RpcReceive          RpcReceive;         /**< Function to receive RPC message */
-    struct ezRpcRequestRecord records[CONFIG_NUM_OF_REQUEST]; /* num of request*/
+    uint16_t            num_of_commands;        /**< Size of the command table, how many commands are there in total */
+    struct ezRpcCommandEntry *commands;         /**< Poiter to the command table */
+    struct ezRpcUnmarshal unmarshal;            /**< Hold unmarshaler related data */
+    struct ezRpcCrcHandler *crc_handler;        /**< Hold crc related data */
+    struct ezRpcEncrypt encrypt;                /**< Hold encryption related data */
+    ezQueue             tx_msg_queue;           /**< Queue to store request */
+    ezQueue             rx_msg_queue;           /**< Queue to store request */
+    uint16_t            next_uuid;              /**< Value of next uuid, assign this value to rpc message */
+    struct ezRpcCommInterface *comm_interface;  /**< Communication interface */
+    RpcErrorCallback    error_callback;         /**< Error callback function, optional */
+    struct ezRpcRequestRecord records[CONFIG_NUM_OF_REQUEST]; /* Keep track of records */
 };
 
 
@@ -182,29 +189,6 @@ struct ezRpc
 
 /*****************************************************************************
 * Function Prototypes
-*****************************************************************************/
-
-/*****************************************************************************
-* Function: sum
-*//** 
-* @brief one line description
-*
-* @details Detail description
-*
-* @param    a: (IN)pointer to the ring buffer
-* @param    b: (IN)size of the ring buffer
-* @return   None
-*
-* @pre None
-* @post None
-*
-* \b Example
-* @code
-* sum(a, b);
-* @endcode
-*
-* @see sum
-*
 *****************************************************************************/
 
 /*****************************************************************************
@@ -224,19 +208,12 @@ struct ezRpc
 * @pre None
 * @post None
 *
-* \b Example
-* @code
-* TBD
-* @endcode
-*
-* @see TBD
-*
 *****************************************************************************/
 ezSTATUS ezRpc_Initialization(struct ezRpc *rpc_inst,
                                 uint8_t *buff,
                                 uint32_t buff_size,
-                                struct ezRpcService *service_table,
-                                uint32_t service_table_size);
+                                struct ezRpcCommandEntry *commands,
+                                uint32_t num_of_commands);
 
 
 /*****************************************************************************
@@ -252,26 +229,16 @@ ezSTATUS ezRpc_Initialization(struct ezRpc *rpc_inst,
 * @param[in]    cal_func: function to calculate crc value
 * @return   ezSUCCESS or ezFAIL
 *
-* @pre None
+* @pre ezRpc_Initialization() has been called
 * @post None
 *
-* \b Example
-* @code
-* TBD
-* @endcode
-*
-* @see TBD
-*
 *****************************************************************************/
-ezSTATUS ezRpc_SetCrcFunctions(struct ezRpc *rpc_inst,
-                                uint32_t crc_size,
-                                CrcVerify verify_func,
-                                CrcCalculate cal_func);
+ezSTATUS ezRpc_SetCrcHandler(
+    struct ezRpc *rpc_inst,
+    struct ezRpcCrcHandler *handler);
 
 
-/*****************************************************************************
-* Function: ezRpc_SetTxRxFunctions
-*//** 
+/*
 * @brief This function set the interface for transmitting and receiving data
 *
 * @details
@@ -281,20 +248,26 @@ ezSTATUS ezRpc_SetCrcFunctions(struct ezRpc *rpc_inst,
 * @param[in]    rx_function: function to receive data
 * @return   ezSUCCESS or ezFAIL
 *
-* @pre None
+* @pre ezRpc_Initialization() has been called
 * @post None
+*/
+ezSTATUS ezRpc_SetCommFunctions(struct ezRpc *rpc_inst,
+                                struct ezRpcCommInterface *comm_interface);
+
+/*
+* @brief This function set a callback function to report error events
 *
-* \b Example
-* @code
-* TBD
-* @endcode
+* @details
 *
-* @see TBD
+* @param[in]    *rpc_inst: pointer to the rpc instance
+* @param[in]    error_callback: function to transmit data
+* @return       None 
 *
-*****************************************************************************/
-ezSTATUS ezRpc_SetTxRxFunctions(struct ezRpc *rpc_inst,
-                                RpcTransmit tx_function,
-                                RpcReceive rx_function);
+* @pre ezRpc_Initialization() has been called
+* @post None
+*/
+void ezRpc_SetEventCallback(struct ezRpc *rpc_inst,
+                                RpcErrorCallback error_callback);
 
 
 /*****************************************************************************
@@ -310,19 +283,12 @@ ezSTATUS ezRpc_SetTxRxFunctions(struct ezRpc *rpc_inst,
 * @param[in]    payload_size: siez of the payload
 * @return       ezSUCCESS or ezFAIL
 *
-* @pre None
+* @pre ezRpc_Initialization() and ezRpc_SetCommFunctions() has been called
 * @post None
-*
-* \b Example
-* @code
-* TBD
-* @endcode
-*
-* @see TBD
 *
 *****************************************************************************/
 ezSTATUS ezRPC_CreateRpcRequest(struct ezRpc *rpc_inst,
-    uint8_t tag,
+    uint16_t cmd_id,
     uint8_t *payload,
     uint32_t payload_size);
 
@@ -341,19 +307,12 @@ ezSTATUS ezRPC_CreateRpcRequest(struct ezRpc *rpc_inst,
 * @param[in]    payload_size: siez of the payload
 * @return   ezSUCCESS or ezFAIL
 *
-* @pre None
+* @pre ezRpc_Initialization() and ezRpc_SetCommFunctions() has been called
 * @post None
-*
-* \b Example
-* @code
-* TBD
-* @endcode
-*
-* @see TBD
 *
 *****************************************************************************/
 ezSTATUS ezRPC_CreateRpcResponse(struct ezRpc *rpc_inst,
-    uint8_t tag,
+    uint16_t cmd_id,
     uint32_t uuid,
     uint8_t *payload,
     uint32_t payload_size);
@@ -370,15 +329,8 @@ ezSTATUS ezRPC_CreateRpcResponse(struct ezRpc *rpc_inst,
 * @param[in]    *rpc_inst: pointer to the rpc instance
 * @return       None
 *
-* @pre None
+* @pre ezRpc_Initialization() and ezRpc_SetCommFunctions() has been called
 * @post None
-*
-* \b Example
-* @code
-* TBD
-* @endcode
-*
-* @see TBD
 *
 *****************************************************************************/
 void ezRPC_Run(struct ezRpc *rpc_inst);
@@ -398,13 +350,6 @@ void ezRPC_Run(struct ezRpc *rpc_inst);
 * @pre None
 * @post None
 *
-* \b Example
-* @code
-* TBD
-* @endcode
-*
-* @see TBD
-*
 *****************************************************************************/
 uint32_t ezRPC_NumOfTxPendingMsg(struct ezRpc *rpc_inst);
 
@@ -423,13 +368,6 @@ uint32_t ezRPC_NumOfTxPendingMsg(struct ezRpc *rpc_inst);
 * @pre None
 * @post None
 *
-* \b Example
-* @code
-* TBD
-* @endcode
-*
-* @see TBD
-*
 *****************************************************************************/
 uint32_t ezRPC_NumOfPendingRecords(struct ezRpc *rpc_inst);
 
@@ -447,15 +385,24 @@ uint32_t ezRPC_NumOfPendingRecords(struct ezRpc *rpc_inst);
 * @pre None
 * @post None
 *
-* \b Example
-* @code
-* TBD
-* @endcode
-*
-* @see TBD
-*
 *****************************************************************************/
-bool ezRpc_IsRpcInstanceReady(struct ezRpc *rpc_inst);
+static inline bool ezRpc_IsRpcInstanceReady(struct ezRpc *rpc_inst)
+{
+    bool is_ready = false;
+
+    if (rpc_inst != NULL)
+    {
+        return ((rpc_inst->commands != NULL)
+                    && (rpc_inst->num_of_commands > 0)
+                    && (ezQueue_IsQueueReady(&rpc_inst->rx_msg_queue))
+                    && (ezQueue_IsQueueReady(&rpc_inst->tx_msg_queue))
+                    && (rpc_inst->comm_interface != NULL)
+                    && (rpc_inst->comm_interface->receive != NULL)
+                    && (rpc_inst->comm_interface->transmit != NULL));
+    }
+
+    return false;
+}
 
 #ifdef __cplusplus
 }

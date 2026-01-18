@@ -6,6 +6,8 @@ project(EzEmbeddedFramework
     DESCRIPTION "Easy Embedded Software Framework"
 )
 
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 #Only build test, targets, and extern when being build as a project
 if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
     include(CTest)

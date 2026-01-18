@@ -62,4 +62,8 @@ if(ENABLE_EZ_GPIO)
     add_subdirectory(hal/gpio)
 endif()
 
+if(ENABLE_EZ_RPC)
+    add_subdirectory(service/rpc)
+endif()
+
 # End of file
