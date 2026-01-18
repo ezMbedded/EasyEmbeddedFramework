@@ -36,7 +36,7 @@
 * Module Preprocessor Macros
 *******************************************************************************/
 #define BUFF_SIZE       1024
-#define SUM_FUNC        0x00
+#define SUM_FUNC        0x01
 DEFINE_FFF_GLOBALS;
 
 
@@ -71,6 +71,7 @@ static size_t server_txrx_buff_idx = 0;
 static bool server_func_called = false;
 static bool client_func_called = false;
 static uint32_t sum_val = 0;
+RPC_ERROR last_server_error = RPC_ERROR_MAX;
 
 void ClientSum(struct ezRpcMsgHeader *header, void *payload, uint32_t payload_size_byte);
 void ServerSum(struct ezRpcMsgHeader *header, void *payload, uint32_t payload_size_byte);
@@ -82,6 +83,20 @@ static uint32_t ClientRx(uint8_t *rx_data, uint32_t tx_size);
 static uint32_t ServerTx(uint8_t *tx_data, uint32_t tx_size);
 static uint32_t ServerRx(uint8_t *rx_data, uint32_t tx_size);
 
+void ServerErrorCallback(RPC_ERROR error_code, void *context);
+
+bool VerifyCrC(
+    uint8_t *input,
+    uint32_t input_size,
+    uint8_t *crc,
+    uint32_t crc_size);
+
+void CalculateCrC(
+    uint8_t *input, 
+    uint32_t input_size,
+    uint8_t *crc_output,
+    uint32_t crc_output_size);
+    
 ezRpcCommandEntry client_cmds[1] = {
     {
         .id = SUM_FUNC,
@@ -95,6 +110,22 @@ ezRpcCommandEntry server_cmds[1] = {
         .id = SUM_FUNC,
         .command_handler = ServerSum,
     }
+};
+
+ezRpcCrcHandler crc_config = {
+    .verify = VerifyCrC,
+    .calculate = CalculateCrC,
+    .size = 2,
+};
+
+struct ezRpcCommInterface client_comm_interface = {
+    .transmit = ClientTx,
+    .receive = ClientRx,
+};
+
+struct ezRpcCommInterface server_comm_interface = {
+    .transmit = ServerTx,
+    .receive = ServerRx,
 };
 
 /******************************************************************************
@@ -127,7 +158,7 @@ TEST_CASE_METHOD(RpcTestFixture, "Test serialize request", "[service][rpc]")
     CHECK(server_txrx_buff[4] == RPC_MSG_REQ);
     CHECK(server_txrx_buff[5] == 0x00);
     CHECK(server_txrx_buff[6] == 0x00);
-    CHECK(server_txrx_buff[7] == 0x00);
+    CHECK(server_txrx_buff[7] == 0x01);
     CHECK(server_txrx_buff[8] == 0x00);
     CHECK(server_txrx_buff[9] == 0x00);
     CHECK(server_txrx_buff[10] == 0x00);
@@ -159,6 +190,78 @@ TEST_CASE_METHOD(RpcTestFixture, "Test parse request", "[service][rpc]")
 }
 
 
+TEST_CASE_METHOD(RpcTestFixture, "Test unsupported command", "[service][rpc]")
+{
+    uint32_t args[2] = {2, 3};
+    args[0] = EZHTON32(args[0]);
+    args[1] = EZHTON32(args[1]);
+    ezRPC_CreateRpcRequest(&client, SUM_FUNC + 1, (uint8_t*)args, sizeof(args));
+    ezRPC_Run(&client);
+
+    for(uint32_t i = 0; i < 0xFF; i++)
+    {
+        ezRPC_Run(&server);
+    }
+    CHECK(server_func_called == false);
+
+
+    for(uint32_t i = 0; i < 0xFF; i++)
+    {
+        ezRPC_Run(&client);
+    }
+    CHECK(client_func_called == false);
+}
+
+TEST_CASE_METHOD(RpcTestFixture, "Test parse request with CRC", "[service][rpc]")
+{
+    uint32_t args[2] = {2, 3};
+    args[0] = EZHTON32(args[0]);
+    args[1] = EZHTON32(args[1]);
+    ezRpc_SetCrcHandler(&client, &crc_config);
+    ezRpc_SetCrcHandler(&server, &crc_config);
+    ezRPC_CreateRpcRequest(&client, SUM_FUNC, (uint8_t*)args, sizeof(args));
+    ezRPC_Run(&client);
+
+    for(uint32_t i = 0; i < 0xFF; i++)
+    {
+        ezRPC_Run(&server);
+    }
+    CHECK(server_func_called == true);
+
+
+    for(uint32_t i = 0; i < 0xFF; i++)
+    {
+        ezRPC_Run(&client);
+    }
+    CHECK(client_func_called == true);
+    CHECK(sum_val == 5);
+}
+
+TEST_CASE_METHOD(RpcTestFixture, "Test parse request with wrong crc", "[service][rpc]")
+{
+    uint32_t args[2] = {2, 3};
+    args[0] = EZHTON32(args[0]);
+    args[1] = EZHTON32(args[1]);
+    ezRpc_SetCrcHandler(&client, &crc_config);
+    ezRpc_SetCrcHandler(&server, &crc_config);
+    ezRPC_CreateRpcRequest(&client, SUM_FUNC, (uint8_t*)args, sizeof(args));
+    
+    ezRPC_Run(&client);
+    server_txrx_buff[12] = 0xFF; /* corrupt the data */
+
+    for(uint32_t i = 0; i < 0xFF; i++)
+    {
+        ezRPC_Run(&server);
+    }
+    CHECK(server_func_called == false);
+
+    for(uint32_t i = 0; i < 0xFF; i++)
+    {
+        ezRPC_Run(&client);
+    }
+    CHECK(client_func_called == false);
+}
+
 /******************************************************************************
 * Internal functions
 *******************************************************************************/
@@ -167,13 +270,16 @@ RpcTestFixture::RpcTestFixture()
     client_txrx_buff_size = 0;
     server_txrx_buff_size = 0;
     server_txrx_buff_idx = 0;
+    client_txrx_buff_idx = 0;
     server_func_called = false;
     client_func_called = false;
     sum_val = 0;
+    memset(client_txrx_buff, 0, BUFF_SIZE);
+    memset(server_txrx_buff, 0, BUFF_SIZE);
     ezRpc_Initialization(&client, client_buff, BUFF_SIZE, client_cmds, 1);
     ezRpc_Initialization(&server, server_buff, BUFF_SIZE, server_cmds, 1);
-    ezRpc_SetTxRxFunctions(&client, ClientTx, ClientRx);
-    ezRpc_SetTxRxFunctions(&server, ServerTx, ServerRx);
+    ezRpc_SetCommFunctions(&client, &client_comm_interface);
+    ezRpc_SetCommFunctions(&server, &server_comm_interface);
 }
 
 void ClientSum(struct ezRpcMsgHeader *header, void *payload, uint32_t payload_size_byte)
@@ -241,6 +347,59 @@ static uint32_t ServerRx(uint8_t *rx_data, uint32_t tx_size)
 static uint32_t Sum(uint32_t a, uint32_t b)
 {
     return a+b;
+}
+
+
+bool VerifyCrC(
+    uint8_t *input,
+    uint32_t input_size,
+    uint8_t *crc,
+    uint32_t crc_size)
+{
+    uint32_t crc_val = 0;
+
+    if(input_size == 0 || crc_size == 0 || input == NULL || crc == NULL)
+    {
+        return false;
+    }
+
+    for(uint32_t i = 0; i < input_size; i++)
+    {
+        crc_val += input[i];
+    }
+
+    if(crc[0] == (uint8_t)(crc_val & 0xFF)
+        && crc[1] == (uint8_t)((crc_val >> 8) & 0xFF))
+    {
+        return true;
+    }
+    return false;
+}
+
+void CalculateCrC(
+    uint8_t *input, 
+    uint32_t input_size,
+    uint8_t *crc_output,
+    uint32_t crc_output_size)
+{
+    uint32_t crc_val = 0;
+    if(input_size == 0 || crc_output_size == 0 || input == NULL || crc_output == NULL)
+    {
+        return;
+    }
+
+    for(uint32_t i = 0; i < input_size; i++)
+    {
+        crc_val += input[i];
+    }
+
+    crc_output[0] = (uint8_t)(crc_val & 0xFF);
+    crc_output[1] = (uint8_t)((crc_val >> 8) & 0xFF);
+}
+
+void ServerErrorCallback(RPC_ERROR error_code, void *context)
+{
+    last_server_error = error_code;
 }
 
 /* End of file */
