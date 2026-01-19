@@ -15,6 +15,7 @@ release = '0.0.99'
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
 extensions = [
+    'sphinxcontrib.mermaid'
 ]
 
 templates_path = ['_templates']
