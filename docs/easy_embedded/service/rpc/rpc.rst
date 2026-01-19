@@ -69,24 +69,26 @@ Data Flow
 
 Receive Path
 ------------
-.. code-block:: text
+.. mermaid::
 
-    [Physical Link] -> [ezRpcCommInterface.receive] -> [Unmarshaler State Machine]
-                                                                |
-                                                                v
-                                                       [Valid Check (CRC/Header)]
-                                                                |
-                                                                v
-    [Command Handler] <------ [Dispatcher] <---------- [rx_msg_queue]
+  flowchart TD
+     A[Physical Link] --> B[ezRpcCommInterface.receive]
+     B --> C[Unmarshaler State Machine]
+     C --> D[Valid Check<br/>CRC/Header]
+     D --> E[rx_msg_queue]
+     E --> F[Dispatcher]
+     F --> G[Command Handler]
 
 Transmit Path
 -------------
-.. code-block:: text
+.. mermaid::
 
-    [User App] -> [ezRPC_CreateRpcRequest/Response] -> [Marshaler]
-                                                            |
-                                                            v
-    [Physical Link] <---- [ezRpcCommInterface.transmit] <-- [tx_msg_queue]
+  flowchart TD
+     A[User App] --> B[ezRPC_CreateRpcRequest/Response]
+     B --> C[Marshaler]
+     C --> D[tx_msg_queue]
+     D --> E[ezRpcCommInterface.transmit]
+     E --> F[Physical Link]
 
 Component Data Types
 ============================
