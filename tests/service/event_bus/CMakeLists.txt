@@ -15,7 +15,7 @@ message(STATUS "**********************************************************")
 # Source files ---------------------------------------------------------------
 target_sources(ez_event_notifier_test
     PRIVATE
-        unittest_ez_event_notifier.c
+        unittest_ez_event_bus.c
 )
 
 

@@ -5,7 +5,7 @@
 # Description: PLEASE ADD TEXT HERE
 # ----------------------------------------------------------------------------
 
-add_library(ez_service_lib STATIC)
+add_library(ez_service_lib INTERFACE)
 
 message(STATUS "**********************************************************")
 message(STATUS "* Generating ez_service_lib library build files")
@@ -16,8 +16,8 @@ set(FRAMEWORK_ROOT_DIR ${CMAKE_SOURCE_DIR}/easy_embedded)
 
 
 # Inlcude subfolders-----------------------------------------------------------
-if(ENABLE_EZ_EVENT_NOTIFIER)
-    add_subdirectory(event_notifier)
+if(ENABLE_EZ_EVENT_BUS)
+    add_subdirectory(event_bus)
 endif()
 
 if(ENABLE_EZ_TASK_WORKER)
@@ -46,26 +46,21 @@ endif()
 
 
 # Source files ---------------------------------------------------------------
-target_sources(ez_service_lib
-    PRIVATE
-        ez_service.c
-)
+
 
 
 # Definitions ----------------------------------------------------------------
 target_compile_definitions(ez_service_lib
-    PUBLIC
+    INTERFACE
         EZ_SERVICE=$<BOOL:${ENABLE_EZ_SERVICE}>
         DATA_MODEL=$<BOOL:${ENABLE_DATA_MODEL}>
-    PRIVATE
-        EZ_BUILD_WITH_CMAKE=$<BOOL:${BUILD_WITH_CMAKE}>
         EZ_BUILD_WITH_CMAKE=$<BOOL:${BUILD_WITH_CMAKE}>
 )
 
 
 # Include directory -----------------------------------------------------------
 target_include_directories(ez_service_lib
-    PUBLIC
+    INTERFACE
         ${CMAKE_CURRENT_LIST_DIR}
     PRIVATE
         # Please add private folders here
@@ -76,19 +71,15 @@ target_include_directories(ez_service_lib
 
 # Link libraries -------------------------------------------------------------
 target_link_libraries(ez_service_lib
-    PUBLIC
-        $<$<BOOL:${ENABLE_EZ_EVENT_NOTIFIER}>:ez_event_notifier_lib>
+    INTERFACE
+        $<$<BOOL:${ENABLE_EZ_EVENT_BUS}>:ez_event_bus_lib>
         $<$<BOOL:${ENABLE_EZ_TASK_WORKER}>:ez_task_worker_lib>
         $<$<BOOL:${ENABLE_EZ_STATE_MACHINE}>:ez_state_machine_lib>
         $<$<BOOL:${ENABLE_DATA_MODEL}>:ez_data_model_lib>
         $<$<BOOL:${ENABLE_EZ_CLI}>:ez_cli_lib>
         $<$<BOOL:${ENABLE_EZ_RPC}>:ez_rpc_lib>
         $<$<BOOL:${ENABLE_EZ_IPC}>:ez_ipc_lib>
-        ez_utilities_lib
-    PRIVATE
-        # Please add private libraries
-    INTERFACE
-        # Please add interface libraries
+         ez_utilities_lib
 )
 
 # End of file

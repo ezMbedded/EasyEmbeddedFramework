@@ -23,9 +23,9 @@
 /*****************************************************************************
 * Includes
 *****************************************************************************/
-#include "ez_event_notifier.h"
+#include "ez_event_bus.h"
 
-#if(EZ_EVENT_NOTIFIER == 1U)
+#if(EZ_EVENT_BUS == 1U)
 #include "ez_default_logging_level.h"
 
 #define DEBUG_LVL   EZ_EVENT_LOGGING_LEVEL      /**< logging level */
@@ -61,14 +61,14 @@
 * Public functions
 *****************************************************************************/
 
-ezSTATUS ezEventNotifier_CreateSubject(ezSubject *subject)
+ezSTATUS ezEventBus_CreateBus(ezEventBus_t *event_bus)
 {
     EZDEBUG("evntNoti_CreateSubject()");
     ezSTATUS status = ezFAIL;
 
-    if (subject)
+    if (event_bus)
     {
-        ezLinkedList_InitNode(subject);
+        ezLinkedList_InitNode(event_bus);
         status = ezSUCCESS;
         EZDEBUG("  Create OK");
     }
@@ -81,24 +81,23 @@ ezSTATUS ezEventNotifier_CreateSubject(ezSubject *subject)
 }
 
 
-void ezEventNotifier_ResetSubject(ezSubject * subject)
+void ezEventBus_ResetBus(ezEventBus_t * event_bus)
 {
-    if (subject)
+    if (event_bus)
     {
-        ezLinkedList_InitNode(subject);
+        ezLinkedList_InitNode(event_bus);
     }
 }
 
 
-ezSTATUS ezEventNotifier_CreateObserver(ezObserver *observer,
-                                        EVENT_CALLBACK callback)
+ezSTATUS ezEventBus_CreateListener(ezEventListener_t *listener, EVENT_CALLBACK callback)
 {
-    EZDEBUG("evntNoti_CreateObserver()");
+    EZDEBUG("evntNoti_CreateListener()");
     ezSTATUS status = ezFAIL;
 
-    if (observer != NULL && callback != NULL)
+    if (listener != NULL && callback != NULL)
     {
-        observer->callback = callback;
+        listener->callback = callback;
         status = ezSUCCESS;
         EZDEBUG("  Create Observer OK");
     }
@@ -111,19 +110,18 @@ ezSTATUS ezEventNotifier_CreateObserver(ezObserver *observer,
 }
 
 
-ezSTATUS ezEventNotifier_SubscribeToSubject(ezSubject *subject,
-                                            ezObserver *observer)
+ezSTATUS ezEventBus_Listen(ezEventBus_t *event_bus, ezEventListener_t *listener)
 {
     EZDEBUG("evntNoti_SubscribeEvent()");
     ezSTATUS status = ezFAIL;
 
-    if (subject != NULL
-        && observer != NULL)
+    if (event_bus != NULL
+        && listener != NULL)
     {
-        EZ_LINKEDLIST_ADD_HEAD(subject, &observer->node);
+        EZ_LINKEDLIST_ADD_HEAD(event_bus, &listener->node);
 
         EZDEBUG("  subscribing success");
-        EZDEBUG("  num of subscriber [num = %d]", ezLinkedList_GetListSize(subject));
+        EZDEBUG("  num of subscriber [num = %d]", ezLinkedList_GetListSize(event_bus));
         status = ezSUCCESS;
     }
     else
@@ -135,20 +133,19 @@ ezSTATUS ezEventNotifier_SubscribeToSubject(ezSubject *subject,
 }
 
 
-ezSTATUS ezEventNotifier_UnsubscribeFromSubject(ezSubject *subject,
-                                                ezObserver *observer)
+ezSTATUS ezEventBus_Unlisten(ezEventBus_t *event_bus, ezEventListener_t *listener)
 {
     EZDEBUG("evntNoti_UnsubscribeEvent()");
     ezSTATUS status = ezFAIL;
 
-    if (subject != NULL &&
-        observer != NULL &&
-        ezLinkedList_IsNodeInList(subject, &observer->node))
+    if (event_bus != NULL &&
+        listener != NULL &&
+        ezLinkedList_IsNodeInList(event_bus, &listener->node))
     {
-        EZ_LINKEDLIST_UNLINK_NODE(&observer->node);
+        EZ_LINKEDLIST_UNLINK_NODE(&listener->node);
 
         EZDEBUG("  unsubscribing success");
-        EZDEBUG("  num of subscriber [num = %d]", ezLinkedList_GetListSize(subject));
+        EZDEBUG("  num of subscriber [num = %d]", ezLinkedList_GetListSize(event_bus));
         status = ezSUCCESS;
     }
     else
@@ -160,15 +157,14 @@ ezSTATUS ezEventNotifier_UnsubscribeFromSubject(ezSubject *subject,
 }
 
 
-uint16_t ezEventNotifier_GetNumOfObservers(ezSubject *subject)
+uint16_t ezEventBus_GetNumOfListeners(ezEventBus_t *event_bus)
 {
     uint16_t num_of_observers = 0;
 
-    EZDEBUG("ezEventNotifier_GetNumOfObservers()");
-
-    if (subject)
+    EZDEBUG("ezEventBus_GetNumOfListeners()");
+    if (event_bus)
     {
-        num_of_observers = ezLinkedList_GetListSize(subject);
+        num_of_observers = ezLinkedList_GetListSize(event_bus);
         EZDEBUG("  num of observer = %d", num_of_observers);
     }
     else
@@ -179,25 +175,26 @@ uint16_t ezEventNotifier_GetNumOfObservers(ezSubject *subject)
 }
 
 
-void ezEventNotifier_NotifyEvent(ezSubject *subject,
-                                 uint32_t event_code,
-                                 void *param1,
-                                 void *param2)
+void ezEventBus_SendEvent(
+    ezEventBus_t *event_bus,
+    uint32_t event_code,
+    void *param1,
+    void *param2)
 {
     EZDEBUG("evntNoti_NotifyEnvent()");
 
     struct Node *iterate = NULL;
-    struct ezObserver *sub = NULL;
+    ezEventListener_t *listener = NULL;
 
-    if (subject != NULL)
+    if (event_bus != NULL)
     {
-        EZ_LINKEDLIST_FOR_EACH(iterate, subject)
+        EZ_LINKEDLIST_FOR_EACH(iterate, event_bus)
         {
-            sub = EZ_LINKEDLIST_GET_PARENT_OF(iterate, node, struct ezObserver);
-            if (sub->callback)
+            listener = EZ_LINKEDLIST_GET_PARENT_OF(iterate, node, ezEventListener_t);
+            if (listener->callback)
             {
                 EZDEBUG("  notify observer");
-                sub->callback(event_code, param1, param2);
+                listener->callback(event_code, param1, param2);
             }
         }
     }

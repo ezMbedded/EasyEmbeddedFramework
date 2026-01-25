@@ -29,7 +29,6 @@
 #define MOD_NAME    "ez_easy_embedded"       /**< module name */
 #include "ez_logging.h"
 #include "ez_middlewares.h"
-#include "ez_service.h"
 
 
 /*****************************************************************************
@@ -63,7 +62,6 @@ void ezEasyEmbedded_Initialize(void)
 {
     ezEasyEmbedded_PrintHeader();
     ezMidware_Initialize();
-    ezService_Intialize();
 }
 
 

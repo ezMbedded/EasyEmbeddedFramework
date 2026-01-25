@@ -18,8 +18,8 @@ if(ENABLE_DATA_MODEL)
     add_subdirectory(app/data_model)
 endif()
 
-if(ENABLE_EZ_EVENT_NOTIFIER)
-    add_subdirectory(service/event_notifier)
+if(ENABLE_EZ_EVENT_BUS)
+    add_subdirectory(service/event_bus)
 endif()
 
 if(ENABLE_EZ_TASK_WORKER AND NOT ENABLE_THREADX AND NOT ENABLE_FREERTOS)

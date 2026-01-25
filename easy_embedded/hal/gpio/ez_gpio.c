@@ -72,7 +72,7 @@ EZ_DRV_STATUS ezGpio_SystemRegisterHwDriver(struct ezGpioDriver *hw_gpio_driver)
     {
         hw_gpio_driver->initialized = false;
         EZ_LINKEDLIST_ADD_TAIL(&hw_driver_list, &hw_gpio_driver->ll_node);
-        if(ezEventNotifier_CreateSubject(&hw_gpio_driver->gpio_event) == ezSUCCESS)
+        if(ezEventBus_CreateBus(&hw_gpio_driver->gpio_event) == ezSUCCESS)
         {
             EZDEBUG("Register OK");
             return STATUS_OK;
@@ -124,13 +124,13 @@ EZ_DRV_STATUS ezGpio_RegisterInstance(ezGpioDrvInstance_t *inst,
             inst->drv_instance.driver = (void*)gpio_drv;
             inst->drv_instance.calback = NULL;
 
-            if(ezEventNotifier_CreateObserver(&inst->event_subcriber, callback) != ezSUCCESS)
+            if(ezEventBus_CreateListener(&inst->event_subcriber, callback) != ezSUCCESS)
             {
                 EZERROR("Cannot create observer");
                 return STATUS_ERR_GENERIC;
             }
 
-            if(ezEventNotifier_SubscribeToSubject(&gpio_drv->gpio_event, &inst->event_subcriber) != ezSUCCESS)
+            if(ezEventBus_Listen(&gpio_drv->gpio_event, &inst->event_subcriber) != ezSUCCESS)
             {
                 EZERROR("Cannot subscribe to subject");
                 return STATUS_ERR_GENERIC;

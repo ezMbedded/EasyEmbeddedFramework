@@ -71,7 +71,7 @@ EZ_DRV_STATUS ezSpi_SystemRegisterHwDriver(struct ezSpiDriver *hw_driver)
     hw_driver->initialized = false;
     EZ_LINKEDLIST_ADD_TAIL(&hw_driver_list, &hw_driver->ll_node);
 
-    if(ezEventNotifier_CreateSubject(&hw_driver->spi_event) == ezSUCCESS)
+    if(ezEventBus_CreateBus(&hw_driver->spi_event) == ezSUCCESS)
     {
         EZDEBUG("Register OK");
         return STATUS_OK;
@@ -119,13 +119,13 @@ EZ_DRV_STATUS ezSpi_RegisterInstance(ezSpiDrvInstance_t *inst,
             inst->drv_instance.driver = (void*)spi_drv;
             inst->drv_instance.calback = NULL;
 
-            if(ezEventNotifier_CreateObserver(&inst->event_subcriber, callback) != ezSUCCESS)
+            if(ezEventBus_CreateListener(&inst->event_subcriber, callback) != ezSUCCESS)
             {
                 EZERROR("Cannot create observer");
                 return STATUS_ERR_GENERIC;
             }
 
-            if(ezEventNotifier_SubscribeToSubject(&spi_drv->spi_event, &inst->event_subcriber) != ezSUCCESS)
+            if(ezEventBus_Listen(&spi_drv->spi_event, &inst->event_subcriber) != ezSUCCESS)
             {
                 EZERROR("Cannot subscribe to subject");
                 return STATUS_ERR_GENERIC;

@@ -69,7 +69,7 @@ EZ_DRV_STATUS ezI2c_SystemRegisterHwDriver(struct ezI2cDriver *hw_driver)
     hw_driver->initialized = false;
     EZ_LINKEDLIST_ADD_TAIL(&hw_driver_list, &hw_driver->ll_node);
 
-    if(ezEventNotifier_CreateSubject(&hw_driver->i2c_event) == ezSUCCESS)
+    if(ezEventBus_CreateBus(&hw_driver->i2c_event) == ezSUCCESS)
     {
         EZDEBUG("Register OK");
         return STATUS_OK;
@@ -117,13 +117,13 @@ EZ_DRV_STATUS ezI2c_RegisterInstance(ezI2cDrvInstance_t *inst,
             inst->drv_instance.driver = (void*)i2c_drv;
             inst->drv_instance.calback = NULL;
 
-            if(ezEventNotifier_CreateObserver(&inst->event_subcriber, callback) != ezSUCCESS)
+            if(ezEventBus_CreateListener(&inst->event_subcriber, callback) != ezSUCCESS)
             {
                 EZERROR("Cannot create observer");
                 return STATUS_ERR_GENERIC;
             }
 
-            if(ezEventNotifier_SubscribeToSubject(&i2c_drv->i2c_event, &inst->event_subcriber) != ezSUCCESS)
+            if(ezEventBus_Listen(&i2c_drv->i2c_event, &inst->event_subcriber) != ezSUCCESS)
             {
                 EZERROR("Cannot subscribe to subject");
                 return STATUS_ERR_GENERIC;
