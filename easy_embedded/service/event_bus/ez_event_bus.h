@@ -39,6 +39,7 @@ extern "C" {
 #include <stdint.h>
 #include <stdbool.h>
 #include "ez_linked_list.h"
+#include "ez_queue.h"
 
 
 /*****************************************************************************
@@ -54,11 +55,10 @@ extern "C" {
  *         notify the subscriber about an event.
  *         event_code: number representing an event. Specified by the event
  *         subject
- *         param1: pointer to first parameter, can be NULL if not used
- *         param2: pointer to second parameter, can be NULL if not used
- *
+ *         data: pointer to the event data
+ *         data_size: size of the event data
  */
-typedef int (*EVENT_CALLBACK)(uint32_t event_code, void *param1, void *param2);
+typedef int (*EVENT_CALLBACK)(uint32_t event_code, void *data, size_t data_size);
 
 
 /** @brief Observer object, used to subscribed to a subject to receive event
@@ -73,7 +73,10 @@ struct ezEventListener
 
 /** @brief define event_subject type.
  */
-typedef struct Node ezEventBus_t;
+typedef struct{
+    struct Node node;                               /**< linked list node */
+    ezQueue event_queue;                            /**< event queue */
+} ezEventBus_t;
 
 
 /** @brief define event_observer type.
@@ -97,9 +100,11 @@ typedef struct ezEventListener ezEventListener_t;
 * @brief This function creates an event bus
 *
 * @details The user is RECOMMENDED to use this function to create the subject
-* instead of modify the struct by themselve.
+* instead of modify the struct by themselves.
 *
-* @param[in]    *event_bus: Pointer to the event bus
+* @param[in]    event_bus: Pointer to the event bus
+* @param[in]    buff: Memory buffer providing to the event bus to work
+* @param[in]    buff_size: Size of the memory buffer
 * @return       ezSTATUS
 *
 * @pre None
@@ -108,11 +113,15 @@ typedef struct ezEventListener ezEventListener_t;
 * \b Example
 * @code
 * ezEventBus_t subject;
-* (void) ezEventNotifier_CreateSubject(&subject);
+* uint8_t buffer[128];
+* (void) ezEventBus_CreateBus(&subject, buffer, sizeof(buffer));
 * @endcode
 *
 *****************************************************************************/
-ezSTATUS ezEventBus_CreateBus(ezEventBus_t *event_bus);
+ezSTATUS ezEventBus_CreateBus(
+    ezEventBus_t *event_bus,
+    uint8_t *buff,
+    uint32_t buff_size);
 
 
 /******************************************************************************
@@ -122,7 +131,7 @@ ezSTATUS ezEventBus_CreateBus(ezEventBus_t *event_bus);
 *
 * @details It resets the linked list and unlinks all nodes of that list
 *
-* @param[in]    *event_bus: Pointer to the event bus
+* @param[in]    event_bus: Pointer to the event bus
 * @return       None
 *
 * @pre Subject must be created
@@ -130,24 +139,24 @@ ezSTATUS ezEventBus_CreateBus(ezEventBus_t *event_bus);
 *
 * \b Example
 * @code
-* ezEventNotifier_ResetSubject(&subject);
+* ezEventBus_ResetBus(&event_bus);
 * @endcode
 *
-* @see ezEventNotifier_CreateSubject
+* @see ezEventBus_CreateBus
 *
 *******************************************************************************/
 void ezEventBus_ResetBus(ezEventBus_t *event_bus);
 
 
 /******************************************************************************
-* Function: ezEventNotifier_CreateListener
+* Function: ezEventBus_CreateListener
 *//**
 * @brief This function creates an observer for the events from a subject.
 *
 * @details The user is RECOMMENDED to use this function to create the observer
-* instead of modify the struct by themselve.
+* instead of modify the struct by themselves.
 *
-* @param[in]    *observer: Pointer to the obsever
+* @param[in]    listener: Pointer to the listener
 * @param[in]    callback: Callback to handle event from the subject
 * @return       ezSTATUS
 *
@@ -165,6 +174,28 @@ ezSTATUS ezEventBus_CreateListener(ezEventListener_t * listener, EVENT_CALLBACK 
 
 
 /******************************************************************************
+ * Function: ezEventBus_Run
+ *//**
+ * @brief This function runs the event bus to process events and notify
+ *       listeners.
+ * 
+ * @details This function should be called periodically to ensure that events
+ *         are processed and listeners are notified in a timely manner.
+ * @param[in]    event_bus: Pointer to the event bus
+ * @return       ezSTATUS
+ *  
+ * @pre Event bus must be created
+ * @post None
+ * \b Example
+ * @code
+ * ezEventBus_Run(&event_bus);
+ * @endcode
+ * 
+ ******************************************************************************/
+ezSTATUS ezEventBus_Run(ezEventBus_t * event_bus);
+
+
+/******************************************************************************
 * Function: ezEventBus_Listen
 *//**
 * @brief This function listen to an event bus
@@ -175,15 +206,15 @@ ezSTATUS ezEventBus_CreateListener(ezEventListener_t * listener, EVENT_CALLBACK 
 * @param[in]    *listener: Publisher handle
 * @return       ezSTATUS
 *
-* @pre subject and observer must be created
+* @pre subject and listener must be created
 * @post None
 *
 * \b Example
 * @code
-* ezEventNotifier_SubscribeEvent(&subject, &observer);
+* ezEventBus_Listen(&subject, &listener);
 * @endcode
 *
-* @see ezEventNotifier_CreateSubject, ezEventNotifier_CreateObserver
+* @see ezEventBus_CreateBus, ezEventBus_CreateListener
 *
 *******************************************************************************/
 ezSTATUS ezEventBus_Listen(ezEventBus_t *event_bus,
@@ -197,8 +228,8 @@ ezSTATUS ezEventBus_Listen(ezEventBus_t *event_bus,
 *
 * @details
 *
-* @param[in]    *event_bus: Pointer to the event bus
-* @param[in]    *observer: Publisher handle
+* @param[in]    event_bus: Pointer to the event bus
+* @param[in]    listener: Publisher handle
 * @return       ezSTATUS
 *
 * @pre event_bus and listener must be created
@@ -222,8 +253,8 @@ ezSTATUS ezEventBus_Unlisten(ezEventBus_t *event_bus, ezEventListener_t *listene
 *
 * @details
 *
-* @param[in]   *event_bus: event bus
-* @return   number of observers
+* @param[in]   event_bus: event bus
+* @return   number of listeners
 *
 * @pre subject must be created
 * @post None
@@ -246,7 +277,7 @@ uint16_t ezEventBus_GetNumOfListeners(ezEventBus_t *event_bus);
 *
 * @details
 *
-* @param[in]    *event_bus: Pointer to the event bus
+* @param[in]    event_bus: Pointer to the event bus
 * @param[in]    event_code: Event code. Defined by users
 * @param[in]    param1: Companion paramneter 1, set to NULL if unused
 * @param[in]    param1: Companion paramneter 2, set to NULL if unused
@@ -264,11 +295,11 @@ uint16_t ezEventBus_GetNumOfListeners(ezEventBus_t *event_bus);
 * @see ezEventNotifier_CreateSubject
 *
 *******************************************************************************/
-void ezEventBus_SendEvent(
+bool ezEventBus_SendEvent(
     ezEventBus_t *event_bus,
     uint32_t event_code,
-    void *param1,
-    void *param2);
+    void *event_data,
+    size_t event_data_size);
 
 #endif /* (EZ_EVENT_BUS == 1U) */
 

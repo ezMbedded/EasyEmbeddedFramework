@@ -72,12 +72,14 @@ EZ_DRV_STATUS ezGpio_SystemRegisterHwDriver(struct ezGpioDriver *hw_gpio_driver)
     {
         hw_gpio_driver->initialized = false;
         EZ_LINKEDLIST_ADD_TAIL(&hw_driver_list, &hw_gpio_driver->ll_node);
+        #if 0
         if(ezEventBus_CreateBus(&hw_gpio_driver->gpio_event) == ezSUCCESS)
         {
             EZDEBUG("Register OK");
             return STATUS_OK;
         }
         else
+        #endif
         {
             EZERROR("Cannot create subject for GPIO driver %s", hw_gpio_driver->common.name);
             return STATUS_ERR_GENERIC;

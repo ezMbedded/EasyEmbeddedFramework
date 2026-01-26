@@ -70,13 +70,14 @@ EZ_DRV_STATUS ezSpi_SystemRegisterHwDriver(struct ezSpiDriver *hw_driver)
 
     hw_driver->initialized = false;
     EZ_LINKEDLIST_ADD_TAIL(&hw_driver_list, &hw_driver->ll_node);
-
+#if 0
     if(ezEventBus_CreateBus(&hw_driver->spi_event) == ezSUCCESS)
     {
         EZDEBUG("Register OK");
         return STATUS_OK;
     }
     else
+#endif
     {
         EZERROR("Cannot create subject for SPI driver %s", hw_driver->common.name);
         return STATUS_ERR_GENERIC;

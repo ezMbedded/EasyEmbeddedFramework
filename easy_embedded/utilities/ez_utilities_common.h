@@ -46,8 +46,9 @@ extern "C" {
  */
 typedef enum
 {
-    ezFAIL,     /**< operation fail */
-    ezSUCCESS,  /**< operation success */
+    ezSUCCESS = 0,      /**< operation success */
+    ezFAIL = -1,         /**< operation fail */
+    ezSTATUS_ARG_INVALID = -2,  /**< invalid argument */
 }ezSTATUS;
 
 
