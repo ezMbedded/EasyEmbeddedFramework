@@ -39,7 +39,7 @@ extern "C" {
 #include <stdbool.h>
 
 #include "ez_driver_def.h"
-#include "ez_event_notifier.h"
+#include "ez_event_bus.h"
 
 /*****************************************************************************
 * Component Preprocessor Macros
@@ -139,14 +139,14 @@ struct ezSpiDriver
     struct Node                 ll_node;    /* linked list node to link to list of hw driver implmentation */
     struct ezDriverCommon       common;     /* Common data of driver */
     struct ezHwSpiInterface     interface;  /* HW API */
-    ezSubject                   spi_event;  /* Subject for event notification */
+    ezEventBus_t                spi_event;  /* Subject for event notification */
     bool                        initialized; /* Flag to check if the driver is initialized */
 };
 
 
 typedef struct{
     struct ezDrvInstance    drv_instance;    /**< Driver instance */
-    ezObserver              event_subcriber; /**< Pointer to the event subscriber */
+    ezEventListener_t       event_subcriber; /**< Pointer to the event subscriber */
 } ezSpiDrvInstance_t;
 
 /*****************************************************************************

@@ -27,7 +27,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "ez_gpio.h"
-#include "ez_event_notifier.h"
+#include "ez_event_bus.h"
 #include "fff.h"
 #include <catch2/catch_test_macros.hpp>
 
@@ -76,7 +76,7 @@ TEST_CASE_METHOD(GpioTestFixture, "Test no interface is implemented", "[hal][gpi
     REQUIRE(ezGpio_RegisterInstance(&instance, "Mock GPIO Driver", Callback) == STATUS_OK);
     
     Callback_fake.return_val = STATUS_ERR_GENERIC;
-    ezEventNotifier_NotifyEvent(&gpio_driver.gpio_event, 0x01, NULL, NULL);
+    ezEventBus_SendEvent(&gpio_driver.gpio_event, 0x01, NULL, NULL);
 
     CHECK(Callback_fake.call_count == 1);
     CHECK(Callback_fake.arg0_val == 0x01);

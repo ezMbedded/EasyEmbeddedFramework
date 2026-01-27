@@ -1,35 +1,35 @@
 # ----------------------------------------------------------------------------
 # Author: Hai Nguyen
-# Name: ez_event_notifier_lib
+# Name: ez_event_bus_lib
 # License: This file is published under the license described in LICENSE.md
-# Description: CMake file for event notifier component
+# Description: CMake file for event bus component
 # ----------------------------------------------------------------------------
 
-add_library(ez_event_notifier_lib STATIC)
+add_library(ez_event_bus_lib STATIC)
 
 message(STATUS "**********************************************************")
-message(STATUS "* Generating ez_event_notifier library build files")
+message(STATUS "* Generating ez_event_bus library build files")
 message(STATUS "**********************************************************")
 
 
 # Source files ---------------------------------------------------------------
-target_sources(ez_event_notifier_lib
+target_sources(ez_event_bus_lib
     PRIVATE
-        ez_event_notifier.c
+        ez_event_bus.c
 )
 
 
 # Definitions ----------------------------------------------------------------
-target_compile_definitions(ez_event_notifier_lib
+target_compile_definitions(ez_event_bus_lib
     PUBLIC
-        EZ_EVENT_NOTIFIER=$<BOOL:${ENABLE_EZ_EVENT_NOTIFIER}>
+        EZ_EVENT_BUS=$<BOOL:${ENABLE_EZ_EVENT_BUS}>
     PRIVATE
         EZ_BUILD_WITH_CMAKE=$<BOOL:${BUILD_WITH_CMAKE}>
 )
 
 
 # Include directory -----------------------------------------------------------
-target_include_directories(ez_event_notifier_lib
+target_include_directories(ez_event_bus_lib
     PUBLIC
         ${CMAKE_CURRENT_LIST_DIR}
     PRIVATE
@@ -40,7 +40,7 @@ target_include_directories(ez_event_notifier_lib
 
 
 # Link libraries -------------------------------------------------------------
-target_link_libraries(ez_event_notifier_lib
+target_link_libraries(ez_event_bus_lib
     PUBLIC
         ez_utilities_lib
     PRIVATE

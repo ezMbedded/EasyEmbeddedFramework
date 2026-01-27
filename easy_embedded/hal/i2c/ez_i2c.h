@@ -39,7 +39,7 @@ extern "C" {
 #include <stdbool.h>
 
 #include "ez_driver_def.h"
-#include "ez_event_notifier.h"
+#include "ez_event_bus.h"
 
 /*****************************************************************************
 * Component Preprocessor Macros
@@ -133,14 +133,14 @@ struct ezI2cDriver
     struct Node                 ll_node;    /* linked list node to link to list of hw driver implmentation */
     struct ezDriverCommon       common;     /* Common data of driver */
     struct ezHwI2cInterface     interface;  /* HW API */
-    ezSubject                   i2c_event;  /* Subject for event notification */
+    ezEventBus_t                i2c_event;  /* Subject for event notification */
     bool                        initialized; /* Flag to check if the driver is initialized */
 };
 
 
 typedef struct{
     struct ezDrvInstance    drv_instance;    /**< Driver instance */
-    ezObserver              event_subcriber; /**< Pointer to the event subscriber */
+    ezEventListener_t       event_subcriber; /**< Pointer to the event subscriber */
 } ezI2cDrvInstance_t;
 
 /*****************************************************************************

@@ -60,7 +60,7 @@ struct DataModelElement
     /**< Size of the data point */
     void            *data;
     /**< Pointer to memory location where data is stored */
-    ezSubject       subject;
+    ezEventBus_t    subject;
     /**< Event subject, managing the observer receiving event notification */
 };
 
