@@ -45,9 +45,10 @@ target_include_directories(ez_data_model_lib
 # Link libraries -------------------------------------------------------------
 target_link_libraries(ez_data_model_lib
     PUBLIC
-        ez_event_notifier_lib
-    PRIVATE
         # Unused
+    PRIVATE
+        ez_utilities_lib
+        ez_event_bus_lib
     INTERFACE
         # Unused
 )

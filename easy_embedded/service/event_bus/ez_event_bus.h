@@ -58,7 +58,7 @@ extern "C" {
  *         data: pointer to the event data
  *         data_size: size of the event data
  */
-typedef int (*EVENT_CALLBACK)(uint32_t event_code, void *data, size_t data_size);
+typedef int (*EVENT_CALLBACK)(uint32_t event_code, const void *data, size_t data_size);
 
 
 /** @brief Observer object, used to subscribed to a subject to receive event

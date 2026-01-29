@@ -38,7 +38,7 @@ extern "C" {
 #include <stdbool.h>
 #include <stdint.h>
 #include "ez_utilities_common.h"
-#include "ez_event_notifier.h"
+#include "ez_event_bus.h"
 
 /*****************************************************************************
 * Component Preprocessor Macros
@@ -50,19 +50,42 @@ extern "C" {
 * Component Typedefs
 *****************************************************************************/
 
-/** @brief Definition of a data point
- *
- */
-typedef uint32_t DataPoint;
+typedef enum{
+    TYPE_BOOL = 0,
+    TYPE_UINT8,
+    TYPE_UINT16,
+    TYPE_UINT32,
+    TYPE_INT8,
+    TYPE_INT16,
+    TYPE_INT32,
+    TYPE_FLOAT,
+    TYPE_DOUBLE,
+    TYPE_STRING,
+    TYPE_BLOB,
+    TYPE_UNKNOWN,
+}ezDataPointType_t;
 
 
-/** @brief Data point's event
- *
- */
-typedef enum
+typedef struct
 {
-    DATA_MODIFY,        /**< Data point is modified */
-}DATA_POINT_EVENT;
+    uint32_t index;
+    ezDataPointType_t type;
+    size_t size;
+    void* data;
+}ezDataPoint_t;
+
+
+typedef struct
+{
+    ezDataPoint_t *data_points;
+    size_t num_of_data_points;
+    uint8_t *data_model_buff;
+    size_t data_model_buff_size;
+    ezEventBus_t event_bus;
+    uint8_t *event_buff;
+    size_t event_buff_size;
+}ezDataModel_t;
+
 
 
 /*****************************************************************************
@@ -73,7 +96,42 @@ typedef enum
 /*****************************************************************************
 * Function Prototypes
 *****************************************************************************/
+void ezDataModel_Initialize(
+    ezDataModel_t *data_model,
+    ezDataPoint_t *data_points,
+    size_t num_of_data_points,
+    uint8_t *data_model_buff,
+    size_t data_model_buff_size,
+    uint8_t *event_buff,
+    size_t event_buff_size);
 
+ezSTATUS ezDataModel_SetDataPoint(
+    ezDataModel_t *data_model,
+    uint32_t index,
+    void *data,
+    ezDataPointType_t type);
+
+
+ezSTATUS ezDataModel_GetDataPoint(
+    ezDataModel_t *data_model,
+    uint32_t index,
+    void *data,
+    ezDataPointType_t type);
+
+ezSTATUS ezDataModel_ListenDataPointChange(
+    ezDataModel_t *data_model,
+    uint32_t index,
+    ezEventListener_t *listener);
+
+
+ezSTATUS ezDataModel_UnlistenDataPointChange(
+    ezDataModel_t *data_model,
+    uint32_t index,
+    ezEventListener_t *listener);
+
+ezSTATUS ezDataModel_Run(ezDataModel_t *data_model);
+
+#if 0
 /*****************************************************************************
 * Function : DataModel_Initialization
 *//** 
@@ -294,6 +352,7 @@ bool DataModel_SubscribeDataPointEvent(DataPoint data_point,
 *****************************************************************************/
 bool DataModel_UnsubscribeDataPointEvent(DataPoint data_point,
                                          ezObserver *observer);
+#endif
 
 #ifdef __cplusplus
 }
