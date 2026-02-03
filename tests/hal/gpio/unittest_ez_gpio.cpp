@@ -39,7 +39,7 @@ DEFINE_FFF_GLOBALS;
 FAKE_VALUE_FUNC(EZ_DRV_STATUS, Init, uint16_t, ezHwGpioConfig_t*);
 FAKE_VALUE_FUNC(EZ_GPIO_PIN_STATE, ReadPin, uint16_t);
 FAKE_VALUE_FUNC(EZ_DRV_STATUS, WritePin, uint16_t, EZ_GPIO_PIN_STATE);
-FAKE_VALUE_FUNC(int, Callback, uint32_t, void *, void *);
+FAKE_VALUE_FUNC(int, Callback, uint32_t, const void *, size_t);
 
 /******************************************************************************
 * Module Typedefs
@@ -76,7 +76,7 @@ TEST_CASE_METHOD(GpioTestFixture, "Test no interface is implemented", "[hal][gpi
     REQUIRE(ezGpio_RegisterInstance(&instance, "Mock GPIO Driver", Callback) == STATUS_OK);
     
     Callback_fake.return_val = STATUS_ERR_GENERIC;
-    ezEventBus_SendEvent(&gpio_driver.gpio_event, 0x01, NULL, NULL);
+    ezEventBus_SendEvent(&gpio_driver.gpio_event, 0x01, NULL, 0);
 
     CHECK(Callback_fake.call_count == 1);
     CHECK(Callback_fake.arg0_val == 0x01);

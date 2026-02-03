@@ -67,8 +67,8 @@ static TestData_t data2;
 * Function Definitions
 *******************************************************************************/
 static void RunAllTests(void);
-int Listener1_Callback(uint32_t event_code, void *data, size_t data_size);
-int Listener2_Callback(uint32_t event_code, void *data, size_t data_size);
+int Listener1_Callback(uint32_t event_code, const void *data, size_t data_size);
+int Listener2_Callback(uint32_t event_code, const void *data, size_t data_size);
 
 
 /******************************************************************************
@@ -170,7 +170,7 @@ static void RunAllTests(void)
 }
 
 
-int Listener1_Callback(uint32_t event_code, void *data, size_t data_size)
+int Listener1_Callback(uint32_t event_code, const void *data, size_t data_size)
 {
     listener1_notiffy_code = event_code;
     memcpy(&data1, data, data_size);
@@ -178,7 +178,7 @@ int Listener1_Callback(uint32_t event_code, void *data, size_t data_size)
 }
 
 
-int Listener2_Callback(uint32_t event_code, void *data, size_t data_size)
+int Listener2_Callback(uint32_t event_code, const void *data, size_t data_size)
 {
     listener2_notiffy_code = event_code;
     memcpy(&data2, data, data_size);

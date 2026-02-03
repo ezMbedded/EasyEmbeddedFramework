@@ -15,7 +15,7 @@ if(ENABLE_EZ_OSAL)
 endif()
 
 if(ENABLE_DATA_MODEL)
-    add_subdirectory(app/data_model)
+    add_subdirectory(service/datamodel)
 endif()
 
 if(ENABLE_EZ_EVENT_BUS)

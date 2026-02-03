@@ -1,56 +1,57 @@
 # ----------------------------------------------------------------------------
 # Author: Hai Nguyen
-# Name: data_model_lib
+# Name: unittest_ez_datamodel
 # License: This file is published under the license described in LICENSE.md
-# Description: CMake file for data model component
+# Description: PLEASE ADD TEXT HERE
 # ----------------------------------------------------------------------------
 
-add_library(ez_data_model_lib STATIC)
+add_executable(ez_datamodel_test)
 
 message(STATUS "**********************************************************")
-message(STATUS "* Generating data_model library build files")
+message(STATUS "* Generating ez_datamodel_test build files")
 message(STATUS "**********************************************************")
-
-
-set(FRAMEWORK_ROOT_DIR ${CMAKE_SOURCE_DIR}/ezmsdk)
 
 
 # Source files ---------------------------------------------------------------
-target_sources(ez_data_model_lib
+target_sources(ez_datamodel_test
     PRIVATE
-        ez_data_model.c
+        unittest_ez_datamodel.cpp
 )
 
 
 # Definitions ----------------------------------------------------------------
-target_compile_definitions(ez_data_model_lib
+target_compile_definitions(ez_datamodel_test
     PUBLIC
-        DATA_MODEL=$<BOOL:${ENABLE_DATA_MODEL}>
-    PRIVATE
-        EZ_BUILD_WITH_CMAKE=$<BOOL:${BUILD_WITH_CMAKE}>
+        # Please add definitions here
 )
 
 
 # Include directory -----------------------------------------------------------
-target_include_directories(ez_data_model_lib
+target_include_directories(ez_datamodel_test
     PUBLIC
-        ${CMAKE_CURRENT_LIST_DIR}
+        ${CURRENT_DIR}
+        ${SDK_ROOT_DIR}/ezmsdk
+        ${FFF_PATH}
     PRIVATE
-        # Unused
+        # Please add private folders here
     INTERFACE
-        # Unused
+        # Please add interface folders here
 )
-
 
 # Link libraries -------------------------------------------------------------
-target_link_libraries(ez_data_model_lib
+target_link_libraries(ez_datamodel_test
     PUBLIC
-        # Unused
+        # Please add public libraries
     PRIVATE
-        ez_utilities_lib
-        ez_event_bus_lib
+        easy_embedded_lib
+        Catch2::Catch2WithMain
     INTERFACE
-        # Unused
+        # Please add interface libraries
 )
 
+add_test(NAME ez_datamodel_test
+    COMMAND ez_datamodel_test
+)
+
+catch_discover_tests(ez_datamodel_test)
 # End of file
