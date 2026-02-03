@@ -20,7 +20,7 @@ option(ENABLE_EZ_TASK_WORKER       "Enable the task worker"                 ON)
 option(ENABLE_EZ_STATE_MACHINE     "Enable state machine"                   ON)
 
 # Configure application framework
-option(ENABLE_DATA_MODEL        "Enable the Data Model module"          ON)
+option(ENABLE_DATA_MODEL        "Enable the Data Model module"              ON)
 option(ENABLE_EZ_CLI            "Enable command line interface"             ON)
 option(ENABLE_EZ_RPC            "Enable remote procedure call"              ON)
 option(ENABLE_EZ_IPC            "Enable inter process communication"        ON)

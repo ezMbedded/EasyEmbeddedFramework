@@ -29,31 +29,28 @@
 #include <string.h>
 #include "ez_default_logging_level.h"
 
-#define DEBUG_LVL   EZ_DATA_MODEL_LOGGING_LEVEL       /**< logging level */
-#define MOD_NAME    "DATA_MODEL"    /**< module name */
+#define DEBUG_LVL   EZ_DATA_MODEL_LOGGING_LEVEL
+#define MOD_NAME    "DATA_MODEL"
 #include "ez_logging.h"
 #include "ez_assert.h"
 #include "ez_data_model.h"
 
-/*the rest of include go here*/
 
 /*****************************************************************************
 * Component Preprocessor Macros
 *****************************************************************************/
-#define NUM_OF_DATA_ELEMENT     10   /**< a macro*/
+/* None */
+
 
 /*****************************************************************************
 * Component Typedefs
 *****************************************************************************/
-
+/* None */
 
 
 /*****************************************************************************
 * Component Variable Definitions
-*****************************************************************************/
-#if (DEBUG_LVL > LVL_INFO)
-static uint32_t data_point_count = 0U;
-#endif
+/* None */
 
 
 /******************************************************************************
@@ -65,8 +62,33 @@ static uint32_t data_point_count = 0U;
 /*****************************************************************************
 * Function Definitions
 *****************************************************************************/
-static bool ezDataModel_AllocateDataPoint(ezDataModel_t *data_model);
-static size_t ezDataModel_GetRequiredBufferSize(ezDataPointType_t type);
+
+/**
+* @brief This function allocate data points in the data model buffer
+*
+* @details -
+*
+* @param[in]    data_model: Pointer to the data model
+* @return       true if allocation is successful, false otherwise
+*
+* @pre data_model must be initialized using ezDataModel_Initialize()
+* @post None
+*/
+static bool ezDataModel_AllocateDataPoints(ezDataModel_t *data_model);
+
+
+/*
+* @brief This function returns pointer to data point by index
+*
+* @details -
+*
+* @param[in]    data_model: Pointer to the data model
+* @param[in]    index: Index of the data point to find
+* @return       Pointer to the data point, or NULL if not found
+*
+* @pre data_model must be initialized using ezDataModel_Initialize()
+* @post None
+*/
 static ezDataPoint_t *ezDataModel_FindDataPointByIndex(
     ezDataModel_t *data_model,
     uint32_t index);
@@ -80,17 +102,13 @@ void ezDataModel_Initialize(
     ezDataPoint_t *data_points,
     size_t num_of_data_points,
     uint8_t *data_model_buff,
-    size_t data_model_buff_size,
-    uint8_t *event_buff,
-    size_t event_buff_size)
+    size_t data_model_buff_size)
 {
     if(data_model == NULL
        || data_points == NULL
        || num_of_data_points == 0U
        || data_model_buff == NULL
-       || data_model_buff_size == 0U
-       || event_buff == NULL
-       || event_buff_size == 0U)
+       || data_model_buff_size == 0U)
     {
         EZERROR("Invalid argument");
         return;
@@ -100,20 +118,10 @@ void ezDataModel_Initialize(
     data_model->num_of_data_points = num_of_data_points;
     data_model->data_model_buff = data_model_buff;
     data_model->data_model_buff_size = data_model_buff_size;
-    data_model->event_buff = event_buff;
-    data_model->event_buff_size = event_buff_size;
 
-    if(ezDataModel_AllocateDataPoint(data_model) == false)
+    if(ezDataModel_AllocateDataPoints(data_model) == false)
     {
         EZERROR("Data point allocation failed");
-        return;
-    }
-
-    if(ezEventBus_CreateBus(&data_model->event_bus,
-                             data_model->event_buff,
-                             data_model->event_buff_size) != ezSUCCESS)
-    {
-        EZERROR("Event bus creation failed");
         return;
     }
 }
@@ -122,8 +130,7 @@ void ezDataModel_Initialize(
 ezSTATUS ezDataModel_SetDataPoint(
     ezDataModel_t *data_model,
     uint32_t index,
-    void *data,
-    ezDataPointType_t type)
+    void *data)
 {
     if(data_model == NULL
        || data == NULL)
@@ -136,106 +143,104 @@ ezSTATUS ezDataModel_SetDataPoint(
     if(data_point == NULL)
     {
         EZDEBUG("Data point not found");
-        return ezFAIL;
-    }
-
-    if(data_point->type != type)
-    {
-        EZDEBUG("Data type mismatch");
         return ezFAIL;
     }
 
     memcpy(data_point->data, data, data_point->size);
+    data_point->isDirty = true;
     
-    ezEventBus_SendEvent(
-        &data_model->event_bus,
-        index,
-        data_point->data,
-        data_point->size);
-
     return ezSUCCESS;
 }
 
 
-ezSTATUS ezDataModel_GetDataPoint(
+const void* ezDataModel_GetDataPoint(
     ezDataModel_t *data_model,
     uint32_t index,
-    void *data,
-    ezDataPointType_t type)
+    size_t *data_size)
 {
-        if(data_model == NULL
-       || data == NULL)
+    if(data_model == NULL
+       || data_size == NULL)
     {
         EZDEBUG("Invalid argument");
-        return ezSTATUS_ARG_INVALID;
+        return NULL;
+    }
+
+    *data_size = 0;
+
+    ezDataPoint_t *data_point = ezDataModel_FindDataPointByIndex(data_model, index);
+    if(data_point == NULL)
+    {
+        EZDEBUG("Data point not found");
+        return NULL;
+    }
+
+    *data_size = data_point->size;
+
+    return data_point->data;
+}
+
+
+void ezDataModel_ClearDirtyFlags(ezDataModel_t *data_model, uint32_t index)
+{
+    if(data_model == NULL)
+    {
+        EZDEBUG("Invalid argument");
+        return;
     }
 
     ezDataPoint_t *data_point = ezDataModel_FindDataPointByIndex(data_model, index);
     if(data_point == NULL)
     {
         EZDEBUG("Data point not found");
-        return ezFAIL;
+        return;
     }
 
-    if(data_point->type != type)
-    {
-        EZDEBUG("Data type mismatch");
-        return ezFAIL;
-    }
-
-    memcpy(data, data_point->data, data_point->size);
-    return ezSUCCESS;
+    data_point->isDirty = false;
 }
 
 
-ezSTATUS ezDataModel_ListenDataPointChange(
-    ezDataModel_t *data_model,
-    uint32_t index,
-    ezEventListener_t *listener)
-{
-    if(data_model == NULL
-       || listener == NULL)
-    {
-        EZDEBUG("Invalid argument");
-        return ezSTATUS_ARG_INVALID;
-    }
-
-    return ezEventBus_Listen(&data_model->event_bus, listener);
-}
-
-
-ezSTATUS ezDataModel_UnlistenDataPointChange(
-    ezDataModel_t *data_model,
-    uint32_t index,
-    ezEventListener_t *listener)
-{
-    if(data_model == NULL
-       || listener == NULL)
-    {
-        EZDEBUG("Invalid argument");
-        return ezSTATUS_ARG_INVALID;
-    }
-
-    return ezEventBus_Unlisten(&data_model->event_bus, listener);
-}
-
-
-ezSTATUS ezDataModel_Run(ezDataModel_t *data_model)
+void ezDataModel_ClearAllDirtyFlags(ezDataModel_t *data_model)
 {
     if(data_model == NULL)
     {
         EZDEBUG("Invalid argument");
-        return ezSTATUS_ARG_INVALID;
+        return;
     }
 
-    return ezEventBus_Run(&data_model->event_bus);
+    for (size_t i = 0; i < data_model->num_of_data_points; i++)
+    {
+        data_model->data_points[i].isDirty = false;
+    }
+}
+
+
+const uint32_t ezDataModel_GetFirstDirty(ezDataModel_t *data_model)
+{
+    uint32_t dirty_index = DATA_POINT_INVALID;
+
+    if(data_model == NULL)
+    {
+        EZDEBUG("Invalid argument");
+        return dirty_index;
+    }
+
+    for (size_t i = 0; i < data_model->num_of_data_points; i++)
+    {
+        if (data_model->data_points[i].isDirty == true)
+        {
+            dirty_index = data_model->data_points[i].index;
+            break;
+        }
+    }
+    
+    return dirty_index;
 }
 
 
 /******************************************************************************
 * Internal functions
 *******************************************************************************/
-static bool ezDataModel_AllocateDataPoint(ezDataModel_t *data_model)
+static bool ezDataModel_AllocateDataPoints(ezDataModel_t *data_model)
 {
     if(data_model == NULL)
     {
@@ -258,47 +263,25 @@ static bool ezDataModel_AllocateDataPoint(ezDataModel_t *data_model)
             data_model->data_points[i].index);
         }
 
-        required_size = ezDataModel_GetRequiredBufferSize(data_model->data_points[i].type);
-        ASSERT_CUST_MSG(required_size <= remain_byte,
+        ASSERT_CUST_MSG(data_model->data_points[i].size > 0, "data point size is zero");
+
+        ASSERT_CUST_MSG(data_model->data_points[i].size <= remain_byte,
             "required size (%lu) > remain byte (%lu)",
-            required_size,
+            data_model->data_points[i].size,
             remain_byte);
 
         data_model->data_points[i].data = (void *)current_buff_ptr;
-        data_model->data_points[i].size = required_size;
-        current_buff_ptr += required_size;
-        remain_byte -= required_size;
+        current_buff_ptr += data_model->data_points[i].size;
+        remain_byte -= data_model->data_points[i].size;
         current_index = data_model->data_points[i].index;
     }
-    return true;
-}
 
-static size_t ezDataModel_GetRequiredBufferSize(ezDataPointType_t type)
-{
-    switch(type)
-    {
-        case TYPE_BOOL:
-            return sizeof(bool);
-        case TYPE_UINT8:
-            return sizeof(uint8_t);
-        case TYPE_UINT16:
-            return sizeof(uint16_t);
-        case TYPE_UINT32:
-            return sizeof(uint32_t);
-        case TYPE_INT8:
-            return sizeof(int8_t);
-        case TYPE_INT16:
-            return sizeof(int16_t);
-        case TYPE_INT32:
-            return sizeof(int32_t);
-        case TYPE_FLOAT:
-            return sizeof(float);
-        case TYPE_DOUBLE:
-            return sizeof(double);
-        default:
-            EZERROR("Unsupported data type");
-            return 0U;
-    }
+    EZDEBUG("Data point allocation successful");
+    EZDEBUG("Total data points allocated: %lu", data_model->num_of_data_points);
+    EZDEBUG("Total buffer size: %lu bytes", data_model->data_model_buff_size);
+    EZDEBUG("Remaining buffer size: %lu bytes", remain_byte);
+
+    return true;
 }
 
 
