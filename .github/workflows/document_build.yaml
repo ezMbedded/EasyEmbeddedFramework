@@ -9,10 +9,20 @@ jobs:
   pages:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v3
+      
+      - name: Install Python dependencies
+        working-directory: ${{github.workspace}}
+        run: |
+          pwd
+          ls -al
+          pip install -r ./docs/requirements.txt
+      
       - id: deployment
         uses: sphinx-notes/pages@v3
         with:
           publish: false
+      
       - uses: peaceiris/actions-gh-pages@v3
         if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         with:
