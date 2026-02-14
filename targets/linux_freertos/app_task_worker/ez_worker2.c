@@ -29,6 +29,7 @@
 #define DEBUG_LVL   LVL_TRACE   /**< logging level */
 #define MOD_NAME    "ez_worker2"       /**< module name */
 #include "ez_logging.h"
+#include <stdlib.h>
 
 #if(EZ_OSAL == 1)
 #include "ez_osal.h"
