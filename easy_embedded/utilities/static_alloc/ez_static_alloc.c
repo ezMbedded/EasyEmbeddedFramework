@@ -401,6 +401,11 @@ struct Node* ezStaticAlloc_ReserveMemoryBlock(struct Node* free_list_head, uint1
     {
         EZ_LINKEDLIST_FOR_EACH(iterate_Node, free_list_head)
         {
+            if(iterate_Node == NULL)
+            {
+                break;
+            }
+            
             if (GET_BLOCK(iterate_Node)->buff_size >= block_size_byte)
             {
                 if (GET_BLOCK(iterate_Node)->buff_size > block_size_byte)

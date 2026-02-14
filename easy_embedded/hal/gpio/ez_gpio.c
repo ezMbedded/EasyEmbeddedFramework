@@ -79,11 +79,14 @@ EZ_DRV_STATUS ezGpio_SystemRegisterHwDriver(struct ezGpioDriver *hw_gpio_driver)
             return STATUS_OK;
         }
         else
-        #endif
+        
         {
             EZERROR("Cannot create subject for GPIO driver %s", hw_gpio_driver->common.name);
             return STATUS_ERR_GENERIC;
         }
+        #else
+        return STATUS_OK;
+        #endif
     }
 
     return STATUS_ERR_GENERIC;
