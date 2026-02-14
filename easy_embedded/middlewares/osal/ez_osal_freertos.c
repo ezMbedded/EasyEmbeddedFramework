@@ -76,13 +76,14 @@ static ezSTATUS ezOsal_FreeRTOSTimerDelete(ezOsal_TimerHandle_t *handle);
 static ezSTATUS ezOsal_FreeRTOSTimerStart(ezOsal_TimerHandle_t *handle);
 static ezSTATUS ezOsal_FreeRTOSTimerStop(ezOsal_TimerHandle_t *handle);
 
-ezSTATUS ezOsal_FreeRTOSEventCreate(ezOsal_EventHandle_t *handle);
-ezSTATUS ezOsal_FreeRTOSEventDelete(ezOsal_EventHandle_t *handle);
-int ezOsal_FreeRTOSEventWait(ezOsal_EventHandle_t *handle, uint32_t event_mask, uint32_t timeout_ticks);
-ezSTATUS ezOsal_FreeRTOSEventSet(ezOsal_EventHandle_t *handle, uint32_t event_mask);
-ezSTATUS ezOsal_FreeRTOSEventClear(ezOsal_EventHandle_t *handle, uint32_t event_mask);
+static ezSTATUS ezOsal_FreeRTOSEventCreate(ezOsal_EventHandle_t *handle);
+static ezSTATUS ezOsal_FreeRTOSEventDelete(ezOsal_EventHandle_t *handle);
+static int ezOsal_FreeRTOSEventWait(ezOsal_EventHandle_t *handle, uint32_t event_mask, uint32_t timeout_ticks);
+static ezSTATUS ezOsal_FreeRTOSEventSet(ezOsal_EventHandle_t *handle, uint32_t event_mask);
+static ezSTATUS ezOsal_FreeRTOSEventClear(ezOsal_EventHandle_t *handle, uint32_t event_mask);
 
 static const ezOsal_Interfaces_t freertos_interface = {
+    .Init = NULL, /* No initialization needed */
     .TaskCreate = ezOsal_FreeRTOSTaskCreate,
     .TaskDelete = ezOsal_FreeRTOSTaskDelete,
     .TaskSuspend = ezOsal_FreeRTOSTaskSuspend,
@@ -105,7 +106,9 @@ static const ezOsal_Interfaces_t freertos_interface = {
     .EventDelete = ezOsal_FreeRTOSEventDelete,
     .EventWait = ezOsal_FreeRTOSEventWait,
     .EventSet = ezOsal_FreeRTOSEventSet,
-    .EventClear = ezOsal_FreeRTOSEventClear
+    .EventClear = ezOsal_FreeRTOSEventClear,
+
+    .custom_interfaces = NULL
 };
 
 
@@ -114,7 +117,7 @@ static const ezOsal_Interfaces_t freertos_interface = {
 *****************************************************************************/
 const ezOsal_Interfaces_t *ezOsal_FreeRTOSGetInterface(void)
 {
-    return (const ezOsal_Interfaces_t *)&freertos_interface;
+    return &freertos_interface;
 }
 
 
@@ -164,39 +167,44 @@ ezSTATUS ezOsal_FreeRTOSTaskCreate(ezOsal_TaskHandle_t* handle)
 
 static ezSTATUS ezOsal_FreeRTOSTaskDelete(ezOsal_TaskHandle_t* handle)
 {
-    if(handle != NULL)
+    EZTRACE("ezOsal_FreeRTOSTaskDelete()");
+
+    if(handle == NULL)
     {
-        EZTRACE("ezOsal_FreeRTOSTaskDelete()");
-        vTaskDelete((TaskHandle_t)handle->task_handle);
-        return ezSUCCESS;
+        EZERROR("Task delete failed");
+        return ezSTATUS_ARG_INVALID;
     }
-    EZERROR("Task delete failed");
-    return ezFAIL;
+
+    vTaskDelete((TaskHandle_t)handle->task_handle);
+    return ezSUCCESS;
 }
 
 
 static ezSTATUS ezOsal_FreeRTOSTaskSuspend(ezOsal_TaskHandle_t* handle)
 {
-    if(handle != NULL)
+    EZTRACE("ezOsal_FreeRTOSTaskSuspend()");
+    if(handle == NULL)
     {
-        EZTRACE("ezOsal_FreeRTOSTaskSuspend()");
-        vTaskSuspend((TaskHandle_t)handle->task_handle);
-        return ezSUCCESS;
+        EZERROR("Task suspend failed");
+        return ezSTATUS_ARG_INVALID;
     }
-    EZERROR("Task suspend failed");
-    return ezFAIL;
+    
+    vTaskSuspend((TaskHandle_t)handle->task_handle);
+    return ezSUCCESS;
+    
 }
 
 static ezSTATUS ezOsal_FreeRTOSTaskResume(ezOsal_TaskHandle_t* handle)
 {
-    if(handle != NULL)
+    if(handle == NULL)
     {
-        EZTRACE("ezOsal_FreeRTOSTaskResume()");
-        vTaskResume((TaskHandle_t)handle->task_handle);
-        return ezSUCCESS;
+        EZERROR("Task resume failed");
+        return ezSTATUS_ARG_INVALID;   
     }
-    EZERROR("Task resume failed");
-    return ezFAIL;
+
+    EZTRACE("ezOsal_FreeRTOSTaskResume()");
+    vTaskResume((TaskHandle_t)handle->task_handle);
+    return ezSUCCESS;
 }
 
 
@@ -223,208 +231,247 @@ static void ezOsal_FreeRTOSTaskStartScheduler(void)
 
 static ezSTATUS ezOsal_FreeRTOSSemaphoreCreate(ezOsal_SemaphoreHandle_t *handle)
 {
-    if(handle != NULL)
+    EZTRACE("ezOsal_FreeRTOSSemaphoreCreate(max_count = %d)", handle->max_count);
+    if(handle == NULL)
     {
-        EZTRACE("ezOsal_FreeRTOSSemaphoreCreate(max_count = %d)", handle->max_count);
-#if (EZ_OSAL_USE_STATIC == 1)
-        ASSERT_MSG(handle->static_resource != NULL, "static_resource must be set");
-        handle->handle = xSemaphoreCreateCountingStatic(handle->max_count, 0, (StaticSemaphore_t*)handle->static_resource);
-#else
-        handle->handle = xSemaphoreCreateCounting(handle->max_count, 0); 
-#endif
-        if(handle->handle != NULL)
-        {
-            return ezSUCCESS;
-        }
+        EZWARNING("Semaphore create failed");
+        return ezSTATUS_ARG_INVALID;
     }
-    EZERROR("Semaphore create failed");
-    return ezFAIL;
+
+#if (EZ_OSAL_USE_STATIC == 1)
+    ASSERT_MSG(handle->static_resource != NULL, "static_resource must be set");
+    handle->handle = xSemaphoreCreateCountingStatic(handle->max_count, 0, (StaticSemaphore_t*)handle->static_resource);
+#else
+    handle->handle = xSemaphoreCreateCounting(handle->max_count, 0); 
+#endif
+    if(handle->handle == NULL)
+    {
+        EZWARNING("Semaphore create failed");
+        return ezFAIL;
+    }
+
+    EZTRACE("Semaphore created successfully");
+    return ezSUCCESS;
 }
 
 static ezSTATUS ezOsal_SemaphoreFreeRTOSDelete(ezOsal_SemaphoreHandle_t *handle)
 {
-    if(handle != NULL)
+    EZTRACE("ezOsal_SemaphoreFreeRTOSDelete()");
+
+    if(handle == NULL)
     {
-        EZTRACE("ezOsal_SemaphoreFreeRTOSDelete()");
-        vSemaphoreDelete((SemaphoreHandle_t)handle->handle);
-        return ezSUCCESS;
+        EZWARNING("Semaphore delete failed");
+        return ezSTATUS_ARG_INVALID;
     }
-    EZERROR("Semaphore delete failed");
-    return ezFAIL;
+    
+    vSemaphoreDelete((SemaphoreHandle_t)handle->handle);
+    return ezSUCCESS;
+    
 }
 
 static ezSTATUS ezOsal_SemaphoreFreeRTOSTake(ezOsal_SemaphoreHandle_t *handle, uint32_t timeout_ticks)
 {
-    if(handle != NULL)
+    EZTRACE("ezOsal_SemaphoreFreeRTOSTake()");
+    if(handle == NULL)
     {
-        EZTRACE("ezOsal_SemaphoreFreeRTOSTake()");
-        if(xSemaphoreTake((SemaphoreHandle_t)handle->handle, timeout_ticks) == pdTRUE)
-        {
-            return ezSUCCESS;
-        }
+        EZWARNING("Semaphore take failed");
+        return ezSTATUS_ARG_INVALID;
     }
+    
+    if(xSemaphoreTake((SemaphoreHandle_t)handle->handle, timeout_ticks) == pdTRUE)
+    {
+        return ezSUCCESS;
+    }
+
     EZWARNING("Semaphore is taken");
-    return ezFAIL;
+    return ezSTATUS_TIMEOUT;
 }
 
 static ezSTATUS ezOsal_SemaphoreFreeRTOSGive(ezOsal_SemaphoreHandle_t *handle)
 {
-    if(handle != NULL)
+    EZTRACE("ezOsal_SemaphoreFreeRTOSGive()");
+    if(handle == NULL)
     {
-        EZTRACE("ezOsal_SemaphoreFreeRTOSGive()");
-        xSemaphoreGive((SemaphoreHandle_t)handle->handle);
-        return ezSUCCESS;
+        EZWARNING("Semaphore give failed");
+        return ezSTATUS_ARG_INVALID;
     }
-    EZERROR("Semaphore give failed");
-    return ezFAIL;
+
+    xSemaphoreGive((SemaphoreHandle_t)handle->handle);
+    return ezSUCCESS;
 }
 
 static ezSTATUS ezOsal_FreeRTOSTimerCreate(ezOsal_TimerHandle_t *handle)
 {
-    if(handle != NULL)
+    if(handle == NULL)
     {
-        EZTRACE("ezOsal_FreeRTOSTimerCreate(name = %s, period_ticks = %d)",
-            handle->timer_name, handle->period_ticks);
-    
-            handle->handle = xTimerCreate(handle->timer_name,
-                handle->period_ticks,
-                pdTRUE,
-                handle->argument,
-                (TimerCallbackFunction_t)handle->timer_callback);
-        if(handle->handle != NULL)
-        {
-            return ezSUCCESS;
-        }
+        EZWARNING("Timer create failed");
+        return ezSTATUS_ARG_INVALID;
     }
-    EZERROR("Timer create failed");
-    return ezFAIL;
+    
+    EZTRACE("ezOsal_FreeRTOSTimerCreate(name = %s, period_ticks = %d)",
+        handle->timer_name, handle->period_ticks);
+
+    handle->handle = xTimerCreate(handle->timer_name,
+        handle->period_ticks,
+        pdTRUE,
+        handle->argument,
+        (TimerCallbackFunction_t)handle->timer_callback);
+    if(handle->handle == NULL)
+    {
+        EZWARNING("Timer create failed");
+        return ezFAIL;
+    }
+    
+    EZTRACE("Timer created successfully");
+    return ezSUCCESS;
 }
 
 static ezSTATUS ezOsal_FreeRTOSTimerDelete(ezOsal_TimerHandle_t *handle)
 {
-    if(handle != NULL)
+    EZTRACE("ezOsal_FreeRTOSTimerDelete()");
+    if(handle == NULL)
     {
-        EZTRACE("ezOsal_FreeRTOSTimerDelete()");
-        xTimerDelete(handle->handle, 0);
-        return ezSUCCESS;
+        EZWARNING("Timer delete failed");
+        return ezSTATUS_ARG_INVALID;
     }
-    EZERROR("Timer delete failed");
-    return ezFAIL;
+
+    xTimerDelete(handle->handle, 0);
+    return ezSUCCESS;
 }
 
 static ezSTATUS ezOsal_FreeRTOSTimerStart(ezOsal_TimerHandle_t *handle)
 {
-    if(handle != NULL)
+    if(handle == NULL)
     {
-        EZTRACE("ezOsal_FreeRTOSTimerStart()");
-        if(xTimerStart(handle->handle, 0) == pdPASS)
-        {
-            return ezSUCCESS;
-        }
+        EZWARNING("Timer start failed");
+        return ezSTATUS_ARG_INVALID;
     }
-    EZERROR("Timer start failed");
+
+    EZTRACE("ezOsal_FreeRTOSTimerStart()");
+    if(xTimerStart(handle->handle, 0) == pdPASS)
+    {
+        return ezSUCCESS;
+    }
+
+    EZWARNING("Timer start failed");
     return ezFAIL;
 }
 
 static ezSTATUS ezOsal_FreeRTOSTimerStop(ezOsal_TimerHandle_t *handle)
 {
-    if(handle != NULL)
+    EZTRACE("ezOsal_FreeRTOSTimerStop()");
+    if(handle == NULL)
     {
-        EZTRACE("ezOsal_FreeRTOSTimerStop()");
-        if(xTimerStop(handle->handle, 0) == pdPASS)
-        {
-            return ezSUCCESS;
-        }
+        EZWARNING("Timer handle is NULL");
+        return ezSTATUS_ARG_INVALID;
     }
-    EZERROR("Timer stop failed");
-    return ezFAIL;
-}
 
-ezSTATUS ezOsal_FreeRTOSEventCreate(ezOsal_EventHandle_t *handle)
-{
-    if(handle != NULL)
+    if(xTimerStop(handle->handle, 0) == pdPASS)
     {
-        EZTRACE("ezOsal_FreeRTOSEventCreate()");
-#if (EZ_OSAL_USE_STATIC == 1)
-        ASSERT_MSG(handle->static_resource != NULL, "static_resource must be set");
-        handle->handle = (void*)xEventGroupCreateStatic((StaticEventGroup_t*)handle->static_resource);
-#else
-        handle->handle = (void*)xEventGroupCreate();
-#endif
-        if(handle->handle != NULL)
-        {
-            return ezSUCCESS;
-        }
-    }
-    EZERROR("Event create failed");
-    return ezFAIL;
-}
-
-ezSTATUS ezOsal_FreeRTOSEventDelete(ezOsal_EventHandle_t *handle)
-{
-    if(handle != NULL)
-    {
-        EZTRACE("ezOsal_FreeRTOSEventDelete()");
-        vEventGroupDelete((EventGroupHandle_t)handle->handle);
         return ezSUCCESS;
     }
-    EZERROR("Event delete failed");
+    
+    EZWARNING("Timer stop failed");
     return ezFAIL;
 }
 
-int ezOsal_FreeRTOSEventWait(ezOsal_EventHandle_t *handle, uint32_t event_mask, uint32_t timeout_ticks)
+static ezSTATUS ezOsal_FreeRTOSEventCreate(ezOsal_EventHandle_t *handle)
+{
+    EZTRACE("ezOsal_FreeRTOSEventCreate()");
+    if(handle == NULL)
+    {
+        EZWARNING("Event create failed");
+        return ezSTATUS_ARG_INVALID;
+    }
+    
+#if (EZ_OSAL_USE_STATIC == 1)
+    ASSERT_MSG(handle->static_resource != NULL, "static_resource must be set");
+    handle->handle = (void*)xEventGroupCreateStatic((StaticEventGroup_t*)handle->static_resource);
+#else
+    handle->handle = (void*)xEventGroupCreate();
+#endif
+    if(handle->handle != NULL)
+    {
+        return ezSUCCESS;
+    }
+    
+    EZWARNING("Event create failed");
+    return ezFAIL;
+}
+
+static ezSTATUS ezOsal_FreeRTOSEventDelete(ezOsal_EventHandle_t *handle)
+{
+    EZTRACE("ezOsal_FreeRTOSEventDelete()");
+    if(handle == NULL)
+    {
+        EZWARNING("Event delete failed");
+        return ezSTATUS_ARG_INVALID;
+    }
+
+    vEventGroupDelete((EventGroupHandle_t)handle->handle);
+    return ezSUCCESS;
+}
+
+static int ezOsal_FreeRTOSEventWait(ezOsal_EventHandle_t *handle, uint32_t event_mask, uint32_t timeout_ticks)
 {
     EventBits_t bits = 0;
-    if(handle != NULL)
+    EZTRACE("ezOsal_FreeRTOSEventWait()");
+
+    if(handle == NULL)
     {
-        EZTRACE("ezOsal_FreeRTOSEventWait()");
-        bits = xEventGroupWaitBits((EventGroupHandle_t)handle->handle, event_mask, pdTRUE, pdFALSE, timeout_ticks);
-        EZDEBUG("events set = %d, event mask = %d", event_mask, bits);
-        if((bits & event_mask) > 0)
-        {
-            EZDEBUG("event is set");
-            return bits;
-        }
+        EZWARNING("Event wait failed");
+        return ezSTATUS_ARG_INVALID;
     }
-    EZDEBUG("Event = %d timeout", event_mask);
+
+    bits = xEventGroupWaitBits((EventGroupHandle_t)handle->handle, event_mask, pdTRUE, pdFALSE, timeout_ticks);
+    EZDEBUG("events set = %d, event mask = %d", event_mask, bits);
+    if((bits & event_mask) > 0)
+    {
+        EZDEBUG("event is set");
+        return bits;
+    }
+
+    EZWARNING("Event = %d timeout", event_mask);
     return bits;
 }
 
-ezSTATUS ezOsal_FreeRTOSEventSet(ezOsal_EventHandle_t *handle, uint32_t event_mask)
+static ezSTATUS ezOsal_FreeRTOSEventSet(ezOsal_EventHandle_t *handle, uint32_t event_mask)
 {
     EventBits_t bits = 0;
-    if(handle != NULL)
+    EZTRACE("ezOsal_FreeRTOSEventSet()");
+
+    if(handle == NULL)
     {
-        EZTRACE("ezOsal_FreeRTOSEventSet()");
-        EZDEBUG("Set event mask = %d", event_mask);
-        bits = xEventGroupSetBits((EventGroupHandle_t)handle->handle, event_mask);
-        if((bits & event_mask) == event_mask)
-        {
-            EZDEBUG("Set event success");
-            return ezSUCCESS;
-        }
+        EZWARNING("Event set failed: handle is NULL");
+        return ezSTATUS_ARG_INVALID;
     }
-    EZERROR("Event set failed");
+    
+    EZDEBUG("Set event mask = %d", event_mask);
+    bits = xEventGroupSetBits((EventGroupHandle_t)handle->handle, event_mask);
+    if((bits & event_mask) == event_mask)
+    {
+        EZDEBUG("Set event success");
+        return ezSUCCESS;
+    }
+    
+    EZWARNING("Event set failed");
     return ezFAIL;
 }
 
-ezSTATUS ezOsal_FreeRTOSEventClear(ezOsal_EventHandle_t *handle, uint32_t event_mask)
+static ezSTATUS ezOsal_FreeRTOSEventClear(ezOsal_EventHandle_t *handle, uint32_t event_mask)
 {
     EventBits_t bits = 0;
-    if(handle != NULL)
+    if(handle == NULL)
     {
-        EZTRACE("ezOsal_FreeRTOSEventClear()");
-        EZDEBUG("Clear event mask = %d", event_mask);
-        bits = xEventGroupClearBits((EventGroupHandle_t)handle->handle, event_mask);
-        if((bits & event_mask) == event_mask)
-        {
-            EZDEBUG("Clear event success");
-            return ezSUCCESS;
-        }
-        return ezSUCCESS;
+        EZWARNING("Event clear failed");
+        return ezSTATUS_ARG_INVALID;
     }
-    EZERROR("Event clear failed");
-    return ezFAIL;
+
+    EZTRACE("ezOsal_FreeRTOSEventClear()");
+    EZDEBUG("Clear event mask = %d", event_mask);
+    bits = xEventGroupClearBits((EventGroupHandle_t)handle->handle, event_mask);
+    EZDEBUG("Clear event success");
+    return ezSUCCESS;
 }
 
 #endif /* EZ_FREERTOS_PORT == 1 */
