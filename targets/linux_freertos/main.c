@@ -35,6 +35,7 @@
 #include "ez_app_osal.h"
 #include "ez_osal.h"
 #include "ez_osal_freertos.h"
+#include "ez_app_cli.h"
 
 /******************************************************************************
 * Module Preprocessor Macros
@@ -65,9 +66,8 @@ void main(void)
     rtos_interface = ezOsal_FreeRTOSGetInterface();
     (void) ezOsal_SetInterface(rtos_interface);
 
-    //ezApp_TaskWorkerInit(NULL);
     ezApp_OsalInit();
-
+    AppCli_Init();
     ezOsal_TaskStartScheduler();
 }
 

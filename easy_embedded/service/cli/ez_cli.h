@@ -14,7 +14,7 @@
 
 /** @file   ez_cli.h
  *  @author Hai Nguyen
- *  @date   10.03.2024
+ *  @date   18.02.2025
  *  @brief  Public API for Command Line Interface application
  *
  *  @details 
@@ -36,18 +36,18 @@ extern "C" {
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "ez_linked_list.h"
+
 /*****************************************************************************
 * Component Preprocessor Macros
 *****************************************************************************/
 #ifndef CONFIG_NUM_OF_ARGUMENT
-#define CONFIG_NUM_OF_ARGUMENT      4
+#define CONFIG_NUM_OF_ARGUMENT      2
 #endif
 
 #ifndef CONFIG_NUM_OF_CMD
 #define CONFIG_NUM_OF_CMD      4
 #endif
-
-#define CLI_HANDLE_INVALID       CONFIG_NUM_OF_CMD
 
 
 /*****************************************************************************
@@ -59,17 +59,96 @@ extern "C" {
 typedef enum
 {
     CLI_NC_OK,      /**< Ok code */
-    CLI_NC_ERR,     /**< generic error code */
-    CLI_NC_BAD_ARG, /**< input argument is wrong */
+    CLI_NC_ERR,     /**< Generic error code */
+    CLI_NC_BAD_ARG, /**< Received bad arguments */
 }CLI_NOTIFY_CODE;
 
-/** @brief command callback function
- */
-typedef CLI_NOTIFY_CODE(*CLI_CALLBACK)(const char * pu8Command, void * pValueList);
 
-/** @brief handle of a command
+/** @brief state of the CLI command parser
  */
-typedef uint8_t CommandHandle;
+typedef enum 
+{
+    STATE_COMMAND,  /**< State parsing the command */
+    STATE_ARGUMENT, /**< State parsing the argument */
+    STATE_VALUE,    /**< State parsing the value */
+    STATE_ERROR,    /**< Handle error and clean up */
+}CLI_STATE;
+
+/** @brief command callback function
+ * @param[out] tx_rx_buff: buffer to store the response after the command is handled
+ * @param[in] arg_list:  list of arguments. Each element is pointer to argument (char*). Number of elements in a list is defined by CONFIG_NUM_OF_ARGUMENT
+ * @param[in] value_list: list of values. Each element is pointer to value (char*). Number of elements in a list matches the number of arguments
+ * @return CLI_NOTIFY_CODE
+ */
+typedef CLI_NOTIFY_CODE (*EXEC_CMD_CALLBACK)(char * tx_rx_buff, const void **arg_list, const void **value_list);
+
+
+/** @brief Callback to get 1 char
+ * @param: None
+ * @return one character (char)
+ */
+typedef const char (*GET_CHAR_CALLBACK)(void);
+
+/** @brief Callback to send response
+ * @param[in] tx_buff:  data to be transmitted
+ * @param[in] size: size of tx_buff
+ * @return None
+ */
+typedef void (*SEND_CHARS_CALLBACK)(char * tx_buff, uint16_t size);
+
+
+/** @brief Structure holding information of one command
+ */
+typedef struct{
+    const char          *command;           /**< Pointer to the command */
+    const char          *cmd_description;   /**< Pointer to the command description */
+    EXEC_CMD_CALLBACK   callback;           /**< Pointer to the command callback function */
+    const char          *long_arg_list[CONFIG_NUM_OF_ARGUMENT];     /**< Pointer to the list of argument in long form */
+    const char          *short_arg_list[CONFIG_NUM_OF_ARGUMENT];    /**< Pointer to the list of argument in short form */
+    const char          *arg_description[CONFIG_NUM_OF_ARGUMENT];   /**< Pointer to the command description */
+}ezCliCommand_t;
+
+
+/** @brief Structure holding the interface for getting and receiving character
+ */
+typedef struct{
+    GET_CHAR_CALLBACK GetCharCallback;      /**< Callback function to get 1 character */
+    SEND_CHARS_CALLBACK SendCharsCallback;  /**< Callback function to send response */
+}ezCliInterface_t;
+
+
+/** @brief Structure holding the buffer and its informatiom
+ */
+typedef struct{
+    char* buff; /**< pointer to the buffer storing to command */ 
+    size_t size; /**< size of the command */
+    size_t curr_index;  /**< index of the buffer where next char will be stored */
+}ezCliBuff_t;
+
+
+/** @brief Structure holding all of supported commands
+ */
+typedef struct{
+    ezCliCommand_t *commands;               /**< List of commands */
+    size_t num_of_cmd;                      /**< Num of supported commands */
+}ezCliCmdList_t;
+
+
+/** @brief Structure holding the command line interface instance
+ */
+typedef struct{
+    ezCliCmdList_t *cmd_list;               /**< List of commands */
+    CLI_STATE       state;                  /**< CLI state machine */
+    ezCliBuff_t *cli_buffer;                /**< Pointer to the buffer storing the command */
+    ezCliInterface_t *interface;            /**< Interface to get and send characters */
+    uint8_t curr_cmd_index;                 /**< Current index of the command being parsed */
+    uint8_t curr_arg_index;                 /**< Index of the current argument */
+    const void *arg_list[CONFIG_NUM_OF_ARGUMENT];   /**< Storing received arguments */
+    const void *value_list[CONFIG_NUM_OF_ARGUMENT]; /**< Storing received values */
+    bool is_arg_found;  /**< flag indicate that an argument is found */
+    bool is_value_found;    /**< flag indicate that a value is found */
+    uint8_t quotation_mark_count;   /**< counter for char " when parsing string value */
+}ezCli_t;
 
 
 /*****************************************************************************
@@ -80,203 +159,26 @@ typedef uint8_t CommandHandle;
 /*****************************************************************************
 * Function Prototypes
 *****************************************************************************/
-#if 0  /* TODO */
-/******************************************************************************
-* Function : ezCli_Init
-*//** 
-* \b Description:
-*
-* This function initializes the command line interface. It resets the resource and
-* start the low level serial interface driver
-*
-* PRE-CONDITION: has dependency on UART HAL and deriver interface modules.
-* Therefore, they must be initiated before calling the cli module 
-*
-* POST-CONDITION: None
-* 
-* @param    uart_driver: driver instance of the uart peripheral
-*
-* @return   true: success
-*           false fail
-*
-* \b Example Example:
-* @code
-* ezCli_Init();
-* @endcode
-*
-* @see sum
-*
-*******************************************************************************/
-bool ezCli_Init(UartDrvApi* uart_driver);
-#endif
+
+/** @brief Initialize a command line interface instance
+ * @param[in] self:  command line interface instance
+ * @param[in] cli_buffer: buffer for storing data
+ * @param[in] interface: interface to send/receive data
+ * @param[in] cmd_list: list of supported commands
+ * @return ezSTATUS
+ */
+ezSTATUS ezCli_Init(
+    ezCli_t *self,
+    ezCliBuff_t *cli_buffer,
+    ezCliInterface_t *interface,
+    ezCliCmdList_t *cmd_list);
 
 
-/******************************************************************************
-* Function : ezCli_RegisterCommand
-*//** 
-* \b Description:
-*
-* This function register a new command 
-*
-* PRE-CONDITION: ezCli_Init() must be called before
-*
-* POST-CONDITION: None
-* 
-* @param    *command:     (IN)pointer to the command buffer
-* @param    *description: (IN)pointer to the description buffer
-* @param    callback:    (IN)pointer to the callback function, where the command is executed
-*
-* @return   index of the command, or 0xff of fail
-*
-* \b Example Example:
-* @code
-* uint8_t u8Index;
-* u8Index = ezCli_RegisterCommand("Test_Command", "this is a test command", &TestCommand);
-* @endcode
-*
-* @see sum
-*
-*******************************************************************************/
-CommandHandle ezCli_RegisterCommand(const char * command,
-                                    const char *  description, 
-                                    CLI_CALLBACK callback);
-
-
-/******************************************************************************
-* Function : ezCli_AddArgument
-*//** 
-* \b Description:
-*
-* This function initializes the ring buffer
-*
-* PRE-CONDITION: ezCli_Init() and ezCli_RegisterCommand() must be called before
-*
-* POST-CONDITION: None
-* 
-* @param    cmd_handle:  (IN)index of the command, which the argument will be added
-* @param    *long_arg:   (IN)argument in long form, starting with --
-* @param    *short_arg:  (IN)argument in short form, starting with -
-* @param    *description:(IN)argument description
-*
-* @return   True if success, else false
-*
-* \b Example Example:
-* @code
-* uint8_t u8Index;
-* u8Index = ezCli_RegisterCommand("Test_Command", "this is a test command", &TestCommand);
-* ezCli_AddArgument(u8Index, "--arg1", "-a1", "argument 1");
-* @endcode
-*
-* @see sum
-*
-*******************************************************************************/
-bool ezCli_AddArgument (CommandHandle cmd_handle,
-                        const char * long_arg, 
-                        const char * short_arg, 
-                        const char * description);
-
-
-#if 0  /* TODO */
-/******************************************************************************
-* Function : ezCli_Run
-*//**
-* \b Description:
-*
-* This function must be call in a loop/or scheduler to run the CLI
-*
-* PRE-CONDITION: CLI module must be initialized
-*
-* POST-CONDITION: None
-*
-* @param    None
-*
-* @return   None
-*
-* \b Example Example:
-* @code
-* while(1)
-* {
-*     ezCli_Run();
-* }
-* @endcode
-*
-* @see sum
-*
-*******************************************************************************/
-void ezCli_Run(void);
-#endif
-
-
-/******************************************************************************
-* Function : ezCli_CommandReceivedCallback
-*//** 
-* \b Description:
-*
-* This function resets the contents of the metadata at a specific index
-*
-* PRE-CONDITION: ezCli_Init() and ezCli_RegisterCommand() 
-*                ezCli_AddArgument() must be called before
-*
-* POST-CONDITION: None
-* 
-* @param    notify_code:         (IN) notification code
-* @param    *command_buffer:     (IN) pointer to the buffer storing the command
-* @param    command_buff_size:   (IN) size of the buffer storing the command
-*
-* @return   True if success, else false
-*
-* \b Example Example:
-* @code
-* uint8_t u8Index;
-* u8Index = ezCli_RegisterCommand("Test_Command", "this is a test command", &TestCommand);
-* ezCli_AddArgument(u8Index, "--arg1", "-a1", "argument 1");
-* ezCli_CommandReceivedCallback(u8NotifyCode, pu8CommandBuffer,u16Size);
-* @endcode
-*
-*******************************************************************************/
-bool ezCli_CommandReceivedCallback(uint8_t notify_code,
-                                   char* command_buffer,
-                                   uint16_t command_buff_size);
-
-
-/******************************************************************************
-* Function : ezCli_PrintMenu
-*//**
-* \b Description:
-*
-* This function checks prints the complete help
-*
-* PRE-CONDITION: None
-*
-* POST-CONDITION: None
-*
-* @param    None
-* @return   None
-*
-*******************************************************************************/
-void ezCli_PrintMenu(void);
-
-
-#if 0  /* TODO */
-/******************************************************************************
-* Function : ezCli_Printf
-*//**
-* \b Description:
-*
-* it is the printf function, but use a different IO
-*
-* PRE-CONDITION: None
-*
-* POST-CONDITION: None
-*
-* @param    fmt: (IN)input string
-* @param    ...: (IN)list of arguments
-*
-* @return   None
-*
-*******************************************************************************/
-void ezCli_Printf(char *fmt, ...);
-#endif
+/** @brief Call this function to periodically to process the commands
+ * @param[in] self:  command line interface instance
+ * @return None
+ */
+void ezCli_Run(ezCli_t *self);
 
 #ifdef __cplusplus
 }
