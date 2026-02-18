@@ -24,6 +24,7 @@ target_sources(ez_target
         app_task_worker/ez_worker1.c
         app_task_worker/ez_worker2.c
         app_osal/ez_app_osal.c
+        app_cli/ez_app_cli.c
 )
 
 
@@ -39,6 +40,7 @@ target_include_directories(ez_target
     PUBLIC
         app_osal/
         app_task_worker/
+        app_cli/
     PRIVATE
         # Please add private folders here
     INTERFACE

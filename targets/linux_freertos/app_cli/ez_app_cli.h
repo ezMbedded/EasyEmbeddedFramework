@@ -1,7 +1,7 @@
 /*****************************************************************************
-* Filename:         ez_app_osal.h
+* Filename:         ez_app_cli.h
 * Author:           Hai Nguyen
-* Original Date:    16.03.2025
+* Original Date:    16.02.2026
 *
 * ----------------------------------------------------------------------------
 * Contact:          Hai Nguyen
@@ -12,16 +12,16 @@
 *
 *****************************************************************************/
 
-/** @file   ez_app_osal.h
+/** @file   ez_app_cli.h
  *  @author Hai Nguyen
- *  @date   16.03.2025
- *  @brief  Application to test OSAL component
+ *  @date   16.02.2026
+ *  @brief  One line description of the component
  *
- *  @details None
+ *  @details Detail description of the component
  */
 
-#ifndef _EZ_APP_OSAL_H
-#define _EZ_APP_OSAL_H
+#ifndef _EZ_APP_CLI_H
+#define _EZ_APP_CLI_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -30,20 +30,16 @@ extern "C" {
 /*****************************************************************************
 * Includes
 *****************************************************************************/
-#if (EZ_BUILD_WITH_CMAKE == 0U)
-#include "ez_target_config.h"
-#endif
+
 
 /*****************************************************************************
 * Component Preprocessor Macros
 *****************************************************************************/
-/* None */
 
 
 /*****************************************************************************
 * Component Typedefs
 *****************************************************************************/
-/* None */
 
 
 /*****************************************************************************
@@ -51,18 +47,15 @@ extern "C" {
 *****************************************************************************/
 /* None */
 
-
 /*****************************************************************************
 * Function Prototypes
 *****************************************************************************/
-void ezApp_OsalInit(void*arg);
-void ezApp_StartOsalApp(void);
+void AppCli_Init(void);
 
-#endif /* EZ_APP_OSAL_ENABLE == 1 */
 
 #ifdef __cplusplus
 }
 #endif
 
-
+#endif
 /* End of file */

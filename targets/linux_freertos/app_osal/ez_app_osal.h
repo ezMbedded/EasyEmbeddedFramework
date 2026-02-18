@@ -56,6 +56,7 @@ extern "C" {
 * Function Prototypes
 *****************************************************************************/
 void ezApp_OsalInit(void);
+void ezApp_StartOsalApp(void);
 
 #endif /* EZ_APP_OSAL_ENABLE == 1 */
 

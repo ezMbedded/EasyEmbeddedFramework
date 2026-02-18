@@ -84,16 +84,24 @@ void ezApp_OsalInit(void* arg)
     (void) ezOsal_SemaphoreCreate(&semaphore_handle);
     (void) ezOsal_TimerCreate(&timer);
 
-    ezOsal_TimerStart(&timer);
+    //ezOsal_TimerStart(&timer);
     (void) ezOsal_TaskCreate(&task1);
     (void) ezOsal_TaskCreate(&task2);
     (void) ezOsal_TaskCreate(&task3);
 
     ezOsal_EventCreate(&event);
 
+    ezOsal_TaskSuspend(&task1);
     ezOsal_TaskSuspend(&task2);
+    ezOsal_TaskSuspend(&task3);
 }
 
+void ezApp_StartOsalApp(void)
+{
+    ezOsal_TimerStart(&timer);
+    ezOsal_TaskResume(&task1);
+    ezOsal_TaskResume(&task3);
+}
 
 /*****************************************************************************
 * Local functions

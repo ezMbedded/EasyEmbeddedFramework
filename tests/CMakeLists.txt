@@ -66,4 +66,8 @@ if(ENABLE_EZ_RPC)
     add_subdirectory(service/rpc)
 endif()
 
+if(ENABLE_EZ_CLI)
+    add_subdirectory(service/cli)
+endif()
+
 # End of file

@@ -35,6 +35,7 @@
 #include "ez_app_osal.h"
 #include "ez_osal.h"
 #include "ez_osal_threadx.h"
+#include "ez_app_cli.h"
 
 /******************************************************************************
 * Module Preprocessor Macros
@@ -72,7 +73,7 @@ void tx_application_define(void *first_unused_memory)
 {
     (void) ezOsal_Init(first_unused_memory);
     ezApp_OsalInit(NULL);
-    ezApp_TaskWorkerInit(NULL);
+    AppCli_Init();
 }
 
 /******************************************************************************

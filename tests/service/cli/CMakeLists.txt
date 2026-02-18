@@ -1,74 +1,55 @@
 # ----------------------------------------------------------------------------
 # Author: Hai Nguyen
-# Name: ez_target
+# Name: ez_event_notifier_test
 # License: This file is published under the license described in LICENSE.md
-# Description: CMake file for building linux target
+# Description: CMake file for event notifier unit test
 # ----------------------------------------------------------------------------
 
-add_executable(ez_target)
+add_executable(ez_cli_test)
 
 message(STATUS "**********************************************************")
-message(STATUS "* Generating ez_target build files")
+message(STATUS "* Generating ez_cli_test build files")
 message(STATUS "**********************************************************")
-
-
-# Include --------------------------------------------------------------------
-include(features.cmake)
 
 
 # Source files ---------------------------------------------------------------
-target_sources(ez_target
+target_sources(ez_cli_test
     PRIVATE
-        main.c
-        app_task_worker/ez_app_task_worker.c
-        app_task_worker/ez_worker1.c
-        app_task_worker/ez_worker2.c
-        app_osal/ez_app_osal.c
-        app_cli/ez_app_cli.c
+        unittest_ez_cli.c
 )
 
 
 # Definitions ----------------------------------------------------------------
-target_compile_definitions(ez_target
+target_compile_definitions(ez_cli_test
     PUBLIC
         # Please add definitions here
 )
 
 
 # Include directory -----------------------------------------------------------
-target_include_directories(ez_target
+target_include_directories(ez_cli_test
     PUBLIC
-        app_osal/
-        app_task_worker/
-        app_cli/
+        # Please add private folders here
     PRIVATE
         # Please add private folders here
     INTERFACE
         # Please add interface folders here
 )
 
-# Config RTOS -----------------------------------------------------------------
-set(FREERTOS_HEAP "4" CACHE INTERNAL "")
-set(FREERTOS_PORT "GCC_POSIX" CACHE INTERNAL "")
-
-add_library(freertos_config INTERFACE)
-target_include_directories(freertos_config SYSTEM
-INTERFACE
-    ${CMAKE_SOURCE_DIR}/targets/linux_freertos/
-)
-target_compile_definitions(freertos_config
-INTERFACE
-    projCOVERAGE_TEST=0
-)
 
 # Link libraries -------------------------------------------------------------
-target_link_libraries(ez_target
+target_link_libraries(ez_cli_test
     PUBLIC
         # Please add public libraries
     PRIVATE
+        unity
         easy_embedded_lib
     INTERFACE
         # Please add interface libraries
+)
+
+add_test(NAME ez_cli_test
+    COMMAND ez_cli_test
 )
 
 # End of file
