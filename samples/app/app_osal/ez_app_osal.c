@@ -31,6 +31,7 @@
 #include "ez_logging.h"
 #include "ez_osal.h"
 #include "ez_osal_threadx.h"
+#include "ez_osal_freertos.h"
 
 /*****************************************************************************
 * Component Preprocessor Macros
@@ -55,15 +56,33 @@ static const ezOsal_Interfaces_t *rtos_interface = NULL;
 /*****************************************************************************
 * Function Definitions
 *****************************************************************************/
+#if (EZ_FREERTOS_PORT == 1)
+static ezOsal_Stack_t stack1[STACK_SIZE];
+static ezOsal_Stack_t stack2[STACK_SIZE];
+static ezOsal_Stack_t stack3[STACK_SIZE];
+
+static ezOsal_TaskResource_t task1_resource = {
+    .stack = stack1,
+};
+static ezOsal_TaskResource_t task2_resource = {
+    .stack = stack2,
+};
+static ezOsal_TaskResource_t task3_resource = {
+    .stack = stack3,
+};
+
+#elif (EZ_THREADX_PORT == 1)
+static ezOsal_TaskResource_t task1_resource;
+static ezOsal_TaskResource_t task2_resource;
+static ezOsal_TaskResource_t task3_resource;
+#else
+#endif
+
 static void Task1Function(void *argument);
 static void Task2Function(void *argument);
 static void Task3Function(void *argument);
 static void TimerElapseCallback(void *argument);
 
-
-static ezOsal_TaskResource_t task1_resource;
-static ezOsal_TaskResource_t task2_resource;
-static ezOsal_TaskResource_t task3_resource;
 
 static ezOsal_SemaphoreResource_t semaphore_resource;
 static ezOsal_EventResource_t event_resource;

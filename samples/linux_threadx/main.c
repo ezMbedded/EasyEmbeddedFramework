@@ -35,6 +35,7 @@
 #include "ez_osal.h"
 #include "ez_osal_threadx.h"
 #include "ez_app_cli.h"
+#include "ez_version.h"
 
 /******************************************************************************
 * Module Preprocessor Macros
@@ -61,6 +62,8 @@ static const ezOsal_Interfaces_t *rtos_interface = NULL;
 *******************************************************************************/
 void main(void)
 {
+    EZINFO("Linux target using ThreadX - Hello world!");
+    EZINFO("Version: %s", EZ_SDK_VERSION);
     rtos_interface = ezOsal_ThreadXGetInterface();
     (void) ezOsal_SetInterface(rtos_interface);
     ezOsal_TaskStartScheduler();

@@ -27,7 +27,7 @@
 #include <stdlib.h>
 
 
-#define DEBUG_LVL   LVL_TRACE   /**< logging level */
+#define DEBUG_LVL   LVL_INFO   /**< logging level */
 #define MOD_NAME    "main"       /**< module name */
 #include "ez_logging.h"
 #include "ez_app_task_worker.h"
@@ -35,6 +35,8 @@
 #include "ez_osal.h"
 #include "ez_osal_freertos.h"
 #include "ez_app_cli.h"
+#include "task.h"
+#include "ez_version.h"
 
 /******************************************************************************
 * Module Preprocessor Macros
@@ -61,14 +63,28 @@ static const ezOsal_Interfaces_t *rtos_interface = NULL;
 *******************************************************************************/
 void main(void)
 {
+    EZINFO("Linux target using FreeRTOS - Hello world!");
+    EZINFO("Version: %s", EZ_SDK_VERSION);
     rtos_interface = ezOsal_FreeRTOSGetInterface();
     (void) ezOsal_SetInterface(rtos_interface);
 
-    ezApp_OsalInit();
+    ezApp_OsalInit(NULL);
     AppCli_Init();
     ezOsal_TaskStartScheduler();
 }
 
+#if ( configCHECK_FOR_STACK_OVERFLOW > 0 )
+
+    void vApplicationStackOverflowHook( TaskHandle_t xTask,
+                                        char * pcTaskName )
+    {
+        /* Check pcTaskName for the name of the offending task,
+         * or pxCurrentTCB if pcTaskName has itself been corrupted. */
+        ( void ) xTask;
+        printf("%s overflow\n", pcTaskName);
+    }
+
+#endif /* #if ( configCHECK_FOR_STACK_OVERFLOW > 0 ) */
 
 /******************************************************************************
 * Internal functions

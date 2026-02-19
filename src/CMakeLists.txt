@@ -10,8 +10,6 @@ message(STATUS "**********************************************************")
 message(STATUS "* Generating easy_embedded library build files")
 message(STATUS "**********************************************************")
 
-
-set(FRAMEWORK_ROOT_DIR ${CMAKE_SOURCE_DIR}/easy_embedded)
 option(BUILD_WITH_CMAKE "code base is built using CMake. Do not turn this OFF" ON)
 
 # Include --------------------------------------------------------------------
@@ -41,6 +39,7 @@ target_include_directories(easy_embedded_lib
     INTERFACE
         ${CMAKE_CURRENT_LIST_DIR}
         ${FRAMEWORK_ROOT_DIR}
+        ${CMAKE_SOURCE_DIR}/inc
 )
 
 

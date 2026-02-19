@@ -33,6 +33,7 @@
 #if(EZ_OSAL == 1)
 #include "ez_osal.h"
 #include "ez_osal_threadx.h"
+#include "ez_osal_freertos.h"
 #endif
 
 /*****************************************************************************

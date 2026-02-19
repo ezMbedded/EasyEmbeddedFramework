@@ -31,6 +31,7 @@
 
 #include "ez_cli.h"
 #include "ez_osal.h"
+#include "ez_osal_threadx.h"
 #include "ez_osal_freertos.h"
 #include "ez_ring_buffer.h"
 #include "ez_app_osal.h"
@@ -51,17 +52,24 @@
 /*****************************************************************************
 * Component Variable Definitions
 *****************************************************************************/
+#if (EZ_FREERTOS_PORT == 1)
 static ezOsal_Stack_t cli_task_stack[STACK_SIZE];
 static ezOsal_Stack_t get_input_task_stack[STACK_SIZE];
 
-static ezCli_t cli;
 static ezOsal_TaskResource_t cli_task_resource = {
     .stack = cli_task_stack,
 };
-
 static ezOsal_TaskResource_t get_input_task_resource = {
     .stack = get_input_task_stack,
 };
+#elif (EZ_THREADX_PORT == 1)
+static ezOsal_TaskResource_t cli_task_resource;
+static ezOsal_TaskResource_t get_input_task_resource;
+#else
+#endif
+
+static ezCli_t cli;
+
 
 static char command_buffer[CMD_BUFF_SIZE];
 static char ring_buffer[RING_BUFF_SIZE];
