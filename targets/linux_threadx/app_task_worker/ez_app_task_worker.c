@@ -28,7 +28,6 @@
 #define DEBUG_LVL   LVL_TRACE   /**< logging level */
 #define MOD_NAME    "ez_app_task_worker"       /**< module name */
 #include "ez_logging.h"
-#include "ez_easy_embedded.h"
 #include "ez_task_worker.h"
 
 #if(EZ_OSAL == 1)

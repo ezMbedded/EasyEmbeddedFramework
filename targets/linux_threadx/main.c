@@ -30,7 +30,6 @@
 #define DEBUG_LVL   LVL_TRACE   /**< logging level */
 #define MOD_NAME    "main"       /**< module name */
 #include "ez_logging.h"
-#include "ez_easy_embedded.h"
 #include "ez_app_task_worker.h"
 #include "ez_app_osal.h"
 #include "ez_osal.h"
@@ -62,7 +61,6 @@ static const ezOsal_Interfaces_t *rtos_interface = NULL;
 *******************************************************************************/
 void main(void)
 {
-    ezEasyEmbedded_Initialize();
     rtos_interface = ezOsal_ThreadXGetInterface();
     (void) ezOsal_SetInterface(rtos_interface);
     ezOsal_TaskStartScheduler();
