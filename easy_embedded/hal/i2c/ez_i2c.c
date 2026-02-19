@@ -68,19 +68,8 @@ EZ_DRV_STATUS ezI2c_SystemRegisterHwDriver(struct ezI2cDriver *hw_driver)
 
     hw_driver->initialized = false;
     EZ_LINKEDLIST_ADD_TAIL(&hw_driver_list, &hw_driver->ll_node);
-#if 0
-    if(ezEventBus_CreateBus(&hw_driver->i2c_event) == ezSUCCESS)
-    {
-        EZDEBUG("Register OK");
-        return STATUS_OK;
-    }
-    else
-#endif
-    {
-        EZERROR("Cannot create subject for GPIO driver %s", hw_driver->common.name);
-        return STATUS_ERR_GENERIC;
-    }
-    return STATUS_ERR_GENERIC;
+    EZDEBUG("Register OK");
+    return STATUS_OK;
 }
 
 EZ_DRV_STATUS ezI2c_SystemUnregisterHwDriver(struct ezI2cDriver *hw_driver)
@@ -98,7 +87,7 @@ EZ_DRV_STATUS ezI2c_SystemUnregisterHwDriver(struct ezI2cDriver *hw_driver)
 
 EZ_DRV_STATUS ezI2c_RegisterInstance(ezI2cDrvInstance_t *inst,
                                      const char *driver_name,
-                                     EVENT_CALLBACK callback)
+                                     ezDrvCallback callback)
 {
     struct Node* it_node = NULL;
     struct ezI2cDriver *i2c_drv = NULL;
@@ -116,20 +105,7 @@ EZ_DRV_STATUS ezI2c_RegisterInstance(ezI2cDrvInstance_t *inst,
         {
             EZDEBUG("Found driver!");
             inst->drv_instance.driver = (void*)i2c_drv;
-            inst->drv_instance.calback = NULL;
-
-            if(ezEventBus_CreateListener(&inst->event_subcriber, callback) != ezSUCCESS)
-            {
-                EZERROR("Cannot create observer");
-                return STATUS_ERR_GENERIC;
-            }
-
-            if(ezEventBus_Listen(&i2c_drv->i2c_event, &inst->event_subcriber) != ezSUCCESS)
-            {
-                EZERROR("Cannot subscribe to subject");
-                return STATUS_ERR_GENERIC;
-            }
-
+            inst->drv_instance.calback = callback;
             return STATUS_OK;
         }
     }
@@ -320,17 +296,20 @@ EZ_DRV_STATUS ezI2c_Probe(ezI2cDrvInstance_t *inst,
     EZ_DRV_STATUS status = STATUS_ERR_DRV_NOT_FOUND;
     struct ezI2cDriver *drv = (struct ezI2cDriver*)ezDriver_GetDriverFromInstance((struct ezDrvInstance*)inst);
 
-   if(ezDriver_IsDriverAvailable((struct ezDrvInstance*)inst, &drv->common) == true)
+    if(drv != NULL)
     {
-        status = STATUS_ERR_INF_NOT_EXIST;
-        ezDriver_LockDriver((struct ezDrvInstance*)inst, &drv->common);
-        if(drv->interface.receive_async)
+        if(ezDriver_IsDriverAvailable((struct ezDrvInstance*)inst, &drv->common) == true)
         {
-            status = drv->interface.probe(drv->interface.driver_h,
-                address,
-                timeout_millis);
+            status = STATUS_ERR_INF_NOT_EXIST;
+            ezDriver_LockDriver((struct ezDrvInstance*)inst, &drv->common);
+            if(drv->interface.probe)
+            {
+                status = drv->interface.probe(drv->interface.driver_h,
+                    address,
+                    timeout_millis);
+            }
+            ezDriver_UnlockDriver(&drv->common);
         }
-        ezDriver_UnlockDriver(&drv->common);
     }
     return status;
 }

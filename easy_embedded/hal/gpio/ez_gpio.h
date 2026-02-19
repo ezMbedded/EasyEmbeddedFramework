@@ -39,12 +39,12 @@ extern "C" {
 #include <stdbool.h>
 
 #include "ez_driver_def.h"
-#include "ez_event_bus.h"
 
 /*****************************************************************************
 * Component Preprocessor Macros
 *****************************************************************************/
-#define A_MACRO     1   /**< a macro*/
+/* None */
+
 
 /*****************************************************************************
 * Component Typedefs
@@ -140,7 +140,6 @@ struct ezGpioDriver
     struct Node                 ll_node;    /* linked list node to link to list of hw driver implmentation */
     struct ezDriverCommon       common;     /* Common data of driver */
     struct ezHwGpioInterface    interface;  /* HW API */
-    ezEventBus_t                gpio_event; /* Subject for event notification */
     bool                        initialized; /* Flag to check if the driver is initialized */
 };
 
@@ -148,7 +147,6 @@ struct ezGpioDriver
  */
 typedef struct{
     struct ezDrvInstance    drv_instance;    /**< Driver instance */
-    ezEventListener_t       event_subcriber; /**< Pointer to the event subscriber */
 } ezGpioDrvInstance_t;
 
 
@@ -167,7 +165,7 @@ EZ_DRV_STATUS ezGpio_SystemUnregisterHwDriver(struct ezGpioDriver *hw_gpio_drive
 
 EZ_DRV_STATUS ezGpio_RegisterInstance(ezGpioDrvInstance_t *inst,
                                       const char *driver_name,
-                                      EVENT_CALLBACK callback);
+                                      ezDrvCallback callback);
 
 EZ_DRV_STATUS ezGpio_UnregisterInstance(ezGpioDrvInstance_t *inst);
 

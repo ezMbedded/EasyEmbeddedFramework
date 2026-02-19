@@ -18,7 +18,6 @@ set(FRAMEWORK_ROOT_DIR ${CMAKE_SOURCE_DIR}/easy_embedded)
 # Source files ---------------------------------------------------------------
 target_sources(ez_hal_lib
     PRIVATE
-        ez_hal.c
         $<$<BOOL:${ENABLE_EZ_UART}>:uart/ez_uart.c>
         $<$<BOOL:${ENABLE_EZ_GPIO}>:gpio/ez_gpio.c>
         $<$<BOOL:${ENABLE_EZ_I2C}>:i2c/ez_i2c.c>
