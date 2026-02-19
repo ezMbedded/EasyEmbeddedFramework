@@ -12,4 +12,10 @@ Testing/
 coverage/
 extern/threadx/
 extern/freertos
+extern/fff
 docs/_build/
+targets/nucleo_f746/.settings/
+targets/nucleo_f746/Debug/
+targets/nucleo_f746/*.launch
+CMakeFiles/
+CMakeCache.txt

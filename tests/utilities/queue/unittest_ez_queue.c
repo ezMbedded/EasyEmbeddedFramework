@@ -29,6 +29,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "ez_queue.h"
+#include "string.h"
 
 TEST_GROUP(ez_queue);
 
@@ -123,7 +124,7 @@ TEST(ez_queue, PopEmptyQueue)
     uint8_t *test_data = NULL;
     uint32_t test_data_size = 0U;
 
-    status = ezQueue_GetFront(&queue, &test_data, &test_data_size);
+    status = ezQueue_GetFront(&queue, (void**)&test_data, &test_data_size);
     TEST_ASSERT_EQUAL(ezFAIL, status);
     TEST_ASSERT_EQUAL(0, test_data_size);
 }
@@ -182,7 +183,7 @@ TEST(ez_queue, test_GetFrontPop)
     queue_size = ezQueue_GetNumOfElement(&queue);
 
     /* first item */
-    status = ezQueue_GetFront(&queue, &test_data, &test_data_size);
+    status = ezQueue_GetFront(&queue, (void**)&test_data, &test_data_size);
     TEST_ASSERT_EQUAL(ezSUCCESS, status);
     TEST_ASSERT_EQUAL(sizeof(item_1), test_data_size);
     TEST_ASSERT_EQUAL_MEMORY(item_1, test_data, sizeof(item_1));
@@ -194,7 +195,7 @@ TEST(ez_queue, test_GetFrontPop)
     TEST_ASSERT_EQUAL(queue_size, 3);
 
     /* second item */
-    status = ezQueue_GetFront(&queue, &test_data, &test_data_size);
+    status = ezQueue_GetFront(&queue, (void**)&test_data, &test_data_size);
     TEST_ASSERT_EQUAL(ezSUCCESS, status);
     TEST_ASSERT_EQUAL(sizeof(item_2), test_data_size);
     TEST_ASSERT_EQUAL_MEMORY(item_2, test_data, sizeof(item_2));
@@ -206,7 +207,7 @@ TEST(ez_queue, test_GetFrontPop)
     TEST_ASSERT_EQUAL(queue_size, 2);
 
     /* third item */
-    status = ezQueue_GetFront(&queue, &test_data, &test_data_size);
+    status = ezQueue_GetFront(&queue, (void**)&test_data, &test_data_size);
     TEST_ASSERT_EQUAL(ezSUCCESS, status);
     TEST_ASSERT_EQUAL(sizeof(item_3), test_data_size);
     TEST_ASSERT_EQUAL_MEMORY(item_3, test_data, sizeof(item_3));
@@ -218,7 +219,7 @@ TEST(ez_queue, test_GetFrontPop)
     TEST_ASSERT_EQUAL(queue_size, 1);
 
     /* last item */
-    status = ezQueue_GetFront(&queue, &test_data, &test_data_size);
+    status = ezQueue_GetFront(&queue, (void**)&test_data, &test_data_size);
     TEST_ASSERT_EQUAL(ezSUCCESS, status);
     TEST_ASSERT_EQUAL(sizeof(item_4), test_data_size);
     TEST_ASSERT_EQUAL_MEMORY(item_4, test_data, sizeof(item_4));
@@ -230,7 +231,7 @@ TEST(ez_queue, test_GetFrontPop)
     TEST_ASSERT_EQUAL(queue_size, 0);
 
     /* Sanity check*/
-    status = ezQueue_GetFront(&queue, &test_data, &test_data_size);
+    status = ezQueue_GetFront(&queue, (void**)&test_data, &test_data_size);
     TEST_ASSERT_EQUAL(ezFAIL, status);
 
     queue_size = ezQueue_GetNumOfElement(&queue);
@@ -259,7 +260,7 @@ TEST(ez_queue, GetBackPop)
     if (status == ezSUCCESS)
     {
         /* first item */
-        status = ezQueue_GetBack(&queue, &test_data, &test_data_size);
+        status = ezQueue_GetBack(&queue, (void**)&test_data, &test_data_size);
         TEST_ASSERT_EQUAL(ezSUCCESS, status);
         TEST_ASSERT_EQUAL(sizeof(item_4), test_data_size);
         TEST_ASSERT_EQUAL_MEMORY(item_4, test_data, sizeof(item_4));
@@ -271,7 +272,7 @@ TEST(ez_queue, GetBackPop)
         TEST_ASSERT_EQUAL(queue_size, 3);
 
         /* second item */
-        status = ezQueue_GetBack(&queue, &test_data, &test_data_size);
+        status = ezQueue_GetBack(&queue, (void**)&test_data, &test_data_size);
         TEST_ASSERT_EQUAL(ezSUCCESS, status);
         TEST_ASSERT_EQUAL(sizeof(item_3), test_data_size);
         TEST_ASSERT_EQUAL_MEMORY(item_3, test_data, sizeof(item_3));
@@ -283,7 +284,7 @@ TEST(ez_queue, GetBackPop)
         TEST_ASSERT_EQUAL(queue_size, 2);
 
         /* third item */
-        status = ezQueue_GetBack(&queue, &test_data, &test_data_size);
+        status = ezQueue_GetBack(&queue, (void**)&test_data, &test_data_size);
         TEST_ASSERT_EQUAL(ezSUCCESS, status);
         TEST_ASSERT_EQUAL(sizeof(item_2), test_data_size);
         TEST_ASSERT_EQUAL_MEMORY(item_2, test_data, sizeof(item_2));
@@ -295,7 +296,7 @@ TEST(ez_queue, GetBackPop)
         TEST_ASSERT_EQUAL(queue_size, 1);
 
         /* last item */
-        status = ezQueue_GetBack(&queue, &test_data, &test_data_size);
+        status = ezQueue_GetBack(&queue, (void**)&test_data, &test_data_size);
         TEST_ASSERT_EQUAL(ezSUCCESS, status);
         TEST_ASSERT_EQUAL(sizeof(item_1), test_data_size);
         TEST_ASSERT_EQUAL_MEMORY(item_1, test_data, sizeof(item_1));
@@ -307,7 +308,7 @@ TEST(ez_queue, GetBackPop)
         TEST_ASSERT_EQUAL(queue_size, 0);
 
         /* Sanity check*/
-        status = ezQueue_GetBack(&queue, &test_data, &test_data_size);
+        status = ezQueue_GetBack(&queue, (void**)&test_data, &test_data_size);
         TEST_ASSERT_EQUAL(ezFAIL, status);
 
         queue_size = ezQueue_GetNumOfElement(&queue);

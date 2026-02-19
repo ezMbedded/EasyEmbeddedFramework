@@ -10,12 +10,16 @@ message(STATUS "************************************")
 
 
 # activate test depend on the activated module
-if(ENABLE_DATA_MODEL)
-    add_subdirectory(app/data_model)
+if(ENABLE_EZ_OSAL)
+    add_subdirectory(middlewares/osal)
 endif()
 
-if(ENABLE_EZ_EVENT_NOTIFIER)
-    add_subdirectory(service/event_notifier)
+if(ENABLE_DATA_MODEL)
+    add_subdirectory(service/datamodel)
+endif()
+
+if(ENABLE_EZ_EVENT_BUS)
+    add_subdirectory(service/event_bus)
 endif()
 
 if(ENABLE_EZ_TASK_WORKER AND NOT ENABLE_THREADX AND NOT ENABLE_FREERTOS)
@@ -52,6 +56,18 @@ endif()
 
 if(ENABLE_EZ_RING_BUFFER)
     add_subdirectory(utilities/ring_buffer)
+endif()
+
+if(ENABLE_EZ_GPIO)
+    add_subdirectory(hal/gpio)
+endif()
+
+if(ENABLE_EZ_RPC)
+    add_subdirectory(service/rpc)
+endif()
+
+if(ENABLE_EZ_CLI)
+    add_subdirectory(service/cli)
 endif()
 
 # End of file

@@ -20,19 +20,14 @@ Table of contents:
 
 .. toctree::
    :maxdepth: 1
-   :caption: Framework applications:
-
-   easy_embedded/app/cli/cli.rst
-   easy_embedded/app/data_model/data_model.rst
-   easy_embedded/app/ipc/ipc.rst
-   easy_embedded/app/rpc/rpc.rst
-
-.. toctree::
-   :maxdepth: 1
    :caption: Service:
 
+   easy_embedded/service/cli/cli.rst
+   easy_embedded/service/data_model/data_model.rst
+   easy_embedded/service/ipc/ipc.rst
+   easy_embedded/service/rpc/rpc.rst
    easy_embedded/service/driver/driver.rst
-   easy_embedded/service/event_notifier/event_notifier.rst
+   easy_embedded/service/event_bus/event_bus.rst
    easy_embedded/service/state_machine/state_machine.rst
    easy_embedded/service/task_worker/task_worker.rst
 

@@ -83,9 +83,9 @@ TEST_SETUP(ez_task_worker)
 {
     bool ret = false;
 
-    ret = ezTaskWorker_CreateWorker(&worker1, buff1, BUFF_SIZE, NULL);
+    ret = ezTaskWorker_CreateWorker(&worker1, buff1, BUFF_SIZE);
     TEST_ASSERT_EQUAL(true, ret);
-    ret = ezTaskWorker_CreateWorker(&worker2, buff2, BUFF_SIZE, NULL);
+    ret = ezTaskWorker_CreateWorker(&worker2, buff2, BUFF_SIZE);
     TEST_ASSERT_EQUAL(true, ret);
 }
 

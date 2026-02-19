@@ -7,7 +7,7 @@
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
 project = 'EzEmbedded Framework'
-copyright = '2024, Hai Nguyen'
+copyright = '2025, Hai Nguyen'
 author = 'Hai Nguyen'
 release = '0.0.99'
 
@@ -15,6 +15,7 @@ release = '0.0.99'
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
 extensions = [
+    'sphinxcontrib.mermaid'
 ]
 
 templates_path = ['_templates']

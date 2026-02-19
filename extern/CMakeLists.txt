@@ -83,3 +83,43 @@ if(ENABLE_FREERTOS)
     add_subdirectory(${CMAKE_SOURCE_DIR}/extern/freertos)
 endif()
 
+#Adding FFF -------------------------------------------------------------
+if(BUILD_TESTING)
+    FetchContent_Declare(
+        fff
+        GIT_REPOSITORY    https://github.com/meekrosoft/fff.git
+        GIT_TAG           v1.1
+        SOURCE_DIR        ${CMAKE_CURRENT_SOURCE_DIR}/fff
+    )
+
+    FetchContent_GetProperties(fff)
+    if(NOT fff_POPULATED)
+        message(STATUS "FFF framework is not available, downloading...")
+
+        FetchContent_Populate(fff)
+        SET(FFF_GENERATE OFF CACHE BOOL "")
+        SET(FFF_UNIT_TESTING OFF CACHE BOOL "")
+
+        message(STATUS "Download completed")
+        SET(FFF_PATH ${CMAKE_CURRENT_SOURCE_DIR}/fff CACHE STRING "Path to FFF framework")
+    endif()
+endif()
+
+#Adding Catch2 -------------------------------------------------------------
+if(BUILD_TESTING)
+    FetchContent_Declare(
+        Catch2
+        GIT_REPOSITORY    https://github.com/catchorg/Catch2.git
+        GIT_TAG           v3.8.0
+    )
+
+    FetchContent_GetProperties(Catch2)
+    if(NOT Catch2_POPULATED)
+        message(STATUS "Catch2 framework is not available, downloading...")
+        FetchContent_MakeAvailable(Catch2)
+        message(STATUS "Download completed")
+    endif()
+
+    list(APPEND CMAKE_MODULE_PATH ${Catch2_SOURCE_DIR}/extras)
+    include(Catch)
+endif()

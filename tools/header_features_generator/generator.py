@@ -56,13 +56,14 @@ def extract_feature_by_line(feature_str:str):
             tokens = tokens[1].split("\"")
             if len(tokens) == 3:
                 # cleanup the whitespace
-                tokens[0] = tokens[0].rstrip()
-                tokens[2] = tokens[2].lstrip()
-                if tokens[2] == "ON":
-                    ret = "#define {}_ENABLE 1 /* {} */\n".format(tokens[0], tokens[1])
+                module_name = tokens[0].rstrip()[7:] # remove the first 7 characters "ENABLE_"
+                activate_status = tokens[2].lstrip()
+                description = tokens[1]
+                if activate_status == "ON":
+                    ret = "#define {} 1 /* {} */\n".format(module_name, description)
                     return (EXTRACT_RESULT.FEATURE, ret)
-                elif tokens[2] == "OFF":
-                    ret = "#define {}_ENABLE 0 /* {} */\n".format(tokens[0], tokens[1])
+                elif activate_status == "OFF":
+                    ret = "#define {} 0 /* {} */\n".format(module_name, description)
                     return (EXTRACT_RESULT.FEATURE, ret)
                 else:
                     return (EXTRACT_RESULT.ERROR, None)
@@ -128,7 +129,7 @@ def main():
     if os.path.exists(args.cmake_file) == False:
         logger.error("Path does not exist")
     else:
-        generate_output_header(args.cmake_file, args.output)
+        generate_output_header(args.cmake_file, args.output + "/ez_target_config.h")
 
 if __name__ == "__main__":
     main()

@@ -26,6 +26,7 @@
 *******************************************************************************/
 #include <stdint.h>
 #include <stdbool.h>
+#include <string.h>
 #include "unity.h"
 #include "unity_fixture.h"
 #include "ez_state_machine.h"
@@ -86,11 +87,13 @@ DEFINE_ACTION_FUNCTION(Receive)
 DEFINE_ENTRY_FUNCTION(Receive)
 {
     receive_enter_count++;
+    return NULL;
 }
 
 DEFINE_EXIT_FUNCTION(Receive)
 {
     receive_exit_count++;
+    return NULL;
 }
 
 DEFINE_EVENT_HANDLER_FUNCTION(Receive)
@@ -124,11 +127,13 @@ DEFINE_ACTION_FUNCTION(Transmit)
 DEFINE_ENTRY_FUNCTION(Transmit)
 {
     transmit_enter_count++;
+    return NULL;
 }
 
 DEFINE_EXIT_FUNCTION(Transmit)
 {
     transmit_exit_count++;
+    return NULL;
 }
 
 DEFINE_EVENT_HANDLER_FUNCTION(Transmit)

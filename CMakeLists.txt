@@ -6,6 +6,8 @@ project(EzEmbeddedFramework
     DESCRIPTION "Easy Embedded Software Framework"
 )
 
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 #Only build test, targets, and extern when being build as a project
 if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
     include(CTest)
@@ -13,7 +15,7 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
     add_subdirectory(extern)
 endif()
 
-add_subdirectory(easy_embedded)
+add_subdirectory(src)
 
 if(BUILD_TESTING)
     add_subdirectory(tests)
@@ -28,3 +30,6 @@ add_custom_target(coverage
     COMMAND cd ${CMAKE_SOURCE_DIR} && ctest --preset=linux_test_debug
     COMMAND cd ${CMAKE_SOURCE_DIR} && rm -rf coverage && mkdir coverage
     COMMAND cd ${CMAKE_SOURCE_DIR} && gcovr -r . --filter=easy_embedded --html --html-details -o coverage/coverage.html)
+
+add_custom_target(docs
+    COMMAND sphinx-build -c ${CMAKE_SOURCE_DIR}/docs/ -v ${CMAKE_SOURCE_DIR}/docs/ ${CMAKE_SOURCE_DIR}/docs/_build/)

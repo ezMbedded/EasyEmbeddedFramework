@@ -30,6 +30,7 @@
 #include "unity.h"
 #include "unity_fixture.h"
 #include "ez_uart.h"
+#include "ez_driver_def.h"
 
 TEST_GROUP(ez_uart);
 
