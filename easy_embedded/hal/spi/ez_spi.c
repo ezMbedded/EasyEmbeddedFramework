@@ -70,19 +70,8 @@ EZ_DRV_STATUS ezSpi_SystemRegisterHwDriver(struct ezSpiDriver *hw_driver)
 
     hw_driver->initialized = false;
     EZ_LINKEDLIST_ADD_TAIL(&hw_driver_list, &hw_driver->ll_node);
-#if 0
-    if(ezEventBus_CreateBus(&hw_driver->spi_event) == ezSUCCESS)
-    {
-        EZDEBUG("Register OK");
-        return STATUS_OK;
-    }
-    else
-#endif
-    {
-        EZERROR("Cannot create subject for SPI driver %s", hw_driver->common.name);
-        return STATUS_ERR_GENERIC;
-    }
-    return STATUS_ERR_GENERIC;
+    EZDEBUG("Register OK");
+    return STATUS_OK;
 }
 
 EZ_DRV_STATUS ezSpi_SystemUnregisterHwDriver(struct ezSpiDriver *hw_driver)
@@ -100,7 +89,7 @@ EZ_DRV_STATUS ezSpi_SystemUnregisterHwDriver(struct ezSpiDriver *hw_driver)
 
 EZ_DRV_STATUS ezSpi_RegisterInstance(ezSpiDrvInstance_t *inst,
                                      const char *driver_name,
-                                     EVENT_CALLBACK callback)
+                                     ezDrvCallback callback)
 {
     struct Node* it_node = NULL;
     struct ezSpiDriver *spi_drv = NULL;
@@ -118,20 +107,7 @@ EZ_DRV_STATUS ezSpi_RegisterInstance(ezSpiDrvInstance_t *inst,
         {
             EZDEBUG("Found driver!");
             inst->drv_instance.driver = (void*)spi_drv;
-            inst->drv_instance.calback = NULL;
-
-            if(ezEventBus_CreateListener(&inst->event_subcriber, callback) != ezSUCCESS)
-            {
-                EZERROR("Cannot create observer");
-                return STATUS_ERR_GENERIC;
-            }
-
-            if(ezEventBus_Listen(&spi_drv->spi_event, &inst->event_subcriber) != ezSUCCESS)
-            {
-                EZERROR("Cannot subscribe to subject");
-                return STATUS_ERR_GENERIC;
-            }
-
+            inst->drv_instance.calback = callback;
             return STATUS_OK;
         }
     }

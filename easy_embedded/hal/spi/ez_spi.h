@@ -39,12 +39,12 @@ extern "C" {
 #include <stdbool.h>
 
 #include "ez_driver_def.h"
-#include "ez_event_bus.h"
+
 
 /*****************************************************************************
 * Component Preprocessor Macros
 *****************************************************************************/
-#define A_MACRO     1   /**< a macro*/
+/* None */
 
 /*****************************************************************************
 * Component Typedefs
@@ -139,14 +139,12 @@ struct ezSpiDriver
     struct Node                 ll_node;    /* linked list node to link to list of hw driver implmentation */
     struct ezDriverCommon       common;     /* Common data of driver */
     struct ezHwSpiInterface     interface;  /* HW API */
-    ezEventBus_t                spi_event;  /* Subject for event notification */
     bool                        initialized; /* Flag to check if the driver is initialized */
 };
 
 
 typedef struct{
     struct ezDrvInstance    drv_instance;    /**< Driver instance */
-    ezEventListener_t       event_subcriber; /**< Pointer to the event subscriber */
 } ezSpiDrvInstance_t;
 
 /*****************************************************************************
@@ -164,7 +162,7 @@ EZ_DRV_STATUS ezSpi_SystemUnregisterHwDriver(struct ezSpiDriver *hw_driver);
 
 EZ_DRV_STATUS ezSpi_RegisterInstance(ezSpiDrvInstance_t *inst,
                                     const char *driver_name,
-                                    EVENT_CALLBACK callback);
+                                    ezDrvCallback callback);
 
 EZ_DRV_STATUS ezSpi_UnregisterInstance(ezSpiDrvInstance_t *inst);
 
