@@ -1,6 +1,6 @@
 name: Deploy Sphinx documentation to Pages
 
-on: [push, pull_request, workflow_dispatch]
+on: [pull_request, workflow_dispatch]
 
 permissions:
   contents: write
