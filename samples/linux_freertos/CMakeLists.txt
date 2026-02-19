@@ -54,7 +54,7 @@ set(FREERTOS_PORT "GCC_POSIX" CACHE INTERNAL "")
 add_library(freertos_config INTERFACE)
 target_include_directories(freertos_config SYSTEM
 INTERFACE
-    ${CMAKE_SOURCE_DIR}/targets/linux_freertos/
+    .
 )
 target_compile_definitions(freertos_config
 INTERFACE

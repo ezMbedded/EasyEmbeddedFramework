@@ -18,7 +18,7 @@
                 "rhs": "Linux"
             },
             "cacheVariables": {
-                "TARGET_PATH": "targets/linux"
+                "TARGET_PATH": "samples/linux"
             }
         },
         {
@@ -33,7 +33,7 @@
                 "rhs": "Linux"
             },
             "cacheVariables": {
-                "TARGET_PATH": "targets/linux_threadx",
+                "TARGET_PATH": "samples/linux_threadx",
                 "THREADX_ARCH": "linux",
                 "THREADX_TOOLCHAIN": "gnu"
             }
@@ -50,7 +50,7 @@
                 "rhs": "Linux"
             },
             "cacheVariables": {
-                "TARGET_PATH": "targets/linux_freertos"
+                "TARGET_PATH": "samples/linux_freertos"
             }
         },
         {
