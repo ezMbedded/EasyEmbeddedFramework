@@ -15,7 +15,7 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
     add_subdirectory(extern)
 endif()
 
-add_subdirectory(easy_embedded)
+add_subdirectory(src)
 
 if(BUILD_TESTING)
     add_subdirectory(tests)
