@@ -1,12 +1,20 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(EzEmbeddedFramework
-    VERSION 1.0
+    VERSION 1.0.0
     LANGUAGES C CXX
     DESCRIPTION "Easy Embedded Software Framework"
 )
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(BUILD_NUMBER 0)
+
+
+# Configure a header file with version + build number
+configure_file(
+    ${CMAKE_SOURCE_DIR}/cmake/ez_version.h.in
+    ${CMAKE_SOURCE_DIR}/inc/ez_version.h
+)
 
 #Only build test, targets, and extern when being build as a project
 if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)

@@ -57,6 +57,7 @@ typedef struct
 typedef StaticSemaphore_t ezOsal_SemaphoreResource_t;
 typedef StackType_t ezOsal_Stack_t;
 typedef StaticEventGroup_t ezOsal_EventResource_t;
+typedef StaticTimer_t ezOsal_TimerResource_t;
 
 /*****************************************************************************
 * Component Variable Definitions

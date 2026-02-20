@@ -26,25 +26,6 @@ if(BUILD_TESTING)
     endif()
 endif()
 
-#Adding littlefs file system -------------------------------------------------
-if(ENABLE_LITTLE_FS)
-    FetchContent_Declare(
-        littlefs
-        GIT_REPOSITORY    https://github.com/littlefs-project/littlefs.git
-        GIT_TAG           v2.7.0
-        #SOURCE_DIR        ${CMAKE_SOURCE_DIR}/extern/littlefs
-    )
-
-    FetchContent_GetProperties(littlefs)
-    if(NOT littlefs_POPULATED)
-        message(STATUS "littlefs is not available, downloading...")
-        FetchContent_Populate(littlefs)
-        message(STATUS "Download completed")
-    endif()
-
-    add_subdirectory(littlefs)
-endif()
-
 #Adding threadx rtos ---------------------------------------------------------
 if(ENABLE_THREADX)
     FetchContent_Declare(

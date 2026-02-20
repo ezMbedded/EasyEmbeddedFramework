@@ -1,145 +1,192 @@
+
 # Easy Embedded Framework
 
-## Description
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Build Status](https://github.com/QuangHaiNguyen/EasyEmbeddedFramework/actions/workflows/linux_build.yaml/badge.svg)](https://github.com/QuangHaiNguyen/EasyEmbeddedFramework/actions)
+[![Docs](https://img.shields.io/badge/docs-latest-blue.svg)](docs/index.rst)
 
-Easy Embedded (EZ) Framework is an easy-to-use, lightweight, vendor neutral
-framework which can be integrated into any embedded system. The framework acts
-as the glue code between the application containing the business logics; the
-hardware-dependent code such as drivers, startup code; and other third-party
-libraries such as RTOS, network stack, file systems. EZ framework provides
-seperated layer between the hardware and the business logics so that both
-application developers and firmware developers can concerntrate on their
-job and leave the intagration to the framework.
+## Overview
 
-## How to build and run the project
+**Easy Embedded Framework (EZ Framework)** is a lightweight, vendor-neutral, and modular framework designed to simplify embedded system development. It acts as the glue between application logic, hardware-dependent code (drivers, startup), and third-party libraries (RTOS, file systems, etc.), enabling rapid prototyping and robust production firmware.
+
+---
+
+## Features
+
+- **Hardware Abstraction Layer (HAL):** Unified APIs for GPIO, UART, I2C, SPI, and more.
+- **Middleware Support:** OS abstraction, file system (TBA).
+- **services Support:** event bus, rpc, cli, data model, and more
+- **RTOS Integration:** Out-of-the-box support for FreeRTOS, ThreadX, and bare-metal.
+- **Extensible Drivers:** Easily add or swap hardware drivers.
+- **Cross-Platform:** Build and test on Linux, WSL, or real hardware (STM32, Pi Pico, etc.).
+- **Comprehensive Testing:** Modular unit tests and code coverage.
+- **Documentation:** Sphinx-based docs and Doxygen API reference.
+- **Docker Support:** Reproducible development environment.
+
+---
+
+## Table of Contents
+
+- [Getting Started](#getting-started)
+- [Building](#building)
+- [Running Tests](#running-tests)
+- [Documentation](#documentation)
+- [Project Structure](#project-structure)
+- [Integration Guide](#integration-guide)
+- [Contributing](#contributing)
+- [License](#license)
+- [Roadmap](#roadmap)
+
+---
+
+## Getting Started
 
 ### Prerequisites
 
-The framework requires the following packages to run on Linux
-- CMAKE (version 3.25 minimum)
-- doxygen
-- graphviz
-- gcovr
-- make
-- gcc
-- python3
+- Linux or WSL
+- CMake ≥ 3.25
+- GCC, Make
+- Python 3
+- Doxygen, Graphviz, gcovr (for docs/coverage)
 
-Those packages can be installed with the following command:
-
+Install dependencies:
 ```bash
-apt-get install build-essential cmake doxygen gcovr 
+sudo apt-get install build-essential cmake doxygen graphviz gcovr python3
 ```
 
-### General
-
-Since the framework is hardware-independent so it can be built and tested on
-PC running Linux or WSL.
-
-To get the framework, users just simply cloning this repository with:
+### Clone the Repository
 
 ```bash
 git clone https://github.com/QuangHaiNguyen/EasyEmbeddedFramework.git
+cd EasyEmbeddedFramework
 ```
 
-Several cmake presets containing different configuration are prepared:
+---
 
+## Building
+
+### CMake Presets
+
+List available build presets:
 ```bash
 cmake --list-presets
 ```
 
-To build one of the preset (I would recommend the linux_threadx_debug), use
-the command:
-
+Recommended build (e.g., ThreadX on Linux):
 ```bash
 cmake --preset=linux_threadx_debug
 cmake --build --preset=linux_threadx_debug
 ```
 
-To run the project, use the command:
+### Running the Example Target
 
 ```bash
-./build_linux_threadx_debug/targets/linux_threadx/ez_target 
+./build_linux_threadx_debug/targets/linux_threadx/ez_target
 ```
 
-### Using Docker
+### Docker (Optional)
 
-A docker file is prepared so that the users don't have to go through all of
-the troubles to start development.
-
-To build the docker image, use the command:
-
+Build and run in Docker:
 ```bash
 make docker_build_image
-```
-
-To start the container, use the command:
-
-```bash
 make docker_run_bash
 ```
-
-Finally, to get all the supported commands, use the command:
-
+See all commands:
 ```bash
 make help
 ```
 
-### Using github workspace
+---
 
-This project can be opened and run in Github workspace. For more informaion,
-please check the following
-[file](.devcontainer/devcontainer.json)
+## Running Tests
 
-## Usage
-
-To integrate the framework to your project, simply add the following command
-into your cmake file (provided that the framework is available locally):
-
-```
-add_subdirectory(EasyEmbeddedFramework)
-```
-
-Then link the framework to your project with:
-
-```
-target_link_libraries(YOUR_GREAT_PROJECT PRIVATE easy_embedded_lib)
-```
-
-## Running the tests
-
-Test cases are implemented (more will be added in the future) to ensure
-the functionality of the framework. To run the test cases (provided that
-the linux_test_debug preset is built), use the following command:
-
-```
+Build and run all tests:
+```bash
+cmake --preset=linux_test_debug
+cmake --build --preset=linux_test_debug
 ctest --preset=linux_test_debug
 ```
 
-To get the code coverage, use the command:
+### Code Coverage
 
-```
+```bash
 cmake --build --preset=linux_test_debug --target=coverage
 ```
 
-Last but not list, API document can be generated with the command:
+---
 
-```
+## Documentation
+
+- **API Docs:** Generated with Doxygen
+- **User/Dev Docs:** Sphinx (see `docs/`)
+
+Generate documentation:
+```bash
 cmake --build --preset=linux_test_debug --target=doxygen
 ```
 
-## Integration
-Below is the list of projects demonstrating how to integrate EasyEmbedded
-framework into a specific target project:
-- [Pi Pico](https://github.com/QuangHaiNguyen/EasyEmbeddedFramework-Pico-Integration)
+---
 
+## Project Structure
+
+```
+EasyEmbeddedFramework/
+├── src/            # Framework source code (HAL, middleware, services, utilities)
+├── inc/            # Public headers
+├── tests/          # Unit and integration tests
+├── targets/        # Example target projects (Linux, STM32, etc.)
+├── extern/         # Third-party libraries (FreeRTOS, littlefs, etc.)
+├── tools/          # Code generation and helper scripts
+├── docs/           # Documentation (Sphinx, Doxygen)
+├── dockerfile      # Docker environment
+├── CMakeLists.txt  # Top-level build script
+└── ...
+```
+
+---
+
+## Integration Guide
+
+To add EZ Framework to your project:
+
+1. Add as a subdirectory in your CMake project:
+	```cmake
+	add_subdirectory(EasyEmbeddedFramework)
+	```
+2. Link the library:
+	```cmake
+	target_link_libraries(YOUR_PROJECT PRIVATE easy_embedded_lib)
+	```
+
+See [docs/system_overview.rst](docs/system_overview.rst) and [docs/system_architecture.rst](docs/system_architecture.rst) for more details.
+
+---
+
+## Contributing
+
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) (if available) or open an issue/PR.
+
+- Bug reports and feature requests: [GitHub Issues](https://github.com/QuangHaiNguyen/EasyEmbeddedFramework/issues)
+- Pull requests: Please use the provided templates in `.github/PULL_REQUEST_TEMPLATE/`
+
+---
 
 ## License
 
-This framework is released under MIT license. Please see [LICENSE](LICENSE) for details.
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+
+---
 
 ## Roadmap
 
-- Update documents such as system design, architectural design and module design
-- Refactor and add more test cases
-- Fix non-working components, e.g. cli, rpc
-- System test by integrating the framework to target hardware such as pi pico, stm32, esp32
+### V1.1.0
+- Implement interface to interact with network stack
+- Implement interface to interact with filesystem
+- Bug fix for v1.0.0
+
+---
+
+## References Project
+
+- TBD
+
