@@ -3,6 +3,8 @@ name: Github Linux unit test
 on:
   pull_request:
     branches: [ "**" ]
+  push:
+    branches: [ "main" ]
 
 jobs:
   build-and-run-unit-tests:

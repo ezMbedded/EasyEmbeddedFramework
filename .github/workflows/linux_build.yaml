@@ -3,6 +3,8 @@ name: Github Linux Build
 on:
   pull_request:
     branches: [ "**" ]
+  push:
+    branches: [ "main" ]
 
 jobs:
   build-multiple-configurations:
