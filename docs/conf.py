@@ -6,10 +6,10 @@
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
-project = 'EzEmbedded Framework'
-copyright = '2025, Hai Nguyen'
+project = 'Easy Embedded Framework'
+copyright = '2026, Hai Nguyen'
 author = 'Hai Nguyen'
-release = '0.0.99'
+release = '1.0.0-0'
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration

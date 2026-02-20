@@ -33,6 +33,12 @@ Table of contents:
 
 .. toctree::
    :maxdepth: 1
+   :caption: Middlewares:
+
+   easy_embedded/middlewares/osal/osal.rst
+
+.. toctree::
+   :maxdepth: 1
    :caption: Utilities:
 
    easy_embedded/utilities/assert/assert.rst

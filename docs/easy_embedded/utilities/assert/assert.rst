@@ -4,23 +4,49 @@ Assert
 
 Introduction
 ============================
-- Describe what this document does
-- Describe what this component dose and doesn't
-- Describe which use cases this component can be used or which problems will
-  be solved by this component.
+The Assert module provides runtime assertion checks for embedded applications. It helps developers catch programming errors by halting execution when a condition fails, printing the function name, line number, and an optional message. This module is designed for debugging and error detection during development and testing. It is not intended for production error handling or recovery.
 
-Component's struture
+Use cases:
+ - Detect invalid states or unexpected values during development
+ - Debug logic errors by providing context (function, line, message)
+ - Prevent silent failures by halting execution on assertion failure
+
+Limitations:
+ - Not suitable for graceful error handling
+ - Halts execution (infinite loop) on failure
+ - Requires logging/printing support
+
+Component's structure
 ============================
-Describe the structure of this component, how this component is composed from
-the sub-components.
+The Assert module consists of:
+ - Preprocessor macros for assertion checks:
+   - ASSERT(expr): Basic assertion
+   - ASSERT_MSG(expr, msg): Assertion with custom message
+   - ASSERT_CUST_MSG(expr, fmt, ...): Assertion with formatted message
+ - Integration with logging (dbg_print/printf)
+ - Conditional compilation based on EZ_ASSERT macro
+
+Mermaid diagram:
+
+.. mermaid::
+   graph TD
+     A[Caller code] -->|assert macro| B{Assertion check}
+     B -->|expr true| C[Continue execution]
+     B -->|expr false| D[Print debug info]
+     D --> E[Halt (while(1))]
 
 Component's behavior
 ============================
-Describe the behavior of the components when other components interact with it
-(external behavior).
+External behavior:
+ - When an assertion macro is used, the expression is evaluated at runtime.
+ - If the expression is true, execution continues normally.
+ - If the expression is false, debug information is printed (function, line, message), and execution halts in an infinite loop.
 
-Describe the internal behavior of the component (e.g. state machine).
+Internal behavior:
+ - Assertion macros expand to conditional checks and logging calls.
+ - Uses dbg_print or printf for output.
+ - Infinite loop prevents further execution after failure.
 
 Component's data type
 ============================
-Describe the specific data type of this component, if applicable
+No specific data types are defined. The module operates via macros and uses standard C types for expressions and messages.

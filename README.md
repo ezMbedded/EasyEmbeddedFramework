@@ -179,14 +179,14 @@ This project is licensed under the MIT License. See [LICENSE](LICENSE) for detai
 
 ## Roadmap
 
-### V1.0.0
-- Complete documents
-- Refactor
-
+### V1.1.0
+- Implement interface to interact with network stack
+- Implement interface to interact with filesystem
+- Bug fix for v1.0.0
 
 ---
 
-## References
+## References Project
 
 - TBD
 
