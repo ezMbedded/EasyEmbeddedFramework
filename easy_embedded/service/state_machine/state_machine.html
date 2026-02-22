@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../../../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>State Machine &#8212; Easy Embedded Framework 1.0.0-0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=d1102ebc" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/basic.css?v=b08954a9" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/alabaster.css?v=27fed22d" />
+    <script src="../../../_static/documentation_options.js?v=87e8cd4c"></script>
+    <script src="../../../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+    <script type="module">import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.12.1/dist/mermaid.esm.min.mjs";
+
+
+
+
+
+const initStyles = () => {
+    const defaultStyle = document.createElement('style');
+    defaultStyle.textContent = `pre.mermaid {
+    /* Same as .mermaid-container > pre */
+    display: block;
+    width: 100%;
+}
+
+pre.mermaid > svg {
+    /* Same as .mermaid-container > pre > svg */
+    height: 500px;
+    width: 100%;
+    max-width: 100% !important;
+}`;
+    document.head.appendChild(defaultStyle);
+
+    const fullscreenStyle = document.createElement('style');
+    fullscreenStyle.textContent = `.mermaid-container {
+    display: flex;
+    flex-direction: row;
+    width: 100%;
+}
+
+.mermaid-container > pre {
+    display: block;
+    width: 100%;
+}
+
+.mermaid-container > pre > svg {
+    height: 500px;
+    width: 100%;
+    max-width: 100% !important;
+}
+
+.mermaid-fullscreen-btn {
+    width: 28px;
+    height: 28px;
+    background: rgba(255, 255, 255, 0.95);
+    border: 1px solid rgba(0, 0, 0, 0.3);
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+    font-size: 14px;
+    line-height: 1;
+    padding: 0;
+    color: #333;
+}
+
+.mermaid-fullscreen-btn:hover {
+    opacity: 100% !important;
+    background: rgba(255, 255, 255, 1);
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.3);
+    transform: scale(1.1);
+}
+
+.mermaid-fullscreen-btn.dark-theme {
+    background: rgba(50, 50, 50, 0.95);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    color: #e0e0e0;
+}
+
+.mermaid-fullscreen-btn.dark-theme:hover {
+    background: rgba(60, 60, 60, 1);
+    box-shadow: 0 3px 10px rgba(255, 255, 255, 0.2);
+}
+
+.mermaid-fullscreen-modal {
+    display: none;
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 95vw;
+    height: 100vh;
+    background: rgba(255, 255, 255, 0.98);
+    z-index: 9999;
+    padding: 20px;
+    overflow: auto;
+}
+
+.mermaid-fullscreen-modal.dark-theme {
+    background: rgba(0, 0, 0, 0.98);
+}
+
+.mermaid-fullscreen-modal.active {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.mermaid-container-fullscreen {
+    position: relative;
+    width: 95vw;
+    height: 90vh;
+    max-width: 95vw;
+    max-height: 90vh;
+    background: white;
+    border-radius: 8px;
+    padding: 20px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+    overflow: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.mermaid-container-fullscreen.dark-theme {
+    background: #1a1a1a;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8);
+}
+
+.mermaid-container-fullscreen pre.mermaid {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.mermaid-container-fullscreen .mermaid svg {
+    height: 100% !important;
+    width: 100% !important;
+    cursor: grab;
+}
+
+.mermaid-fullscreen-close {
+    position: fixed !important;
+    top: 20px !important;
+    right: 20px !important;
+    width: 40px;
+    height: 40px;
+    background: rgba(255, 255, 255, 0.95);
+    border: 1px solid rgba(0, 0, 0, 0.2);
+    border-radius: 50%;
+    cursor: pointer;
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    transition: all 0.2s;
+    font-size: 24px;
+    line-height: 1;
+    color: #333;
+}
+
+.mermaid-fullscreen-close:hover {
+    background: white;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+    transform: scale(1.1);
+}
+
+.mermaid-fullscreen-close.dark-theme {
+    background: rgba(50, 50, 50, 0.95);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: #e0e0e0;
+}
+
+.mermaid-fullscreen-close.dark-theme:hover {
+    background: rgba(60, 60, 60, 1);
+    box-shadow: 0 6px 16px rgba(255, 255, 255, 0.2);
+}
+
+.mermaid-fullscreen-modal .mermaid-fullscreen-btn {
+    display: none !important;
+}`;
+    document.head.appendChild(fullscreenStyle);
+}
+
+// Detect if page has dark background
+const isDarkTheme = () => {
+    // We use a set of heuristics:
+    // 1. Check for common dark mode classes or attributes
+    // 2. Check computed background color brightness
+    if (document.documentElement.classList.contains('dark') ||
+        document.documentElement.getAttribute('data-theme') === 'dark' ||
+        document.body.classList.contains('dark') ||
+        document.body.getAttribute('data-theme') === 'dark') {
+        // console.log("Dark theme detected via class/attribute");
+        return true;
+    }
+    if (document.documentElement.classList.contains('light') ||
+        document.documentElement.getAttribute('data-theme') === 'light' ||
+        document.body.classList.contains('light') ||
+        document.body.getAttribute('data-theme') === 'light') {
+        // console.log("Light theme detected via class/attribute");
+        return false;
+    }
+    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        // console.log("Dark theme detected via prefers-color-scheme");
+        return true;
+    }
+    const bgColor = window.getComputedStyle(document.body).backgroundColor;
+    const match = bgColor.match(/rgb\((\d+),\s*(\d+),\s*(\d+)/);
+    if (match) {
+        const r = parseInt(match[1]);
+        const g = parseInt(match[2]);
+        const b = parseInt(match[3]);
+        const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+        // console.log("Background color brightness:", brightness);
+        return brightness < 128;
+    }
+    // console.log("No dark or light theme detected, defaulting to light theme");
+    return false;
+};
+
+let darkTheme = isDarkTheme();
+let modal = null;
+let modalContent = null;
+let previousScrollOffset = [window.scrollX, window.scrollY];
+
+const runMermaid = async (rerun) => {
+    console.log("Running mermaid diagrams, rerun =", rerun);
+    // clear all existing mermaid charts
+    let all_mermaids = document.querySelectorAll(".mermaid");
+
+    if (rerun) {
+        all_mermaids.forEach((el) => {
+            if(!el.hasAttribute("data-original-code")) {
+                // store original code
+                // console.log(`Storing original code for first run: `, el.innerHTML);
+                el.setAttribute('data-original-code', el.innerHTML);
+            }
+            if(el.getAttribute("data-processed") === "true") {
+                // remove and restore original
+                el.removeAttribute("data-processed");
+                // console.log(`Restoring original code for re-run: `, el.getAttribute('data-original-code'));
+                el.innerHTML = el.getAttribute('data-original-code');
+            } else {
+                // store original code
+                // console.log(`Storing original code for re-run: `, el.innerHTML);
+                el.setAttribute('data-original-code', el.innerHTML);
+            }
+        });
+        await mermaid.run();
+    }
+
+    all_mermaids = document.querySelectorAll(".mermaid");
+    const mermaids_processed = document.querySelectorAll(".mermaid[data-processed='true']");
+
+    if ("False" === "True") {
+        const mermaids_to_add_zoom = -1 === -1 ? all_mermaids.length : -1;
+        if(mermaids_to_add_zoom > 0) {
+            var svgs = d3.selectAll("");
+            if(all_mermaids.length !== mermaids_processed.length) {
+                setTimeout(() => runMermaid(false), 200);
+                return;
+            } else if(svgs.size() !== mermaids_to_add_zoom) {
+                setTimeout(() => runMermaid(false), 200);
+                return;
+            } else {
+                svgs.each(function() {
+                    var svg = d3.select(this);
+                    svg.html("<g class='wrapper'>" + svg.html() + "</g>");
+                    var inner = svg.select("g");
+                    var zoom = d3.zoom().on("zoom", function(event) {
+                        inner.attr("transform", event.transform);
+                    });
+                    svg.call(zoom);
+                });
+            }
+        }
+    } else if(all_mermaids.length !== mermaids_processed.length) {
+        // Wait for mermaid to process all diagrams
+        setTimeout(() => runMermaid(false), 200);
+        return;
+    }
+
+    // Stop here if not adding fullscreen capability
+    if ("True" !== "True") return;
+
+    if (modal !== null ) {
+        // Destroy existing modal
+        modal.remove();
+        modal = null;
+        modalContent = null;
+    }
+
+    modal = document.createElement('div');
+    modal.className = 'mermaid-fullscreen-modal' + (darkTheme ? ' dark-theme' : '');
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('aria-label', 'Fullscreen diagram viewer');
+    modal.innerHTML = `
+        <button class="mermaid-fullscreen-close${darkTheme ? ' dark-theme' : ''}" aria-label="Close fullscreen">✕</button>
+        <div class="mermaid-container-fullscreen${darkTheme ? ' dark-theme' : ''}"></div>
+    `;
+    document.body.appendChild(modal);
+
+    modalContent = modal.querySelector('.mermaid-container-fullscreen');
+    const closeBtn = modal.querySelector('.mermaid-fullscreen-close');
+
+    const closeModal = () => {
+        modal.classList.remove('active');
+        modalContent.innerHTML = '';
+        document.body.style.overflow = ''
+        window.scrollTo({left: previousScrollOffset[0], top: previousScrollOffset[1], behavior: 'instant'});
+    };
+
+    closeBtn.addEventListener('click', closeModal);
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) closeModal();
+    });
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && modal.classList.contains('active')) {
+            closeModal();
+        }
+    });
+
+    document.querySelectorAll('.mermaid').forEach((mermaidDiv) => {
+        if (mermaidDiv.parentNode.classList.contains('mermaid-container') ||
+            mermaidDiv.closest('.mermaid-fullscreen-modal')) {
+            // Already processed, adjust button class if needed
+            const existingBtn = mermaidDiv.parentNode.querySelector('.mermaid-fullscreen-btn');
+            if (existingBtn) {
+                existingBtn.className = 'mermaid-fullscreen-btn' + (darkTheme ? ' dark-theme' : '');
+            }
+            return;
+        }
+
+        const container = document.createElement('div');
+        container.className = 'mermaid-container';
+        mermaidDiv.parentNode.insertBefore(container, mermaidDiv);
+        container.appendChild(mermaidDiv);
+
+        const fullscreenBtn = document.createElement('button');
+        fullscreenBtn.className = 'mermaid-fullscreen-btn' + (darkTheme ? ' dark-theme' : '');
+        fullscreenBtn.setAttribute('aria-label', 'View diagram in fullscreen');
+        fullscreenBtn.textContent = '⛶';
+        fullscreenBtn.style.opacity = '50%';
+
+        // Calculate dynamic position based on diagram's margin and padding
+        const diagramStyle = window.getComputedStyle(mermaidDiv);
+        const marginTop = parseFloat(diagramStyle.marginTop) || 0;
+        const marginRight = parseFloat(diagramStyle.marginRight) || 0;
+        const paddingTop = parseFloat(diagramStyle.paddingTop) || 0;
+        const paddingRight = parseFloat(diagramStyle.paddingRight) || 0;
+        fullscreenBtn.style.top = `${marginTop + paddingTop + 4}px`;
+        fullscreenBtn.style.right = `${marginRight + paddingRight + 4}px`;
+
+        fullscreenBtn.addEventListener('click', () => {
+            previousScrollOffset = [window.scroll, window.scrollY];
+            const clone = mermaidDiv.cloneNode(true);
+            modalContent.innerHTML = '';
+            modalContent.appendChild(clone);
+
+            const svg = clone.querySelector('svg');
+            if (svg) {
+                svg.removeAttribute('width');
+                svg.removeAttribute('height');
+                svg.style.width = '100%';
+                svg.style.height = 'auto';
+                svg.style.maxWidth = '100%';
+                svg.style.sdisplay = 'block';
+
+                if ("False" === "True") {
+                    setTimeout(() => {
+                        const g = svg.querySelector('g');
+                        if (g) {
+                            var svgD3 = d3.select(svg);
+                            svgD3.html("<g class='wrapper'>" + svgD3.html() + "</g>");
+                            var inner = svgD3.select("g");
+                            var zoom = d3.zoom().on("zoom", function(event) {
+                                inner.attr("transform", event.transform);
+                            });
+                            svgD3.call(zoom);
+                        }
+                    }, 100);
+                }
+            }
+
+            modal.classList.add('active');
+            document.body.style.overflow = 'hidden';
+        });
+        container.appendChild(fullscreenBtn);
+    });
+};
+
+const load = async () => {
+    initStyles();
+
+    await runMermaid(true);
+
+    const reRunIfThemeChanges = async () => {
+        const newDarkTheme = isDarkTheme();
+        if (newDarkTheme !== darkTheme) {
+            darkTheme = newDarkTheme;
+            console.log("Theme change detected, re-running mermaid with", darkTheme ? "dark" : "default", "theme");
+            await mermaid.initialize(
+                {...JSON.parse(
+                    `{"startOnLoad": false}`
+                ),
+                ...{ darkMode: darkTheme, theme: darkTheme ? 'dark' : 'default' },
+                }
+            );
+            await runMermaid(true);
+        }
+    };
+
+    // Update theme classes when theme changes
+    const themeObserver = new MutationObserver(reRunIfThemeChanges);
+    themeObserver.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ['class', 'style', 'data-theme']
+    });
+    themeObserver.observe(document.body, {
+        attributes: true,
+        attributeFilter: ['class', 'style', 'data-theme']
+    });
+};
+
+
+
+
+
+console.log("Initializing mermaid with", darkTheme ? "dark" : "default", "theme");
+mermaid.initialize(
+    {...JSON.parse(
+        `{"startOnLoad": false}`
+    ),
+    ...{ darkMode: darkTheme, theme: darkTheme ? 'dark' : 'default' },
+    }
+);
+
+window.addEventListener("load", load);</script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+    <link rel="next" title="Task Worker" href="../task_worker/task_worker.html" />
+    <link rel="prev" title="Event Bus" href="../event_bus/event_bus.html" />
+   
+  <link rel="stylesheet" href="../../../_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <section id="state-machine">
+<h1>State Machine<a class="headerlink" href="#state-machine" title="Link to this heading">¶</a></h1>
+<section id="introduction">
+<h2>Introduction<a class="headerlink" href="#introduction" title="Link to this heading">¶</a></h2>
+<p>This document describes the State Machine component of the EzEmbedded Framework.</p>
+<p>The State Machine component provides a lightweight, event-driven hierarchical state
+machine implementation suitable for embedded systems. It enables developers to model
+complex system behavior using well-defined states and transitions.</p>
+<p><strong>What this component does:</strong></p>
+<ul class="simple">
+<li><p>Provides a structured way to implement finite state machines</p></li>
+<li><p>Supports entry, action, and exit functions for each state</p></li>
+<li><p>Handles event-driven state transitions via an event queue</p></li>
+<li><p>Supports hierarchical state machines (sub-state machines)</p></li>
+<li><p>Allows data sharing between states via a user-defined data pointer</p></li>
+</ul>
+<p><strong>What this component does NOT do:</strong></p>
+<ul class="simple">
+<li><p>Does not provide automatic code generation from state diagrams</p></li>
+<li><p>Does not support orthogonal regions (parallel states)</p></li>
+<li><p>Does not implement history states</p></li>
+</ul>
+<p><strong>Use cases:</strong></p>
+<ul class="simple">
+<li><p>Protocol implementations (communication protocols, handshake sequences)</p></li>
+<li><p>Device control logic (power management, mode switching)</p></li>
+<li><p>User interface navigation</p></li>
+<li><p>Workflow and process control in embedded applications</p></li>
+</ul>
+</section>
+<section id="component-s-structure">
+<h2>Component’s structure<a class="headerlink" href="#component-s-structure" title="Link to this heading">¶</a></h2>
+<p>The State Machine component is composed of two main structures:</p>
+<p><strong>ezState_t</strong> - Represents a single state with the following elements:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">name</span></code>: Human-readable state name for debugging</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">action</span></code>: Function executed repeatedly while in this state</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">enter</span></code>: Function executed once when entering this state</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">exit</span></code>: Function executed once when leaving this state</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">handle_event</span></code>: Function to process incoming events</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">sub_sm</span></code>: Pointer to a nested sub-state machine (optional)</p></li>
+</ul>
+<p><strong>ezStateMachine_t</strong> - Represents the state machine itself:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">curr_state</span></code>: Pointer to the currently active state</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">next_state</span></code>: Pointer to the next state (used during transitions)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">events</span></code>: Ring buffer storing pending events</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">data</span></code>: User-defined data pointer shared between states</p></li>
+</ul>
+<p>The component also provides helper macros for defining states:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">INIT_STATE(state_name,</span> <span class="pre">sub_state_machine)</span></code>: Declares and initializes a state</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">DEFINE_ACTION_FUNCTION(state_name)</span></code>: Declares an action function</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">DEFINE_ENTRY_FUNCTION(state_name)</span></code>: Declares an entry function</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">DEFINE_EXIT_FUNCTION(state_name)</span></code>: Declares an exit function</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">DEFINE_EVENT_HANDLER_FUNCTION(state_name)</span></code>: Declares an event handler</p></li>
+</ul>
+</section>
+<section id="component-s-behavior">
+<h2>Component’s behavior<a class="headerlink" href="#component-s-behavior" title="Link to this heading">¶</a></h2>
+<section id="external-behavior">
+<h3>External Behavior<a class="headerlink" href="#external-behavior" title="Link to this heading">¶</a></h3>
+<p>The state machine exposes the following API functions:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">ezSM_Init()</span></code>: Initializes the state machine with an initial state and event buffer</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ezSM_Run()</span></code>: Gives processing time to the state machine (call periodically)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ezSM_SetEvent()</span></code>: Pushes a new event to the state machine’s event queue</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ezSM_ClearAllEvents()</span></code>: Clears all pending events from the queue</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ezSM_SetState()</span></code>: Forces a state transition to a specific state</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ezSM_GetCurrState()</span></code>: Returns a pointer to the current state</p></li>
+</ul>
+</section>
+<section id="internal-behavior">
+<h3>Internal Behavior<a class="headerlink" href="#internal-behavior" title="Link to this heading">¶</a></h3>
+<p>The state machine follows this execution model during <code class="docutils literal notranslate"><span class="pre">ezSM_Run()</span></code>:</p>
+<ol class="arabic simple">
+<li><p><strong>Event Processing</strong>: If the current state has an event handler and events are
+pending, the handler is called with the oldest event. The handler may return
+a new state to trigger a transition.</p></li>
+<li><p><strong>Action Execution</strong>: If no state change occurred from event handling:</p>
+<ul class="simple">
+<li><p>If a sub-state machine exists, <code class="docutils literal notranslate"><span class="pre">ezSM_Run()</span></code> is called recursively on it</p></li>
+<li><p>Otherwise, the state’s action function is executed</p></li>
+<li><p>The action function may return a new state to trigger a transition</p></li>
+</ul>
+</li>
+<li><p><strong>State Transition</strong>: If a next state is determined:</p>
+<ul class="simple">
+<li><p>The current state’s <code class="docutils literal notranslate"><span class="pre">exit</span></code> function is called (if defined)</p></li>
+<li><p>The exit function can override the next state if an error occurs</p></li>
+<li><p>The new state’s <code class="docutils literal notranslate"><span class="pre">enter</span></code> function is called (if defined)</p></li>
+<li><p>The enter function can redirect to another state (e.g., for error handling)</p></li>
+</ul>
+</li>
+</ol>
+<p><strong>State Transition Diagram:</strong></p>
+<pre  class="mermaid">
+        flowchart TD
+   Start([ezSM_Run]) --&gt; EventPending{Event pending?}
+
+   EventPending --&gt;|Yes| HandleEvent[handle_event]
+   EventPending --&gt;|No| SubSMExists{Sub-SM exists?}
+
+   SubSMExists --&gt;|Yes| RunSubSM[ezSM_Run sub]
+   SubSMExists --&gt;|No| Action[action]
+
+   HandleEvent --&gt; StateChanged{State changed?}
+   RunSubSM --&gt; StateChanged
+   Action --&gt; StateChanged
+
+   StateChanged --&gt;|Yes| Transition[&quot;exit -&gt; enter&quot;]
+   StateChanged --&gt;|No| Done([Done])
+
+   Transition --&gt; Done
+    </pre></section>
+</section>
+<section id="data-flow">
+<h2>Data Flow<a class="headerlink" href="#data-flow" title="Link to this heading">¶</a></h2>
+<p>The following diagram illustrates how data flows through the state machine:</p>
+<pre  class="mermaid">
+        flowchart TD
+  subgraph Application
+    SetEvent[&quot;ezSM_SetEvent()&quot;]
+    Run[&quot;ezSM_Run()&quot;]
+    GetState[&quot;ezSM_GetCurrState()&quot;]
+  end
+
+  subgraph SM[&quot;ezStateMachine_t&quot;]
+    EventQueue[&quot;Event Queue\n(RingBuffer)&quot;]
+    States[&quot;curr_state\nnext_state&quot;]
+    Data[&quot;data (void*)\n(user-defined struct)&quot;]
+  end
+
+  subgraph State[&quot;ezState_t&quot;]
+    HandleEvent[&quot;handle_event(event)\n► Returns next state or NULL&quot;]
+    Action[&quot;action(sm)\n► Returns next state or NULL&quot;]
+    Enter[&quot;enter(sm)\n► Initializes state, may redirect&quot;]
+    Exit[&quot;exit(sm)\n► Cleanup, may redirect on error&quot;]
+    SubSM[&quot;sub_sm\n(optional nested SM)&quot;]
+  end
+
+  SetEvent --&gt; EventQueue
+  Run --&gt; States
+  States --&gt; GetState
+
+  EventQueue --&gt; HandleEvent
+  States --&gt; Action
+  Data --&gt; Enter
+  Data --&gt; Exit
+
+  Action --&gt; SubSM
+    </pre><p><strong>Data exchange between states:</strong></p>
+<ul class="simple">
+<li><p>States share data through the <code class="docutils literal notranslate"><span class="pre">sm-&gt;data</span></code> pointer</p></li>
+<li><p>This pointer is set during <code class="docutils literal notranslate"><span class="pre">ezSM_Init()</span></code> and remains constant</p></li>
+<li><p>States can cast it to the appropriate structure type to access shared data</p></li>
+</ul>
+<p><strong>Event flow:</strong></p>
+<ol class="arabic simple">
+<li><p>External code calls <code class="docutils literal notranslate"><span class="pre">ezSM_SetEvent()</span></code> to push events to the queue</p></li>
+<li><p>Events are stored in a ring buffer (FIFO order)</p></li>
+<li><p>During <code class="docutils literal notranslate"><span class="pre">ezSM_Run()</span></code>, events are popped and processed by <code class="docutils literal notranslate"><span class="pre">handle_event()</span></code></p></li>
+<li><p>The event handler returns a new state pointer or NULL (no transition)</p></li>
+</ol>
+</section>
+<section id="component-s-data-type">
+<h2>Component’s data type<a class="headerlink" href="#component-s-data-type" title="Link to this heading">¶</a></h2>
+<section id="function-pointer-types">
+<h3>Function Pointer Types<a class="headerlink" href="#function-pointer-types" title="Link to this heading">¶</a></h3>
+<dl class="c type">
+<dt class="sig sig-object c" id="c.ezSM_DoFunction">
+<span class="k"><span class="pre">type</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">ezSM_DoFunction</span></span></span><a class="headerlink" href="#c.ezSM_DoFunction" title="Link to this definition">¶</a><br /></dt>
+<dd><p>Function executed repeatedly while the state machine is in a state.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Param sm<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Pointer to the state machine</p>
+</dd>
+<dt class="field-even">Return<span class="colon">:</span></dt>
+<dd class="field-even"><p>Pointer to the next state, or NULL if no state change</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="c type">
+<dt class="sig sig-object c" id="c.ezSM_EntryFunction">
+<span class="k"><span class="pre">type</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">ezSM_EntryFunction</span></span></span><a class="headerlink" href="#c.ezSM_EntryFunction" title="Link to this definition">¶</a><br /></dt>
+<dd><p>Function executed once when entering a new state.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Param sm<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Pointer to the state machine</p>
+</dd>
+<dt class="field-even">Return<span class="colon">:</span></dt>
+<dd class="field-even"><p>Pointer to redirect state, or NULL to stay in current state</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="c type">
+<dt class="sig sig-object c" id="c.ezSM_ExitFunction">
+<span class="k"><span class="pre">type</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">ezSM_ExitFunction</span></span></span><a class="headerlink" href="#c.ezSM_ExitFunction" title="Link to this definition">¶</a><br /></dt>
+<dd><p>Function executed once when exiting the current state.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Param sm<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Pointer to the state machine</p>
+</dd>
+<dt class="field-even">Return<span class="colon">:</span></dt>
+<dd class="field-even"><p>Pointer to override next state, or NULL to proceed normally</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="c type">
+<dt class="sig sig-object c" id="c.ezSM_EventHandler">
+<span class="k"><span class="pre">type</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">ezSM_EventHandler</span></span></span><a class="headerlink" href="#c.ezSM_EventHandler" title="Link to this definition">¶</a><br /></dt>
+<dd><p>Function to handle incoming events.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Param event<span class="colon">:</span></dt>
+<dd class="field-odd"><p>The event to be handled (uint8_t)</p>
+</dd>
+<dt class="field-even">Return<span class="colon">:</span></dt>
+<dd class="field-even"><p>Pointer to the next state, or NULL if event doesn’t cause transition</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+<section id="structures">
+<h3>Structures<a class="headerlink" href="#structures" title="Link to this heading">¶</a></h3>
+<dl class="c struct">
+<dt class="sig sig-object c" id="c.ezState">
+<span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">ezState</span></span></span><a class="headerlink" href="#c.ezState" title="Link to this definition">¶</a><br /></dt>
+<dd><p>Represents a single state in the state machine.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Member name<span class="colon">:</span></dt>
+<dd class="field-odd"><p>State name string for debugging (can be NULL)</p>
+</dd>
+<dt class="field-even">Member action<span class="colon">:</span></dt>
+<dd class="field-even"><p>Pointer to the action function (can be NULL)</p>
+</dd>
+<dt class="field-odd">Member enter<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Pointer to the entry function (can be NULL)</p>
+</dd>
+<dt class="field-even">Member exit<span class="colon">:</span></dt>
+<dd class="field-even"><p>Pointer to the exit function (can be NULL)</p>
+</dd>
+<dt class="field-odd">Member handle_event<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Pointer to the event handler (can be NULL)</p>
+</dd>
+<dt class="field-even">Member sub_sm<span class="colon">:</span></dt>
+<dd class="field-even"><p>Pointer to a sub-state machine (can be NULL)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="c struct">
+<dt class="sig sig-object c" id="c.ezStateMachine">
+<span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">ezStateMachine</span></span></span><a class="headerlink" href="#c.ezStateMachine" title="Link to this definition">¶</a><br /></dt>
+<dd><p>Represents the state machine instance.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Member curr_state<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Pointer to the currently active state</p>
+</dd>
+<dt class="field-even">Member next_state<span class="colon">:</span></dt>
+<dd class="field-even"><p>Pointer to the next state during transitions</p>
+</dd>
+<dt class="field-odd">Member events<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Ring buffer for storing pending events</p>
+</dd>
+<dt class="field-even">Member data<span class="colon">:</span></dt>
+<dd class="field-even"><p>User-defined data pointer for inter-state communication</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+<section id="constants">
+<h3>Constants<a class="headerlink" href="#constants" title="Link to this heading">¶</a></h3>
+<dl class="c macro">
+<dt class="sig sig-object c" id="c.MAX_SUPPORTED_STATE">
+<span class="sig-name descname"><span class="n"><span class="pre">MAX_SUPPORTED_STATE</span></span></span><a class="headerlink" href="#c.MAX_SUPPORTED_STATE" title="Link to this definition">¶</a><br /></dt>
+<dd><p>Maximum number of supported states (0xFF = 255)</p>
+</dd></dl>
+
+</section>
+</section>
+</section>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="../../../index.html">Easy Embedded Framework</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="../../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">System:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../system_overview.html">EasyEmbedded Framework Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../system_architecture.html">EasyEmbedded Framework Architecture</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Service:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../cli/cli.html">Command Line Interface (CLI)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../data_model/data_model.html">Data Model</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../ipc/ipc.html">Interprocess Communication (IPC)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../rpc/rpc.html">Remote Procedure Call (RPC)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../driver/driver.html">Driver</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../event_bus/event_bus.html">Event Bus</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">State Machine</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task_worker/task_worker.html">Task Worker</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Middlewares:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../middlewares/osal/osal.html">Operating System Abstraction Layer (OSAL)</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Utilities:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../utilities/assert/assert.html">Assert</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../utilities/hexdump/hexdump.html">Hexdump</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../utilities/linked_list/linked_list.html">Linked List</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../utilities/logging/logging.html">Logging</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../utilities/queue/queue.html">Queue</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../utilities/ring_buffer/ring_buffer.html">Ring Buffer</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../utilities/static_alloc/static_alloc.html">Static Allocation</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../../../index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="../event_bus/event_bus.html" title="previous chapter">Event Bus</a></li>
+      <li>Next: <a href="../task_worker/task_worker.html" title="next chapter">Task Worker</a></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2026, Hai Nguyen.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 9.1.0</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+      |
+      <a href="../../../_sources/easy_embedded/service/state_machine/state_machine.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>
