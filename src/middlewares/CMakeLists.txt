@@ -11,9 +11,6 @@ message(STATUS "**********************************************************")
 message(STATUS "* Generating ez_middlewares_lib library build files")
 message(STATUS "**********************************************************")
 
-
-set(FRAMEWORK_ROOT_DIR ${CMAKE_SOURCE_DIR}/easy_embedded)
-
 # Inlcude subfolders-----------------------------------------------------------
 if(ENABLE_EZ_OSAL)
     add_subdirectory(osal)

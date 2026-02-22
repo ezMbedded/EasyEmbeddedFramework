@@ -12,7 +12,7 @@ message(STATUS "* Generating ez_service_lib library build files")
 message(STATUS "**********************************************************")
 
 
-set(FRAMEWORK_ROOT_DIR ${CMAKE_SOURCE_DIR}/easy_embedded)
+set(FRAMEWORK_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 
 
 # Inlcude subfolders-----------------------------------------------------------

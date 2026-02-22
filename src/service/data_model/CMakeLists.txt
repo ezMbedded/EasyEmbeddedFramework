@@ -12,7 +12,7 @@ message(STATUS "* Generating data_model library build files")
 message(STATUS "**********************************************************")
 
 
-set(FRAMEWORK_ROOT_DIR ${CMAKE_SOURCE_DIR}/ezmsdk)
+set(FRAMEWORK_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 
 
 # Source files ---------------------------------------------------------------
@@ -34,7 +34,7 @@ target_compile_definitions(ez_data_model_lib
 # Include directory -----------------------------------------------------------
 target_include_directories(ez_data_model_lib
     PUBLIC
-        ${CMAKE_SOURCE_DIR}/inc/service/data_model
+        ${FRAMEWORK_ROOT_DIR}/inc/service/data_model
     PRIVATE
         # Unused
     INTERFACE
