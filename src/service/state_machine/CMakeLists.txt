@@ -12,7 +12,7 @@ message(STATUS "* Generating ez_state_machine_lib library build files")
 message(STATUS "**********************************************************")
 
 
-set(FRAMEWORK_ROOT_DIR ${CMAKE_SOURCE_DIR}/easy_embedded)
+set(FRAMEWORK_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 
 
 # Source files ---------------------------------------------------------------
@@ -34,7 +34,7 @@ target_compile_definitions(ez_state_machine_lib
 # Include directory -----------------------------------------------------------
 target_include_directories(ez_state_machine_lib
     PUBLIC
-        ${CMAKE_SOURCE_DIR}/inc/service/state_machine
+        ${FRAMEWORK_ROOT_DIR}/inc/service/state_machine
     PRIVATE
         # Please add private folders here
     INTERFACE

@@ -11,7 +11,7 @@ message(STATUS "**********************************************************")
 message(STATUS "* Generating ez_utilities library build files")
 message(STATUS "**********************************************************")
 
-set(FRAMEWORK_ROOT_DIR ${CMAKE_SOURCE_DIR}/easy_embedded)
+set(FRAMEWORK_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 
 
 # Source files ---------------------------------------------------------------
@@ -44,20 +44,19 @@ target_compile_definitions(ez_utilities_lib
         EZ_BUILD_WITH_CMAKE=$<BOOL:${BUILD_WITH_CMAKE}>
 )
 
-
 # Include directory -----------------------------------------------------------
 target_include_directories(ez_utilities_lib
     PUBLIC
-        ${CMAKE_SOURCE_DIR}/inc/utilities/endian
-        ${CMAKE_SOURCE_DIR}/inc/utilities/assert
-        ${CMAKE_SOURCE_DIR}/inc/utilities/hexdump
-        ${CMAKE_SOURCE_DIR}/inc/utilities/linked_list
-        ${CMAKE_SOURCE_DIR}/inc/utilities/logging
-        ${CMAKE_SOURCE_DIR}/inc/utilities/ring_buffer
-        ${CMAKE_SOURCE_DIR}/inc/utilities/static_alloc
-        ${CMAKE_SOURCE_DIR}/inc/utilities/system_error
-        ${CMAKE_SOURCE_DIR}/inc/utilities/queue
-        ${CMAKE_SOURCE_DIR}/inc/utilities
+        ${FRAMEWORK_ROOT_DIR}/inc/utilities/endian
+        ${FRAMEWORK_ROOT_DIR}/inc/utilities/assert
+        ${FRAMEWORK_ROOT_DIR}/inc/utilities/hexdump
+        ${FRAMEWORK_ROOT_DIR}/inc/utilities/linked_list
+        ${FRAMEWORK_ROOT_DIR}/inc/utilities/logging
+        ${FRAMEWORK_ROOT_DIR}/inc/utilities/ring_buffer
+        ${FRAMEWORK_ROOT_DIR}/inc/utilities/static_alloc
+        ${FRAMEWORK_ROOT_DIR}/inc/utilities/system_error
+        ${FRAMEWORK_ROOT_DIR}/inc/utilities/queue
+        ${FRAMEWORK_ROOT_DIR}/inc/utilities
 )
 
 

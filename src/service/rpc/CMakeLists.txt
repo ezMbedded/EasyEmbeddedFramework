@@ -12,7 +12,7 @@ message(STATUS "* Generating ez_rpc_lib library build files")
 message(STATUS "**********************************************************")
 
 
-set(FRAMEWORK_ROOT_DIR ${CMAKE_SOURCE_DIR}/easy_embedded)
+set(FRAMEWORK_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 
 
 # Source files ---------------------------------------------------------------
@@ -34,7 +34,7 @@ target_compile_definitions(ez_rpc_lib
 # Include directory -----------------------------------------------------------
 target_include_directories(ez_rpc_lib
     PUBLIC
-        ${CMAKE_SOURCE_DIR}/inc/service/rpc
+        ${FRAMEWORK_ROOT_DIR}/inc/service/rpc
     PRIVATE
         # Please add private folders here
     INTERFACE

@@ -12,8 +12,8 @@ set(BUILD_NUMBER 0)
 
 # Configure a header file with version + build number
 configure_file(
-    ${CMAKE_SOURCE_DIR}/cmake/ez_version.h.in
-    ${CMAKE_SOURCE_DIR}/inc/ez_version.h
+    cmake/ez_version.h.in
+    inc/ez_version.h
 )
 
 #Only build test, targets, and extern when being build as a project
