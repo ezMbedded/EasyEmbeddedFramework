@@ -313,7 +313,7 @@ ezSTATUS ezRPC_CreateRpcRequest(struct ezRpc *rpc_inst,
 *****************************************************************************/
 ezSTATUS ezRPC_CreateRpcResponse(struct ezRpc *rpc_inst,
     uint16_t cmd_id,
-    uint32_t uuid,
+    uint16_t uuid,
     uint8_t *payload,
     uint32_t payload_size);
 
@@ -388,8 +388,6 @@ uint32_t ezRPC_NumOfPendingRecords(struct ezRpc *rpc_inst);
 *****************************************************************************/
 static inline bool ezRpc_IsRpcInstanceReady(struct ezRpc *rpc_inst)
 {
-    bool is_ready = false;
-
     if (rpc_inst != NULL)
     {
         return ((rpc_inst->commands != NULL)

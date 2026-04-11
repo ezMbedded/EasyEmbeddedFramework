@@ -71,7 +71,7 @@ bool ezSM_Init(ezStateMachine_t *sm,
         && (NULL != event_buff)
         && (event_buff_size > 0))
     {
-        success = ezRingBuffer_Init(&sm->events, event_buff, event_buff_size);
+        success = ezRingBuffer_Init(&sm->events, event_buff, (uint16_t)event_buff_size);
         if(false == success)
         {
             EZERROR("  init ring buffer error");

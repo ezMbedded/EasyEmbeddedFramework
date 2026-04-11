@@ -143,7 +143,6 @@ static bool worker1_sum_external(int a, int b)
 {
 
     struct Worker1SumContext contxt;
-    bool ret = false;
 
     contxt.a = a;
     contxt.b = b;

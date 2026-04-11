@@ -284,6 +284,9 @@ RpcTestFixture::RpcTestFixture()
 
 void ClientSum(struct ezRpcMsgHeader *header, void *payload, uint32_t payload_size_byte)
 {
+    (void)header;
+    (void)payload_size_byte;
+    (void)payload;
     client_func_called = true;
     sum_val = *(uint32_t*)payload;
     sum_val = EZNTOH32(sum_val);
@@ -292,6 +295,7 @@ void ClientSum(struct ezRpcMsgHeader *header, void *payload, uint32_t payload_si
 
 void ServerSum(struct ezRpcMsgHeader *header, void *payload, uint32_t payload_size_byte)
 {
+    (void)payload_size_byte;
     uint8_t *arg = (uint8_t*)payload;
     uint32_t a = *(uint32_t *)arg;
     arg += 4;
@@ -399,6 +403,7 @@ void CalculateCrC(
 
 void ServerErrorCallback(RPC_ERROR error_code, void *context)
 {
+    (void)context;
     last_server_error = error_code;
 }
 

@@ -428,11 +428,11 @@ static int ezOsal_FreeRTOSEventWait(ezOsal_EventHandle_t *handle, uint32_t event
     if((bits & event_mask) > 0)
     {
         EZDEBUG("event is set");
-        return bits;
+        return (int)bits;
     }
 
     EZWARNING("Event = %d timeout", event_mask);
-    return bits;
+    return (int)bits;
 }
 
 static ezSTATUS ezOsal_FreeRTOSEventSet(ezOsal_EventHandle_t *handle, uint32_t event_mask)
@@ -471,6 +471,7 @@ static ezSTATUS ezOsal_FreeRTOSEventClear(ezOsal_EventHandle_t *handle, uint32_t
     EZDEBUG("Clear event mask = %d", event_mask);
     bits = xEventGroupClearBits((EventGroupHandle_t)handle->handle, event_mask);
     EZDEBUG("Clear event success");
+    (void)bits;
     return ezSUCCESS;
 }
 

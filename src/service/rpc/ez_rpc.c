@@ -138,7 +138,7 @@ ezSTATUS ezRpc_Initialization(struct ezRpc *rpc_inst,
         if (status == ezSUCCESS)
         {
             rpc_inst->commands = commands;
-            rpc_inst->num_of_commands = num_of_commands;
+            rpc_inst->num_of_commands = (uint16_t)num_of_commands;
 
             rpc_inst->unmarshal.state = STATE_SYNC;
             rpc_inst->unmarshal.byte_count = 0;
@@ -223,7 +223,7 @@ ezSTATUS ezRPC_CreateRpcRequest(struct ezRpc *rpc_inst,
 
 ezSTATUS ezRPC_CreateRpcResponse(struct ezRpc *rpc_inst,
     uint16_t cmd_id,
-    uint32_t uuid,
+    uint16_t uuid,
     uint8_t *payload,
     uint32_t payload_size)
 {
@@ -252,7 +252,6 @@ ezSTATUS ezRPC_CreateRpcResponse(struct ezRpc *rpc_inst,
 
 void ezRPC_Run(struct ezRpc *rpc_inst)
 {
-    ezSTATUS status = ezSUCCESS;
     uint8_t one_byte = 0U;
     uint8_t *req = NULL;
     uint32_t req_size = 0U; 
@@ -363,18 +362,18 @@ static ezSTATUS ezRpc_MarshalHeader(uint8_t *buff,
         *(buff++) = (SYNC_BYTES >> 8);
         *(buff++) = (SYNC_BYTES & 0xFF);
 
-        *(buff++) = (header->uuid >> 8);
-        *(buff++) = (header->uuid & 0xFF);
+        *(buff++) = (uint8_t)(header->uuid >> 8);
+        *(buff++) = (uint8_t)(header->uuid & 0xFF);
 
         *(buff++) = (uint8_t)header->type;
         *(buff++) = header->is_encrypted;
-        *(buff++) = (header->cmd_id >> 8);
-        *(buff++) = (header->cmd_id & 0xFF);
+        *(buff++) = (uint8_t)(header->cmd_id >> 8);
+        *(buff++) = (uint8_t)(header->cmd_id & 0xFF);
         
-        *(buff++) = (header->payload_size >24);
-        *(buff++) = ((header->payload_size >> 16 & 0xFF));
-        *(buff++) = ((header->payload_size >>8) & 0xFF);
-        *(buff++) = (header->payload_size & 0xFF);
+        *(buff++) = (uint8_t)(header->payload_size >> 24);
+        *(buff++) = (uint8_t)((header->payload_size >> 16) & 0xFF);
+        *(buff++) = (uint8_t)((header->payload_size >> 8) & 0xFF);
+        *(buff++) = (uint8_t)(header->payload_size & 0xFF);
         return ezSUCCESS;
     }
     return ezFAIL;
@@ -442,8 +441,6 @@ static struct ezRpcRequestRecord *ezRpc_GetAvailRecord(struct ezRpc *rpc_inst)
 *******************************************************************************/
 static void ezRpc_UnmarshalData(struct ezRpc *rpc_inst, uint8_t rx_byte)
 {
-    ezSTATUS status = ezSUCCESS;
-
     if (rpc_inst != NULL)
     {
         switch (rpc_inst->unmarshal.state)
@@ -643,11 +640,11 @@ static void ezRpc_UnmarshalData(struct ezRpc *rpc_inst, uint8_t rx_byte)
                 }
                 else
                 {
-                    status = ezQueue_PushReservedElement(
+                    (void)ezQueue_PushReservedElement(
                         &rpc_inst->rx_msg_queue,
                         rpc_inst->unmarshal.header_elem);
 
-                    status = ezQueue_PushReservedElement(
+                    (void)ezQueue_PushReservedElement(
                         &rpc_inst->rx_msg_queue,
                         rpc_inst->unmarshal.payload_elem);
 
@@ -676,11 +673,11 @@ static void ezRpc_UnmarshalData(struct ezRpc *rpc_inst, uint8_t rx_byte)
                             rpc_inst->crc_handler->size) == true)
                     {
                         EZDEBUG("crc correct");
-                        status = ezQueue_PushReservedElement(
+                        (void)ezQueue_PushReservedElement(
                             &rpc_inst->rx_msg_queue,
                             rpc_inst->unmarshal.header_elem);
 
-                        status = ezQueue_PushReservedElement(
+                        (void)ezQueue_PushReservedElement(
                             &rpc_inst->rx_msg_queue,
                             rpc_inst->unmarshal.payload_elem);
                     }
@@ -1006,7 +1003,7 @@ void ezRpc_PrintHeader(struct ezRpcMsgHeader *header)
             dbg_print("type:\t\t unknown\n");
         }
 
-        dbg_print("tag:\t\t %d\n", header->tag);
+        dbg_print("cmd id:\t\t %d\n", header->cmd_id);
         dbg_print("encrypt:\t %d\n", header->is_encrypted);
         dbg_print("size:\t\t %d\n", header->payload_size);
         dbg_print("\n");

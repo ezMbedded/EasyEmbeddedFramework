@@ -234,14 +234,14 @@ static void ezCli_HandleStateArgument(ezCli_t *self, const char c)
                 self->arg_list[self->curr_arg_index]) == false)
             {
                 /* argument is not existing, return error */
-                EZDEBUG("[arg = %s] is not supported", self->arg_list[self->curr_arg_index]);
+                EZDEBUG("[arg = %s] is not supported", (char*)self->arg_list[self->curr_arg_index]);
                 ezCli_PrintCommandHelper(self, &self->cmd_list->commands[self->curr_cmd_index]);
                 self->state = STATE_ERROR;
                 return;
             }
             else
             {
-                EZDEBUG("complete parse the argument: [arg = %s]", self->arg_list[self->curr_arg_index]);
+                EZDEBUG("complete parse the argument: [arg = %s]", (char*)self->arg_list[self->curr_arg_index]);
                 self->is_arg_found = false;
                 self->state = STATE_VALUE;
             }
@@ -300,7 +300,7 @@ static void ezCli_HandleStateValue(ezCli_t *self, const char c)
                 /* complete parse the argument*/
                 self->cli_buffer->buff[self->cli_buffer->curr_index] = STR_TERMINATE;
                 self->cli_buffer->curr_index++;
-                EZDEBUG("complete parse the value: [value = %s]", self->value_list[self->curr_arg_index]);
+                EZDEBUG("complete parse the value: [value = %s]", (char*)self->value_list[self->curr_arg_index]);
                 self->quotation_mark_count = 0;
                 self->is_value_found = false;
                 self->curr_arg_index++;
@@ -333,10 +333,10 @@ static void ezCli_HandleStateValue(ezCli_t *self, const char c)
         if(self->quotation_mark_count == 1)
         {
             EZDEBUG("String starts");
-            self->is_value_found == true;
+            self->is_value_found = true;
 
             /* Automatically increase index by 1 to bypass the " and store the next char */
-            self->value_list[self->curr_arg_index] = (void*)&self->cli_buffer->buff[self->cli_buffer->curr_index + 1];
+            self->value_list[self->curr_arg_index] = (void*)&self->cli_buffer->buff[self->cli_buffer->curr_index];
         }
         else if (self->quotation_mark_count == 2)
         {
@@ -357,10 +357,10 @@ static void ezCli_HandleStateValue(ezCli_t *self, const char c)
             self->cli_buffer->curr_index++;
             self->quotation_mark_count = 0;
             self->is_value_found = false;
+            EZDEBUG("complete parse the value: [value = %s]", (char*)self->value_list[self->curr_arg_index]);
             self->curr_arg_index++;
             ezCli_ProcessCommand(self);
             self->state = STATE_COMMAND;
-            EZDEBUG("complete parse the value: [value = %s]", self->value_list[self->curr_arg_index]);
         }
         else
         {
@@ -421,7 +421,7 @@ static void ezCli_ProcessCommand(ezCli_t *self)
     if(ret == CLI_NC_OK)
     {
         EZDEBUG("execute command successfully");
-        self->interface->SendCharsCallback(self->cli_buffer->buff, strlen(self->cli_buffer->buff));
+        self->interface->SendCharsCallback(self->cli_buffer->buff, (uint16_t)strlen(self->cli_buffer->buff));
     }
     else if(ret == CLI_NC_BAD_ARG)
     {
@@ -550,7 +550,6 @@ static bool ezCli_IsArgumentExisting(
     ezCliCommand_t *cmd,
     const char * arg)
 {
-    uint8_t index = ARG_INVALID;
     for(uint8_t i = 0; i < CONFIG_NUM_OF_ARGUMENT; i++)
     {
         if(cmd->long_arg_list[i] != NULL &&
@@ -579,7 +578,7 @@ static void ezCli_Printf (ezCli_t *self, char* fmt, ...)
     va_start(args, fmt);
     vsnprintf(self->cli_buffer->buff, self->cli_buffer->size, fmt, args);
     va_end(args);
-    self->interface->SendCharsCallback(self->cli_buffer->buff, self->cli_buffer->size);
+    self->interface->SendCharsCallback(self->cli_buffer->buff, (uint16_t)self->cli_buffer->size);
 }
 
 #endif /* EZ_CLI == 1 */

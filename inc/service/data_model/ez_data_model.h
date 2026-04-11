@@ -150,7 +150,7 @@ const void* ezDataModel_GetDataPoint(
 * @pre data_model must be initialized using ezDataModel_Initialize()
 * @post None
 */
-const uint32_t ezDataModel_GetFirstDirty(ezDataModel_t *data_model);
+uint32_t ezDataModel_GetFirstDirty(ezDataModel_t *data_model);
 
 
 /** 

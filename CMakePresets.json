@@ -18,7 +18,10 @@
                 "rhs": "Linux"
             },
             "cacheVariables": {
-                "TARGET_PATH": "samples/linux"
+                "TARGET_PATH": "samples/linux",
+                "CMAKE_C_FLAGS": "-m32",
+                "CMAKE_CXX_FLAGS": "-m32",
+                "CMAKE_EXE_LINKER_FLAGS": "-m32"
             }
         },
         {
@@ -35,7 +38,10 @@
             "cacheVariables": {
                 "TARGET_PATH": "samples/linux_threadx",
                 "THREADX_ARCH": "linux",
-                "THREADX_TOOLCHAIN": "gnu"
+                "THREADX_TOOLCHAIN": "gnu",
+                "CMAKE_C_FLAGS": "-m32",
+                "CMAKE_CXX_FLAGS": "-m32",
+                "CMAKE_EXE_LINKER_FLAGS": "-m32"
             }
         },
         {
@@ -50,7 +56,10 @@
                 "rhs": "Linux"
             },
             "cacheVariables": {
-                "TARGET_PATH": "samples/linux_freertos"
+                "TARGET_PATH": "samples/linux_freertos",
+                "CMAKE_C_FLAGS": "-m32",
+                "CMAKE_CXX_FLAGS": "-m32",
+                "CMAKE_EXE_LINKER_FLAGS": "-m32"
             }
         },
         {
@@ -81,7 +90,9 @@
             "binaryDir": "${sourceDir}/build_linux_test_debug",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug",
-                "CMAKE_C_FLAGS":"-fprofile-arcs -ftest-coverage -fPIC"
+                "CMAKE_C_FLAGS": "-m32 -fprofile-arcs -ftest-coverage -fPIC",
+                "CMAKE_CXX_FLAGS": "-m32",
+                "CMAKE_EXE_LINKER_FLAGS": "-m32"
             }
         },
         {

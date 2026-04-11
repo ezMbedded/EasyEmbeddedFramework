@@ -13,6 +13,11 @@ jobs:
     steps:
     - uses: actions/checkout@v3
 
+    - name: Install build tools
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gcc-multilib g++-multilib
+
     - name: Configure linux_threadx_debug
       working-directory: ${{github.workspace}}
       run: cmake --preset=linux_threadx_debug

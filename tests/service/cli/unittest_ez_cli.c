@@ -404,6 +404,7 @@ static void SendCharsCallback(char *tx_buff, uint16_t size)
 
 static CLI_NOTIFY_CODE ExecuteOneArgumentCallback(char * tx_rx_buff, const void **arg_list, const void **value_list)
 {
+    (void)arg_list;
     is_one_arg_cmd_executed = true;
     TEST_ASSERT_EQUAL_STRING("value1", value_list[0]);
     sprintf(tx_rx_buff, "test completed\n");
@@ -412,6 +413,7 @@ static CLI_NOTIFY_CODE ExecuteOneArgumentCallback(char * tx_rx_buff, const void 
 
 static CLI_NOTIFY_CODE ExecuteTwoArgumentsCallback(char * tx_rx_buff, const void **arg_list, const void **value_list)
 {
+    (void)arg_list;
     is_two_arg_cmd_executed = true;
     TEST_ASSERT_EQUAL_STRING("value1", value_list[0]);
     TEST_ASSERT_EQUAL_STRING("value2", value_list[1]);
@@ -421,6 +423,7 @@ static CLI_NOTIFY_CODE ExecuteTwoArgumentsCallback(char * tx_rx_buff, const void
 
 static CLI_NOTIFY_CODE ExecuteTwoArgumentsButFirstOnlyCallback(char * tx_rx_buff, const void **arg_list, const void **value_list)
 {
+    (void)arg_list;
     is_two_arg_cmd_executed = true;
     TEST_ASSERT_EQUAL_STRING("value1", value_list[0]);
     TEST_ASSERT_NULL(value_list[1]);
@@ -431,6 +434,7 @@ static CLI_NOTIFY_CODE ExecuteTwoArgumentsButFirstOnlyCallback(char * tx_rx_buff
 
 static CLI_NOTIFY_CODE ExecuteTwoArgumentsButSecondOnlyCallback(char * tx_rx_buff, const void **arg_list, const void **value_list)
 {
+    (void)arg_list;
     TEST_ASSERT_EQUAL_STRING("value2", value_list[0]);
     is_two_arg_cmd_executed = true;
     TEST_ASSERT_NULL(value_list[1]);
@@ -440,10 +444,11 @@ static CLI_NOTIFY_CODE ExecuteTwoArgumentsButSecondOnlyCallback(char * tx_rx_buf
 
 static CLI_NOTIFY_CODE ExecutesStringArgumentsCallback(char * tx_rx_buff, const void **arg_list, const void **value_list)
 {
+    (void)arg_list;
     TEST_ASSERT_EQUAL_STRING(input_string, value_list[0]);
     is_string_executed = true;
     TEST_ASSERT_NULL(value_list[1]);
-    sprintf(tx_rx_buff, "%s\n", value_list[0]);
+    sprintf(tx_rx_buff, "%s\n", (char*)value_list[0]);
     return CLI_NC_OK;
 }
 

@@ -255,7 +255,7 @@ static ezSTATUS ezOsal_ThreadXTaskResume(ezOsal_TaskHandle_t *task_handle)
 
 static ezSTATUS ezOsal_ThreadXTaskDelay(unsigned long num_of_ticks)
 {
-    tx_thread_sleep(num_of_ticks);
+    tx_thread_sleep((ULONG)num_of_ticks);
     return ezSUCCESS;
 }
 
@@ -498,7 +498,7 @@ static int ezOsal_ThreadXOSEventWait(
         return 0;
     }
 
-    return actual_events;
+    return (int)actual_events;
 }
 
 
@@ -579,6 +579,8 @@ static void ezOsal_ThreadXPrintStatusCode(UINT code)
         case TX_NO_INSTANCE:        EZERROR("TX_NO_INSTANCE "); break;
         default: EZERROR("Unsupported code, %d", code); break;
     }
+#else
+    (void)code;
 #endif
 }
 

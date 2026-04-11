@@ -10,6 +10,28 @@ message(STATUS "**********************************************************")
 message(STATUS "* Generating easy_embedded library build files")
 message(STATUS "**********************************************************")
 
+# GCC/Clang quality and security flags for framework targets only
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang" OR CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    add_compile_options(
+        -Wall
+        -Wextra
+        -Wpedantic
+        -Werror
+        -Wconversion
+        -Wshadow
+        -Wformat=2
+        -Wnull-dereference
+        -Wduplicated-cond
+        -Wduplicated-branches
+        -Wlogical-op
+        -Wcast-align
+    )
+
+    add_compile_definitions(
+        $<$<CONFIG:Release,RelWithDebInfo,MinSizeRel>:_FORTIFY_SOURCE=2>
+    )
+endif()
+
 option(BUILD_WITH_CMAKE "code base is built using CMake. Do not turn this OFF" ON)
 
 # Include --------------------------------------------------------------------

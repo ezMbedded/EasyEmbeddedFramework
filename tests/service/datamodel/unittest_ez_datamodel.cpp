@@ -55,20 +55,19 @@
 * Module Typedefs
 *******************************************************************************/
 static uint8_t buff[BUFFER_SIZE];
-static uint8_t event_buff[BUFFER_SIZE];
 
 static ezDataPoint_t data_points[] = {
-    {DATA_POINT_BOOL_IDX, sizeof(bool), NULL},
-    {DATA_POINT_UINT8_IDX, sizeof(uint8_t), NULL},
-    {DATA_POINT_UINT16_IDX, sizeof(uint16_t), NULL},
-    {DATA_POINT_UINT32_IDX, sizeof(uint32_t), NULL},
-    {DATA_POINT_INT8_IDX, sizeof(int8_t), NULL},
-    {DATA_POINT_INT16_IDX, sizeof(int16_t), NULL},
-    {DATA_POINT_INT32_IDX, sizeof(int32_t), NULL},
-    {DATA_POINT_FLOAT_IDX, sizeof(float), NULL},
-    {DATA_POINT_DOUBLE_IDX, sizeof(double), NULL},
-    {DATA_POINT_STRING_IDX, DATA_POINT_STRING_SIZE, NULL},
-    {DATA_POINT_BLOB_IDX, DATA_POINT_BLOB_SIZE, NULL},
+    {DATA_POINT_BOOL_IDX, sizeof(bool), NULL, false},
+    {DATA_POINT_UINT8_IDX, sizeof(uint8_t), NULL, false},
+    {DATA_POINT_UINT16_IDX, sizeof(uint16_t), NULL, false},
+    {DATA_POINT_UINT32_IDX, sizeof(uint32_t), NULL, false},
+    {DATA_POINT_INT8_IDX, sizeof(int8_t), NULL, false},
+    {DATA_POINT_INT16_IDX, sizeof(int16_t), NULL, false},
+    {DATA_POINT_INT32_IDX, sizeof(int32_t), NULL, false},
+    {DATA_POINT_FLOAT_IDX, sizeof(float), NULL, false},
+    {DATA_POINT_DOUBLE_IDX, sizeof(double), NULL, false},
+    {DATA_POINT_STRING_IDX, DATA_POINT_STRING_SIZE, NULL, false},
+    {DATA_POINT_BLOB_IDX, DATA_POINT_BLOB_SIZE, NULL, false},
 };
 
 class DatamodelTestsFixture {
@@ -267,7 +266,7 @@ TEST_CASE_METHOD(DatamodelTestsFixture, "Data is not overflown", "[service][data
 
     WHEN("Data is set")
     {
-        ezSTATUS status = ezDataModel_SetDataPoint(
+        status = ezDataModel_SetDataPoint(
             &data_model,
             DATA_POINT_BOOL_IDX,
             &bool_value);

@@ -120,7 +120,6 @@ TEST(ez_queue, CreateQueueSuccess)
 TEST(ez_queue, PopEmptyQueue)
 {
     ezSTATUS status = ezSUCCESS;
-    uint32_t queue_size = 0U;
     uint8_t *test_data = NULL;
     uint32_t test_data_size = 0U;
 

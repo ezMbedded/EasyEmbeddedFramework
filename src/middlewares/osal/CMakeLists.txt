@@ -23,6 +23,14 @@ target_sources(ez_osal_lib
         $<$<BOOL:${ENABLE_THREADX}>:ez_osal_threadx.c>
 )
 
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    set_source_files_properties(
+        ez_osal_threadx.c
+        PROPERTIES
+            COMPILE_OPTIONS "-Wno-error=cast-function-type"
+    )
+endif()
+
 
 # Definitions ----------------------------------------------------------------
 target_compile_definitions(ez_osal_lib

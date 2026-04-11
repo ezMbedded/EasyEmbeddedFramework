@@ -80,7 +80,7 @@ extern "C" {
 * @endcode
 *
 *****************************************************************************/
-void ezHexdump(void *address, uint16_t size);
+void ezHexdump(void *address, uint32_t size);
 
 #endif /* CONFIG_HELPER_HEXDUMP */
 

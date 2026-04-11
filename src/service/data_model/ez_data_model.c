@@ -50,6 +50,7 @@
 
 /*****************************************************************************
 * Component Variable Definitions
+*****************************************************************************/
 /* None */
 
 
@@ -214,7 +215,7 @@ void ezDataModel_ClearAllDirtyFlags(ezDataModel_t *data_model)
 }
 
 
-const uint32_t ezDataModel_GetFirstDirty(ezDataModel_t *data_model)
+uint32_t ezDataModel_GetFirstDirty(ezDataModel_t *data_model)
 {
     uint32_t dirty_index = DATA_POINT_INVALID;
 
@@ -251,14 +252,13 @@ static bool ezDataModel_AllocateDataPoints(ezDataModel_t *data_model)
     size_t remain_byte = data_model->data_model_buff_size;
     uint32_t current_index = data_model->data_points[0].index;
     uint8_t *current_buff_ptr = data_model->data_model_buff;
-    size_t required_size = 0;
 
     for(size_t i = 0U; i < data_model->num_of_data_points; i++)
     {
         if (i > 0)
         {
             ASSERT_CUST_MSG(current_index < data_model->data_points[i].index,
-            "current index (%lu) > data point index (%lu)",
+            "current index (%d) > data point index (%d)",
             current_index,
             data_model->data_points[i].index);
         }
@@ -266,7 +266,7 @@ static bool ezDataModel_AllocateDataPoints(ezDataModel_t *data_model)
         ASSERT_CUST_MSG(data_model->data_points[i].size > 0, "data point size is zero");
 
         ASSERT_CUST_MSG(data_model->data_points[i].size <= remain_byte,
-            "required size (%lu) > remain byte (%lu)",
+            "required size (%d) > remain byte (%d)",
             data_model->data_points[i].size,
             remain_byte);
 
