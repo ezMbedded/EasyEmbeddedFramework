@@ -45,7 +45,7 @@ TEST_GROUP(ez_event_bus);
 *******************************************************************************/
 typedef struct{
     int a;
-    int b;;
+    int b;
 }TestData_t;
 
 

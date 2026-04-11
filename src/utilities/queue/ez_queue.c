@@ -21,8 +21,6 @@
  */
 
 /*****************************************************************************
-
-/*****************************************************************************
 * Includes
 *****************************************************************************/
 #include "ez_queue.h"
@@ -75,14 +73,14 @@ ezSTATUS ezQueue_CreateQueue(ezQueue *queue, uint8_t *buff, uint32_t buff_size)
 {
     ezSTATUS status = ezFAIL;
 
-    EZTRACE("ezQueue_CreateQueue( size = %lu)", buff_size);
+    EZTRACE("ezQueue_CreateQueue( size = %d)", buff_size);
 
     memset(buff, 0, buff_size);
 
     if (queue != NULL && buff != NULL && buff_size > 0)
     {
         ezLinkedList_InitNode(&queue->q_item_list);
-        if (ezStaticAlloc_InitMemList(&queue->mem_list, buff, buff_size) == true)
+        if (ezStaticAlloc_InitMemList(&queue->mem_list, buff, (uint16_t)buff_size) == true)
         {
             status = ezSUCCESS;
             EZDEBUG("create queue success");
@@ -174,7 +172,7 @@ ezReservedElement ezQueue_ReserveElement(ezQueue *queue, void **data, uint32_t d
 {
     ezQueueItem* item = NULL;
 
-    EZTRACE("ezQueue_Push( [@ = %p], [size = %lu])", data, data_size);
+    EZTRACE("ezQueue_Push( [@ = %p], [size = %d])", *data, data_size);
 
     if (queue != NULL && data != NULL && data_size > 0)
     {
@@ -183,7 +181,7 @@ ezReservedElement ezQueue_ReserveElement(ezQueue *queue, void **data, uint32_t d
         if (item != NULL)
         {
             item->data_size = data_size;
-            item->data = ezStaticAlloc_Malloc(&queue->mem_list, data_size);
+            item->data = ezStaticAlloc_Malloc(&queue->mem_list, (uint16_t)data_size);
 
             if (item->data == NULL)
             {
@@ -244,7 +242,7 @@ ezSTATUS ezQueue_Push(ezQueue* queue, void *data, uint32_t data_size)
     void *reserve_data = NULL;
     ezReservedElement reserved_elem = NULL;
 
-    EZTRACE("ezQueue_Push( [@ = %p], [size = %lu])", data, data_size);
+    EZTRACE("ezQueue_Push( [@ = %p], [size = %d])", data, data_size);
 
     if (queue != NULL && data != NULL && data_size > 0)
     {
@@ -287,10 +285,10 @@ ezSTATUS ezQueue_GetFront(ezQueue* queue, void **data, uint32_t *data_size)
 #if (DEBUG_LVL == LVL_TRACE)
             EZTRACE("[item address = %p]", (void*)front_item);
             EZTRACE("[item node address = %p]", (void*)&front_item->node);
-            EZTRACE("[item data size = %p]", (void*)front_item->data_size);
+            EZTRACE("[item data size = %d]", front_item->data_size);
 
             EZTRACE("data of front item");
-            EZHEXDUMP((uint8_t*)*data, *data_size);
+            EZHEXDUMP((uint8_t*)*data, (uint16_t)*data_size);
 #endif /* DEBUG_LVL == LVL_TRACE */
         }
         else
@@ -325,7 +323,7 @@ ezSTATUS ezQueue_GetBack(ezQueue* queue, void **data, uint32_t *data_size)
 
 #if (DEBUG_LVL == LVL_TRACE)
             EZTRACE("data of back item");
-            EZHEXDUMP((uint8_t*)*data, *data_size);
+            EZHEXDUMP((uint8_t*)*data, (uint16_t)*data_size);
 #endif
         }
         else

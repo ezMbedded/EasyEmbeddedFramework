@@ -78,7 +78,8 @@ extern "C" {
 #define EZ_OSAL_DEFINE_SEMAPHORE_HANDLE(NAME, MAX_COUNT, RESOURCE) \
     ezOsal_SemaphoreHandle_t NAME = { \
         .max_count = MAX_COUNT, \
-        .static_resource = RESOURCE \
+        .static_resource = RESOURCE, \
+        .handle = NULL \
     }
 
 #define EZ_OSAL_DEFINE_TIMER_HANDLE(NAME, PERIOD, FUNC, ARG, RESOURCE) \
@@ -86,12 +87,14 @@ extern "C" {
         .timer_name = #NAME, \
         .period_ticks = PERIOD, \
         .timer_callback = FUNC, \
+        .handle = NULL, \
         .argument = ARG, \
         .static_resource = RESOURCE \
     }
 
 #define EZ_OSAL_DEFINE_EVENT_HANDLE(NAME, RESOURCE) \
     ezOsal_EventHandle_t NAME = { \
+        .handle = NULL, \
         .static_resource = RESOURCE \
     }
 

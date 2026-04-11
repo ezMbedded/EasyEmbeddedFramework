@@ -494,19 +494,23 @@ static void RunAllTests(void)
 
 static EZ_DRV_STATUS ezMockUart_Initialize(uint8_t index)
 {
+    (void)index;
     return STATUS_OK;
 }
 
 
 static EZ_DRV_STATUS ezMockUart_Deinitialize(uint8_t index)
 {
+    (void)index;
     return STATUS_OK;
 }
 
 
 static EZ_DRV_STATUS ezMockUart_AsyncTransmit(uint8_t index, const uint8_t *tx_buff, uint16_t buff_size)
 {
-    /* In reality, the HW driver declare the ezUartDriver, so it has access to this struct */
+    (void)index;
+    (void)tx_buff;
+    (void)buff_size;
     if(mock_hw.common.curr_inst != NULL && mock_hw.common.curr_inst->calback != NULL)
     {
         mock_hw.common.curr_inst->calback(UART_EVENT_TX_CMPLT, NULL, NULL);
@@ -520,6 +524,9 @@ static EZ_DRV_STATUS ezMockUart_AsyncTransmit(uint8_t index, const uint8_t *tx_b
 
 static EZ_DRV_STATUS ezMockUart_AsyncReceive(uint8_t index, uint8_t *rx_buff, uint16_t buff_size)
 {
+    (void)index;
+    (void)rx_buff;
+    (void)buff_size;
     /* In reality, the HW driver declare the ezUartDriver, so it has access to this struct */
     if(mock_hw.common.curr_inst != NULL && mock_hw.common.curr_inst->calback != NULL)
     {
@@ -534,18 +541,27 @@ static EZ_DRV_STATUS ezMockUart_AsyncReceive(uint8_t index, uint8_t *rx_buff, ui
 
 static EZ_DRV_STATUS ezMockUart_SyncTransmit(uint8_t index, const uint8_t *tx_buff, uint16_t buff_size, uint32_t timeout_millis)
 {
+    (void)index;
+    (void)tx_buff;
+    (void)buff_size;
+    (void)timeout_millis;
     return STATUS_OK;
 }
 
 
 static EZ_DRV_STATUS ezMockUart_SyncReceive(uint8_t index, uint8_t *rx_buff, uint16_t buff_size, uint32_t timeout_millis)
 {
+    (void)index;
+    (void)rx_buff;
+    (void)buff_size;
+    (void)timeout_millis;
     return STATUS_OK;
 }
 
 
 static EZ_DRV_STATUS ezMockUart_UpdateConfig(uint8_t index)
 {
+    (void)index;
     return STATUS_OK;
 }
 
@@ -567,6 +583,8 @@ static void ezMockUart_SetImplementedInterface(struct ezHwUartInterface *interfa
 
 static void ezMockUart_Callback(uint8_t event_code, void *param1, void *param2)
 {
+    (void)param1;
+    (void)param2;
     uart_event = (EZ_UART_EVENT)event_code;
 }
 

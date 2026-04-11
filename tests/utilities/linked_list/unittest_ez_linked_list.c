@@ -292,8 +292,6 @@ TEST(ez_linked_list, LinkedList_UnlinkCurrentHead)
 
 TEST(ez_linked_list, ezLinkedList_IsNodeInList)
 {
-    uint32_t count = 0;
-
     struct Node node1 = EZ_LINKEDLIST_INIT_NODE(node1);
     struct Node node2 = EZ_LINKEDLIST_INIT_NODE(node2);
     struct Node node3 = EZ_LINKEDLIST_INIT_NODE(node3);

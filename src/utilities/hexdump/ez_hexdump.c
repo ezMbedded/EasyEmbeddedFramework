@@ -57,39 +57,41 @@ static void PrintAscii(char c);
 /*****************************************************************************
 * External functions
 *****************************************************************************/
-void ezHexdump( void *address, uint16_t size)
+void ezHexdump( void *address, uint32_t size)
 {
     void * ulStartingAddress = address;
-
-    dbg_print("\n\nAddress: %p - size: %d\n", address, size);
-    dbg_print("00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F\n");
+    dbg_print("\n");
+    dbg_print("            00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F\n");
     while((uint8_t*)ulStartingAddress < (uint8_t*)address + size)
     {
+        dbg_print("%p: ", ulStartingAddress);
         for(uint8_t i = 0; i < 16; i = i + 1)
         {
-            if((uint8_t *)((uint8_t*)ulStartingAddress + i) - (uint8_t *) address < size)
+            if((uint8_t*)ulStartingAddress + i < (uint8_t*)address + size)
             {
                 dbg_print("%02x ", *((uint8_t*)ulStartingAddress + i));
             }
             else
             {
-                dbg_print("%s","   ");
+                dbg_print("%s", "   ");
             }
         }
 
         dbg_print("%s", "| ");
         for(uint8_t i = 0; i < 16; i = i + 1)
         {
-            if ((uint8_t*)((uint8_t*)ulStartingAddress + i) - (uint8_t*)address < size)
+            if((uint8_t*)ulStartingAddress + i < (uint8_t*)address + size)
             {
                 PrintAscii(*(char*)((uint8_t*)ulStartingAddress + i));
             }
+            else
+            {
+                dbg_print("%s", "   ");
+            }
         }
-
         dbg_print("\n");
         ulStartingAddress = (uint8_t*)ulStartingAddress + 16;
     }
-    dbg_print("");
 }
 
 
@@ -103,7 +105,7 @@ void ezHexdump( void *address, uint16_t size)
 * @brief Print readable ascii value
 * @details Non-readable ascii will be printed as a dot "."
 *
-* @param    c: (IN)ascci will be printed
+* @param    c: (IN)ascii character will be printed
 * @return   None
 *
 * @pre None
@@ -118,7 +120,7 @@ void ezHexdump( void *address, uint16_t size)
 static void PrintAscii(char c)
 {
     /* Only print readable ascii character */
-    if (c >= 33U && c <= 126U)
+    if (c >= 0x20 && c <= 0x7E)
     {
         dbg_print("%c", c);
     }

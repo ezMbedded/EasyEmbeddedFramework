@@ -67,7 +67,6 @@ ezSTATUS ezEventBus_CreateBus(
     uint32_t buff_size)
 {
     EZDEBUG("evntNoti_CreateSubject()");
-    ezSTATUS status = ezFAIL;
 
     if(buff == NULL || buff_size == 0U || event_bus == NULL)
     {
@@ -274,7 +273,7 @@ bool ezEventBus_SendEvent(
 
     
     q_element_event_code = ezQueue_ReserveElement(&event_bus->event_queue, &code, sizeof(uint32_t));
-    q_element_data = ezQueue_ReserveElement(&event_bus->event_queue, &data, event_data_size);
+    q_element_data = ezQueue_ReserveElement(&event_bus->event_queue, &data, (uint32_t)event_data_size);
 
     if(q_element_event_code == NULL || q_element_data == NULL)
     {

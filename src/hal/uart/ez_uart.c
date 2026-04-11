@@ -435,6 +435,8 @@ static void ezUart_PrintStatus(EZ_DRV_STATUS status)
     case STATUS_TIMEOUT: EZDEBUG("STATUS_TIMEOUT"); break;
     default: break;
     }
+#else
+    (void)status; /* avoid unused parameter warning */
 #endif
 }
 

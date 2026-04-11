@@ -17,7 +17,7 @@ jobs:
           pwd
           ls -al
           pip install -r ./docs/requirements.txt
-      
+
       - id: deployment
         uses: sphinx-notes/pages@v3
         with:

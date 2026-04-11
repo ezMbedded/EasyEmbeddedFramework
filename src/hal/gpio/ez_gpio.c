@@ -60,8 +60,6 @@ static struct Node hw_driver_list = EZ_LINKEDLIST_INIT_NODE(hw_driver_list);
 *****************************************************************************/
 EZ_DRV_STATUS ezGpio_SystemRegisterHwDriver(struct ezGpioDriver *hw_gpio_driver)
 {
-    EZ_DRV_STATUS status = STATUS_ERR_GENERIC;
-
     EZTRACE("ezGpio_SystemRegisterHwDriver()");
     if(hw_gpio_driver == NULL)
     {

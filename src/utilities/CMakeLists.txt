@@ -17,7 +17,6 @@ set(FRAMEWORK_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 # Source files ---------------------------------------------------------------
 target_sources(ez_utilities_lib
     PRIVATE
-        assert/ez_assert.c
         hexdump/ez_hexdump.c
         linked_list/ez_linked_list.c
         logging/ez_logging.c

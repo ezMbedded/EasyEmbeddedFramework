@@ -59,10 +59,11 @@
 * External functions
 *******************************************************************************/
 
-void main(void)
+int main(void)
 {
     printf("Linux target - Hello world!\n");
     printf("Version: %s\n", EZ_SDK_VERSION);
+    return 0;
 }
 
 /******************************************************************************

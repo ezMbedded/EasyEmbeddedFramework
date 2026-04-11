@@ -65,8 +65,6 @@ struct ezTaskBlockCommon
 * Component Variable Definitions
 *****************************************************************************/
 static struct Node worker_list = EZ_LINKEDLIST_INIT_NODE(worker_list);
-static struct ezTaskWorkerThreadInterfaces *rtos_interfaces = NULL;
-
 /*****************************************************************************
 * Function Definitions
 *****************************************************************************/
@@ -80,7 +78,6 @@ bool ezTaskWorker_CreateWorker(struct ezTaskWorker *worker,
 {
     EZTRACE("ezTaskWorker_CreateWorker()");
     ezSTATUS status = ezFAIL;
-
     if(worker != NULL)
     {
         #if ((EZ_FREERTOS_PORT == 1) || (EZ_THREADX_PORT == 1))
@@ -108,6 +105,7 @@ bool ezTaskWorker_CreateWorker(struct ezTaskWorker *worker,
             }
         }
         #else
+        (void)status;
         ezLinkedList_InitNode(&worker->node);
         if( EZ_LINKEDLIST_ADD_TAIL(&worker_list, &worker->node) == false)
         {
@@ -151,6 +149,8 @@ bool ezTaskWorker_EnqueueTask(struct ezTaskWorker *worker,
         {
             ret = false;
         }
+        #else
+        (void)ticks_to_wait;
         #endif /* (EZ_OSAL == 1) */
 
         if(ret == true)
@@ -171,7 +171,7 @@ bool ezTaskWorker_EnqueueTask(struct ezTaskWorker *worker,
                 ((struct ezTaskBlockCommon*)buff)->task = task;
 
                 /* Offset the pointer */
-                buff += sizeof(struct ezTaskBlockCommon);
+                buff = (char*)buff + sizeof(struct ezTaskBlockCommon);
 
                 /* Copy context data */
                 memcpy(buff, context, context_size);
@@ -245,7 +245,7 @@ void ezTaskWorker_ExecuteTask(struct ezTaskWorker *worker, uint32_t ticks_to_wai
             if((status == ezSUCCESS) && (common->task != NULL))
             {
                 context = common;
-                context += sizeof(struct ezTaskBlockCommon);
+                context = (char*)context + sizeof(struct ezTaskBlockCommon);
                 common->task(context, common->callback);
                 status = ezQueue_PopFront(&worker->msg_queue);
             }
@@ -279,7 +279,7 @@ void ezTaskWorker_ExecuteTaskNoRTOS(void)
             if(status == ezSUCCESS && common->task != NULL)
             {
                 context = common;
-                context += sizeof(struct ezTaskBlockCommon);
+                context = (char*)context + sizeof(struct ezTaskBlockCommon);
                 common->task(context, common->callback);
             }
             status = ezQueue_PopFront(&worker->msg_queue);

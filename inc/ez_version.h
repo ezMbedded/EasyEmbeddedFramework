@@ -3,8 +3,8 @@
 
 #define EZ_SDK_VERSION_MAJOR 1
 #define EZ_SDK_VERSION_MINOR 0
-#define EZ_SDK_VERSION_PATCH 0
+#define EZ_SDK_VERSION_PATCH 2
 #define EZ_SDK_BUILD_NUMBER 0
-#define EZ_SDK_VERSION "1.0.0-0"
+#define EZ_SDK_VERSION "1.0.2-0"
 
 #endif

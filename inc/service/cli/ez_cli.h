@@ -87,7 +87,7 @@ typedef CLI_NOTIFY_CODE (*EXEC_CMD_CALLBACK)(char * tx_rx_buff, const void **arg
  * @param: None
  * @return one character (char)
  */
-typedef const char (*GET_CHAR_CALLBACK)(void);
+typedef char (*GET_CHAR_CALLBACK)(void);
 
 /** @brief Callback to send response
  * @param[in] tx_buff:  data to be transmitted

@@ -80,18 +80,21 @@ static void RunAllTests(void);
 
 DEFINE_ACTION_FUNCTION(Receive)
 {
+    (void)sm;
     receive_action_count++;
     return NULL;
 }
 
 DEFINE_ENTRY_FUNCTION(Receive)
 {
+    (void)sm;
     receive_enter_count++;
     return NULL;
 }
 
 DEFINE_EXIT_FUNCTION(Receive)
 {
+    (void)sm;
     receive_exit_count++;
     return NULL;
 }
@@ -119,26 +122,31 @@ DEFINE_EVENT_HANDLER_FUNCTION(Receive)
 
 DEFINE_ACTION_FUNCTION(Transmit)
 {
+    (void)sm;
     transmit_action_count++;
     ezState_t *state = &Receive;
+    (void)state;
     return NULL;
 }
 
 DEFINE_ENTRY_FUNCTION(Transmit)
 {
+    (void)sm;
     transmit_enter_count++;
     return NULL;
 }
 
 DEFINE_EXIT_FUNCTION(Transmit)
 {
+    (void)sm;
     transmit_exit_count++;
     return NULL;
 }
 
 DEFINE_EVENT_HANDLER_FUNCTION(Transmit)
 {
-    transmit_handle_count;
+    (void)event;
+    transmit_handle_count++;
     return NULL;
 }
 
