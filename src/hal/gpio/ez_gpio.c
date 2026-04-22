@@ -111,8 +111,8 @@ EZ_DRV_STATUS ezGpio_RegisterInstance(ezGpioDrvInstance_t *inst,
         if(strcmp(gpio_drv->common.name, driver_name) == 0)
         {
             EZDEBUG("Found driver!");
-            inst->drv_instance.driver = (void*)gpio_drv;
-            inst->drv_instance.calback = callback;
+            inst->driver = (void*)gpio_drv;
+            inst->callback = callback;
             return STATUS_OK;
         }
     }
@@ -142,7 +142,7 @@ EZ_DRV_STATUS ezGpio_Initialize(ezGpioDrvInstance_t *inst, uint16_t pin_index, e
     ezDriver_LockDriver((struct ezDrvInstance*)inst, &drv->common);
     if(drv->interface.init_pin != NULL)
     {
-        status = drv->interface.init_pin(pin_index, config);
+        status = drv->interface.init_pin(inst, pin_index, config);
     }
     ezDriver_UnlockDriver(&drv->common);
 
@@ -164,7 +164,7 @@ EZ_DRV_STATUS ezGpio_UnregisterInstance(ezGpioDrvInstance_t *inst)
         return STATUS_ERR_ARG;
     }
     
-    inst->drv_instance.driver = NULL;
+    inst->driver = NULL;
     EZDEBUG("unregister success");
     return STATUS_OK;
 }
@@ -186,7 +186,7 @@ EZ_GPIO_PIN_STATE ezGpio_ReadPin(ezGpioDrvInstance_t *inst, uint16_t pin_index)
             ezDriver_LockDriver((struct ezDrvInstance*)inst, &drv->common);
             if(drv->interface.read_pin)
             {
-                state = drv->interface.read_pin(pin_index);
+                state = drv->interface.read_pin(inst, pin_index);
             }
             ezDriver_UnlockDriver(&drv->common);
         }
@@ -212,7 +212,7 @@ EZ_DRV_STATUS ezGpio_WritePin(ezGpioDrvInstance_t *inst, uint16_t pin_index, EZ_
             ezDriver_LockDriver((struct ezDrvInstance*)inst, &drv->common);
             if(drv->interface.write_pin)
             {
-                status = drv->interface.write_pin(pin_index, state);
+                status = drv->interface.write_pin(inst, pin_index, state);
             }
             ezDriver_UnlockDriver(&drv->common);
         }
@@ -239,7 +239,7 @@ EZ_DRV_STATUS ezGpio_TogglePin(ezGpioDrvInstance_t *inst, uint16_t pin_index)
             ezDriver_LockDriver((struct ezDrvInstance*)inst, &drv->common);
             if(drv->interface.toggle_pin)
             {
-                status = drv->interface.toggle_pin(pin_index);
+                status = drv->interface.toggle_pin(inst, pin_index);
             }
             ezDriver_UnlockDriver(&drv->common);
         }

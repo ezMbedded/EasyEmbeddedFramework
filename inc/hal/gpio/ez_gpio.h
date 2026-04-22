@@ -49,6 +49,11 @@ extern "C" {
 /*****************************************************************************
 * Component Typedefs
 *****************************************************************************/
+/** @brief Define Uart Driver Instance
+ */
+typedef struct ezDrvInstance ezGpioDrvInstance_t;
+
+
 /** @brief GPIO mode */
 typedef enum
 {
@@ -101,26 +106,26 @@ typedef struct ezHwGpioConfig
   * @param[in]  config: configuration of the GPIO pin
   * @return     EZ_DRV_STATUS
   */
-typedef EZ_DRV_STATUS (*ezHwGpio_Initialize)(uint16_t pin_index, ezHwGpioConfig_t *config);
+typedef EZ_DRV_STATUS (*ezHwGpio_Initialize)(ezGpioDrvInstance_t *inst, uint16_t pin_index, ezHwGpioConfig_t *config);
 
 /** @brief Read state of a pin
  *  @param[in]  pin_index: index of the GPIO pin
  *  @return     EZ_GPIO_PIN_LOW or EZ_GPIO_PIN_HIGH
  */
-typedef EZ_GPIO_PIN_STATE(*ezHwGpio_ReadPin)(uint16_t pin_index);
+typedef EZ_GPIO_PIN_STATE(*ezHwGpio_ReadPin)(ezGpioDrvInstance_t *inst, uint16_t pin_index);
 
 /** @brief Write state of a pin
  *  @param[in]  pin_index: index of the GPIO pin
  *  @param[in]  state: state of the pin
  *  @return     EZ_DRV_STATUS
  */
-typedef EZ_DRV_STATUS(*ezHwGpio_WritePin)(uint16_t pin_index, EZ_GPIO_PIN_STATE state);
+typedef EZ_DRV_STATUS(*ezHwGpio_WritePin)(ezGpioDrvInstance_t *inst, uint16_t pin_index, EZ_GPIO_PIN_STATE state);
 
 /** @brief Toggle state of a pin
  *  @param[in]  pin_index: index of the GPIO pin
  *  @return     EZ_DRV_STATUS
  */
-typedef EZ_DRV_STATUS(*ezHwGpio_TogglePin)(uint16_t pin_index);
+typedef EZ_DRV_STATUS(*ezHwGpio_TogglePin)(ezGpioDrvInstance_t *inst, uint16_t pin_index);
 
 
 /** @brief GPIO driver interface
@@ -142,13 +147,6 @@ struct ezGpioDriver
     struct ezHwGpioInterface    interface;  /* HW API */
     bool                        initialized; /* Flag to check if the driver is initialized */
 };
-
-/** @brief Define Uart Driver Instance
- */
-typedef struct{
-    struct ezDrvInstance    drv_instance;    /**< Driver instance */
-} ezGpioDrvInstance_t;
-
 
 /*****************************************************************************
 * Component Variable Definitions

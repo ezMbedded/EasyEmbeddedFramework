@@ -107,7 +107,7 @@ EZ_DRV_STATUS ezSpi_RegisterInstance(ezSpiDrvInstance_t *inst,
         {
             EZDEBUG("Found driver!");
             inst->drv_instance.driver = (void*)spi_drv;
-            inst->drv_instance.calback = callback;
+            inst->drv_instance.callback = callback;
             return STATUS_OK;
         }
     }

@@ -36,9 +36,9 @@
 * Module Preprocessor Macros
 *******************************************************************************/
 DEFINE_FFF_GLOBALS;
-FAKE_VALUE_FUNC(EZ_DRV_STATUS, Init, uint16_t, ezHwGpioConfig_t*);
-FAKE_VALUE_FUNC(EZ_GPIO_PIN_STATE, ReadPin, uint16_t);
-FAKE_VALUE_FUNC(EZ_DRV_STATUS, WritePin, uint16_t, EZ_GPIO_PIN_STATE);
+FAKE_VALUE_FUNC(EZ_DRV_STATUS, Init, ezGpioDrvInstance_t*, uint16_t, ezHwGpioConfig_t*);
+FAKE_VALUE_FUNC(EZ_GPIO_PIN_STATE, ReadPin, ezGpioDrvInstance_t*, uint16_t);
+FAKE_VALUE_FUNC(EZ_DRV_STATUS, WritePin, ezGpioDrvInstance_t*, uint16_t, EZ_GPIO_PIN_STATE);
 FAKE_VOID_FUNC(Callback, uint8_t, void *, void*);
 
 /******************************************************************************
@@ -78,8 +78,8 @@ TEST_CASE_METHOD(GpioTestFixture, "Test write pin", "[hal][gpio]")
     EZ_DRV_STATUS status = ezGpio_WritePin(&instance, 0x01, EZ_GPIO_PIN_HIGH);
     CHECK(status == STATUS_OK);
     CHECK(WritePin_fake.call_count == 1);
-    CHECK(WritePin_fake.arg0_val == 0x01);
-    CHECK(WritePin_fake.arg1_val == EZ_GPIO_PIN_HIGH);
+    CHECK(WritePin_fake.arg1_val == 0x01);
+    CHECK(WritePin_fake.arg2_val == EZ_GPIO_PIN_HIGH);
 }
 
 
@@ -94,7 +94,7 @@ TEST_CASE_METHOD(GpioTestFixture, "Test read pin", "[hal][gpio]")
     EZ_GPIO_PIN_STATE state = ezGpio_ReadPin(&instance, 0x01);
     CHECK(state == EZ_GPIO_PIN_HIGH);
     CHECK(ReadPin_fake.call_count == 1);
-    CHECK(ReadPin_fake.arg0_val == 0x01);
+    CHECK(ReadPin_fake.arg1_val == 0x01);
 
 }
 
@@ -104,7 +104,7 @@ TEST_CASE_METHOD(GpioTestFixture, "Test callback triggered", "[hal][gpio]")
     REQUIRE(ezGpio_SystemRegisterHwDriver(&gpio_driver) == STATUS_OK);
     REQUIRE(ezGpio_RegisterInstance(&instance, "Mock GPIO Driver", Callback) == STATUS_OK);
 
-    instance.drv_instance.calback(0x10, (void*)0x1234, (void*)0x5678);
+    instance.callback(0x10, (void*)0x1234, (void*)0x5678);
     CHECK(Callback_fake.call_count == 1);
     CHECK(Callback_fake.arg0_val == 0x10);
     CHECK(Callback_fake.arg1_val == (void*)0x1234);

@@ -125,7 +125,7 @@ EZ_DRV_STATUS ezUart_RegisterInstance(ezUartDrvInstance_t *inst,
             if(strcmp(uart_drv->common.name, driver_name) == 0)
             {
                 inst->driver = (void*)uart_drv;
-                inst->calback = callback;
+                inst->callback = callback;
                 status = STATUS_OK;
                 EZDEBUG("Found driver!");
                 break;

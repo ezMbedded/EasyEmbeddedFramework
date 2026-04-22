@@ -77,7 +77,7 @@ typedef void (*ezDrvCallback)(uint8_t event_code, void *param1, void *param2);
  */
 struct ezDrvInstance
 {
-    ezDrvCallback   calback;   /**< Callback funtion to handle the event from the HW driver */
+    ezDrvCallback   callback;   /**< Callback funtion to handle the event from the HW driver */
     void            *driver;    /**< Pointer to the HAL driver, depending on the implmentation */
 };
 

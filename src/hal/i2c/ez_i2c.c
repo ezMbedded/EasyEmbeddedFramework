@@ -105,7 +105,7 @@ EZ_DRV_STATUS ezI2c_RegisterInstance(ezI2cDrvInstance_t *inst,
         {
             EZDEBUG("Found driver!");
             inst->drv_instance.driver = (void*)i2c_drv;
-            inst->drv_instance.calback = callback;
+            inst->drv_instance.callback = callback;
             return STATUS_OK;
         }
     }

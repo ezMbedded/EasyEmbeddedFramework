@@ -511,9 +511,9 @@ static EZ_DRV_STATUS ezMockUart_AsyncTransmit(uint8_t index, const uint8_t *tx_b
     (void)index;
     (void)tx_buff;
     (void)buff_size;
-    if(mock_hw.common.curr_inst != NULL && mock_hw.common.curr_inst->calback != NULL)
+    if(mock_hw.common.curr_inst != NULL && mock_hw.common.curr_inst->callback != NULL)
     {
-        mock_hw.common.curr_inst->calback(UART_EVENT_TX_CMPLT, NULL, NULL);
+        mock_hw.common.curr_inst->callback(UART_EVENT_TX_CMPLT, NULL, NULL);
     }
 
     /* Job done, unlock driver */
@@ -528,9 +528,9 @@ static EZ_DRV_STATUS ezMockUart_AsyncReceive(uint8_t index, uint8_t *rx_buff, ui
     (void)rx_buff;
     (void)buff_size;
     /* In reality, the HW driver declare the ezUartDriver, so it has access to this struct */
-    if(mock_hw.common.curr_inst != NULL && mock_hw.common.curr_inst->calback != NULL)
+    if(mock_hw.common.curr_inst != NULL && mock_hw.common.curr_inst->callback != NULL)
     {
-        mock_hw.common.curr_inst->calback(UART_EVENT_RX_CMPLT, NULL, NULL);
+        mock_hw.common.curr_inst->callback(UART_EVENT_RX_CMPLT, NULL, NULL);
     }
 
     /* Job done, unlock driver */
