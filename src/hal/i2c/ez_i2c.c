@@ -137,13 +137,12 @@ EZ_DRV_STATUS ezI2c_Initialize(ezI2cDrvInstance_t *inst, ezI2cConfig_t *config)
         return STATUS_ERR_DRV_NOT_FOUND;
     }
 
-    if(ezDriver_IsDriverAvailable((struct ezDrvInstance*)inst, &drv->common) == false)
+    if(ezDriver_LockDriver((struct ezDrvInstance*)inst, &drv->common) == false)
     {
-        EZTRACE("Driver = %s is not available", drv->common.name);
-        return STATUS_ERR_INF_NOT_EXIST;
+        EZERROR("Driver is busy");
+        return STATUS_BUSY;
     }
 
-    ezDriver_LockDriver((struct ezDrvInstance*)inst, &drv->common);
     if(drv->interface.initialize != NULL)
     {
         status = drv->interface.initialize(drv->interface.driver_h, config);
@@ -172,22 +171,22 @@ EZ_DRV_STATUS ezI2c_TransmitSync(ezI2cDrvInstance_t *inst,
 
     if(drv != NULL)
     {
-        status = STATUS_BUSY;
-        if(ezDriver_IsDriverAvailable((struct ezDrvInstance*)inst, &drv->common) == true)
+        if(ezDriver_LockDriver((struct ezDrvInstance*)inst, &drv->common) == false)
         {
-            status = STATUS_ERR_INF_NOT_EXIST;
-            ezDriver_LockDriver((struct ezDrvInstance*)inst, &drv->common);
-            if(drv->interface.transmit_sync)
-            {
-                status = drv->interface.transmit_sync(drv->interface.driver_h,
-                    address,
-                    data,
-                    length,
-                    send_stop,
-                    timeout_millis);
-            }
-            ezDriver_UnlockDriver(&drv->common);
+            EZERROR("Driver is busy");
+            return STATUS_BUSY;
         }
+
+        if(drv->interface.transmit_sync)
+        {
+            status = drv->interface.transmit_sync(drv->interface.driver_h,
+                address,
+                data,
+                length,
+                send_stop,
+                timeout_millis);
+        }
+        ezDriver_UnlockDriver(&drv->common);
     }
     return status;
 }
@@ -204,21 +203,21 @@ EZ_DRV_STATUS ezI2c_TransmitAsync(ezI2cDrvInstance_t *inst,
 
     if(drv != NULL)
     {
-        status = STATUS_BUSY;
-        if(ezDriver_IsDriverAvailable((struct ezDrvInstance*)inst, &drv->common) == true)
+        if(ezDriver_LockDriver((struct ezDrvInstance*)inst, &drv->common) == false)
         {
-            status = STATUS_ERR_INF_NOT_EXIST;
-            ezDriver_LockDriver((struct ezDrvInstance*)inst, &drv->common);
-            if(drv->interface.transmit_async)
-            {
-                status = drv->interface.transmit_async(drv->interface.driver_h,
-                    address,
-                    data,
-                    length,
-                    send_stop);
-            }
-            ezDriver_UnlockDriver(&drv->common);
+            EZERROR("Driver is busy");
+            return STATUS_BUSY;
         }
+        
+        if(drv->interface.transmit_async)
+        {
+            status = drv->interface.transmit_async(drv->interface.driver_h,
+                address,
+                data,
+                length,
+                send_stop);
+        }
+        ezDriver_UnlockDriver(&drv->common);
     }
     return status;
 }
@@ -236,22 +235,22 @@ EZ_DRV_STATUS ezI2c_ReceiveSync(ezI2cDrvInstance_t *inst,
 
     if(drv != NULL)
     {
-        status = STATUS_BUSY;
-        if(ezDriver_IsDriverAvailable((struct ezDrvInstance*)inst, &drv->common) == true)
+        if(ezDriver_LockDriver((struct ezDrvInstance*)inst, &drv->common) == false)
         {
-            status = STATUS_ERR_INF_NOT_EXIST;
-            ezDriver_LockDriver((struct ezDrvInstance*)inst, &drv->common);
-            if(drv->interface.receive_sync)
-            {
-                status = drv->interface.receive_sync(drv->interface.driver_h,
-                    address,
-                    data,
-                    length,
-                    send_stop,
-                    timeout_millis);
-            }
-            ezDriver_UnlockDriver(&drv->common);
+            EZERROR("Driver is busy");
+            return STATUS_BUSY;
         }
+
+        if(drv->interface.receive_sync)
+        {
+            status = drv->interface.receive_sync(drv->interface.driver_h,
+                address,
+                data,
+                length,
+                send_stop,
+                timeout_millis);
+        }
+        ezDriver_UnlockDriver(&drv->common);
     }
     return status;
 }
@@ -268,21 +267,21 @@ EZ_DRV_STATUS ezI2c_ReceiveAsync(ezI2cDrvInstance_t *inst,
 
     if(drv != NULL)
     {
-        status = STATUS_BUSY;
-        if(ezDriver_IsDriverAvailable((struct ezDrvInstance*)inst, &drv->common) == true)
+        if(ezDriver_LockDriver((struct ezDrvInstance*)inst, &drv->common) == false)
         {
-            status = STATUS_ERR_INF_NOT_EXIST;
-            ezDriver_LockDriver((struct ezDrvInstance*)inst, &drv->common);
-            if(drv->interface.receive_async)
-            {
-                status = drv->interface.receive_async(drv->interface.driver_h,
-                    address,
-                    data,
-                    length,
-                    send_stop);
-            }
-            ezDriver_UnlockDriver(&drv->common);
+            EZERROR("Driver is busy");
+            return STATUS_BUSY;
         }
+
+        if(drv->interface.receive_async)
+        {
+            status = drv->interface.receive_async(drv->interface.driver_h,
+                address,
+                data,
+                length,
+                send_stop);
+        }
+        ezDriver_UnlockDriver(&drv->common);
     }
     return status;
 }
@@ -298,18 +297,19 @@ EZ_DRV_STATUS ezI2c_Probe(ezI2cDrvInstance_t *inst,
 
     if(drv != NULL)
     {
-        if(ezDriver_IsDriverAvailable((struct ezDrvInstance*)inst, &drv->common) == true)
+        if(ezDriver_LockDriver((struct ezDrvInstance*)inst, &drv->common) == false)
         {
-            status = STATUS_ERR_INF_NOT_EXIST;
-            ezDriver_LockDriver((struct ezDrvInstance*)inst, &drv->common);
-            if(drv->interface.probe)
-            {
-                status = drv->interface.probe(drv->interface.driver_h,
-                    address,
-                    timeout_millis);
-            }
-            ezDriver_UnlockDriver(&drv->common);
+            EZERROR("Driver is busy");
+            return STATUS_BUSY;
         }
+        
+        if(drv->interface.probe)
+        {
+            status = drv->interface.probe(drv->interface.driver_h,
+                address,
+                timeout_millis);
+        }
+        ezDriver_UnlockDriver(&drv->common);
     }
     return status;
 }

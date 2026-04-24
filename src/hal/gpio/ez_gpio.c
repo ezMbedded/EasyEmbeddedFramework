@@ -133,13 +133,13 @@ EZ_DRV_STATUS ezGpio_Initialize(ezGpioDrvInstance_t *inst, uint16_t pin_index, e
         return STATUS_ERR_DRV_NOT_FOUND;
     }
 
-    if(ezDriver_IsDriverAvailable((struct ezDrvInstance*)inst, &drv->common) == false)
+    if(ezDriver_LockDriver((struct ezDrvInstance*)inst, &drv->common) == false)
     {
-        EZTRACE("Driver = %s is not available", drv->common.name);
-        return STATUS_ERR_INF_NOT_EXIST;
+        EZDEBUG("Driver is busy");
+        return STATUS_BUSY;
     }
 
-    ezDriver_LockDriver((struct ezDrvInstance*)inst, &drv->common);
+    status = STATUS_ERR_INF_NOT_EXIST;
     if(drv->interface.init_pin != NULL)
     {
         status = drv->interface.init_pin(inst, pin_index, config);
@@ -180,16 +180,18 @@ EZ_GPIO_PIN_STATE ezGpio_ReadPin(ezGpioDrvInstance_t *inst, uint16_t pin_index)
     if(drv != NULL)
     {
         EZTRACE("Found driver");
-        if(ezDriver_IsDriverAvailable((struct ezDrvInstance*)inst, &drv->common) == true)
+        if(ezDriver_LockDriver((struct ezDrvInstance*)inst, &drv->common) == false)
         {
-            EZTRACE("Driver = %s is available", drv->common.name);
-            ezDriver_LockDriver((struct ezDrvInstance*)inst, &drv->common);
-            if(drv->interface.read_pin)
-            {
-                state = drv->interface.read_pin(inst, pin_index);
-            }
-            ezDriver_UnlockDriver(&drv->common);
+            EZTRACE("Driver is busy");
+            return EZ_GPIO_PIN_ERROR;
         }
+
+        EZTRACE("Driver = %s is available", drv->common.name);
+        if(drv->interface.read_pin)
+        {
+            state = drv->interface.read_pin(inst, pin_index);
+        }
+        ezDriver_UnlockDriver(&drv->common);
     }
     return state;
 }
@@ -205,17 +207,19 @@ EZ_DRV_STATUS ezGpio_WritePin(ezGpioDrvInstance_t *inst, uint16_t pin_index, EZ_
     {
         EZTRACE("Found driver");
         status = STATUS_BUSY;
-        if(ezDriver_IsDriverAvailable((struct ezDrvInstance*)inst, &drv->common) == true)
+        if(ezDriver_LockDriver((struct ezDrvInstance*)inst, &drv->common) == false)
         {
-            EZTRACE("Driver = %s is available", drv->common.name);
-            status = STATUS_ERR_INF_NOT_EXIST;
-            ezDriver_LockDriver((struct ezDrvInstance*)inst, &drv->common);
-            if(drv->interface.write_pin)
-            {
-                status = drv->interface.write_pin(inst, pin_index, state);
-            }
-            ezDriver_UnlockDriver(&drv->common);
+            EZTRACE("Driver is busy");
+            return status;
         }
+        
+        EZTRACE("Driver = %s is available", drv->common.name);
+        status = STATUS_ERR_INF_NOT_EXIST;
+        if(drv->interface.write_pin)
+        {
+            status = drv->interface.write_pin(inst, pin_index, state);
+        }
+        ezDriver_UnlockDriver(&drv->common);
     }
     return status;
 }
@@ -232,17 +236,19 @@ EZ_DRV_STATUS ezGpio_TogglePin(ezGpioDrvInstance_t *inst, uint16_t pin_index)
     {
         EZTRACE("Found driver");
         status = STATUS_BUSY;
-        if(ezDriver_IsDriverAvailable((struct ezDrvInstance*)inst, &drv->common) == true)
+        if(ezDriver_LockDriver((struct ezDrvInstance*)inst, &drv->common) == false)
         {
-            EZTRACE("Driver = %s is available", drv->common.name);
-            status = STATUS_ERR_INF_NOT_EXIST;
-            ezDriver_LockDriver((struct ezDrvInstance*)inst, &drv->common);
-            if(drv->interface.toggle_pin)
-            {
-                status = drv->interface.toggle_pin(inst, pin_index);
-            }
-            ezDriver_UnlockDriver(&drv->common);
+            EZTRACE("Driver is busy");
+            return status;
         }
+
+        EZTRACE("Driver = %s is available", drv->common.name);
+        status = STATUS_ERR_INF_NOT_EXIST;
+        if(drv->interface.toggle_pin)
+        {
+            status = drv->interface.toggle_pin(inst, pin_index);
+        }
+        ezDriver_UnlockDriver(&drv->common);
     }
     return status;
 }

@@ -141,41 +141,6 @@ static inline void *ezDriver_GetDriverFromInstance(ezDrvInstance_t *inst)
 
 
 /*****************************************************************************
-* Function: ezDriver_IsDriverAvailable
-*//** 
-* @brief Check if the driver is availabe and ready to be used
-*
-* @details Helper function used by other components. THe user are not
-*          supposed to used this function
-*
-* @param[in]    inst: Driver instance
-* @param[in]    drv_common: Pointer to the common structure of the driver.
-*               @see ezDriverCommon
-* @return       true is the driver is available, else false
-*
-* @pre None
-* @post None
-*
-* \b Example
-* @code
-* @endcode
-*
-* @see
-*
-*****************************************************************************/
-static inline bool ezDriver_IsDriverAvailable(ezDrvInstance_t *inst,
-                                              struct ezDriverCommon *drv_common)
-{
-    bool ret = false;
-    if(inst != NULL && drv_common != NULL)
-    {
-        ret = ((drv_common->curr_inst == NULL) || (drv_common->curr_inst == inst));
-    }
-    return ret;
-}
-
-
-/*****************************************************************************
 * Function: ezDriver_LockDriver
 *//** 
 * @brief Lock the driver. Prevent other instances use it
@@ -194,13 +159,26 @@ static inline bool ezDriver_IsDriverAvailable(ezDrvInstance_t *inst,
 * @see
 *
 *****************************************************************************/
-static inline void ezDriver_LockDriver(ezDrvInstance_t *inst,
+static inline bool ezDriver_LockDriver(ezDrvInstance_t *inst,
                                        struct ezDriverCommon *drv_common)
 {
-    if(inst != NULL && drv_common != NULL)
+    if(inst == NULL || drv_common == NULL)
+    {
+        return false;
+    }
+
+    if(drv_common->curr_inst == inst)
+    {
+        return true;
+    }
+
+    if(drv_common->curr_inst == NULL)
     {
         drv_common->curr_inst = inst;
+        return true;
     }
+
+    return false;
 }
 
 
