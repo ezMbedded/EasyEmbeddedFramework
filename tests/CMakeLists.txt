@@ -62,6 +62,10 @@ if(ENABLE_EZ_GPIO)
     add_subdirectory(hal/gpio)
 endif()
 
+if(ENABLE_EZ_I2C)
+    add_subdirectory(hal/i2c)
+endif()
+
 if(ENABLE_EZ_RPC)
     add_subdirectory(service/rpc)
 endif()

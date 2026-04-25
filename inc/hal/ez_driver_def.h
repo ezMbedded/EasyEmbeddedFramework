@@ -73,28 +73,31 @@ typedef enum
 typedef void (*ezDrvCallback)(uint8_t event_code, void *param1, void *param2);
 
 
+typedef void (*ezDrvOnReceiveEventCallback)(
+    void *driver_h,
+    uint8_t event_code,
+    void *param1,
+    void *param2);
+
+
 /** @brief Define a driver instance.
  */
-struct ezDrvInstance
+typedef struct ezDrvInstance
 {
     ezDrvCallback   callback;   /**< Callback funtion to handle the event from the HW driver */
     void            *driver;    /**< Pointer to the HAL driver, depending on the implmentation */
-};
-
-
-/** @brief Define a driver instance type.
- */
-typedef struct ezDrvInstance ezDrvInstance_t;
+}ezDrvInstance_t;
 
 
 /** @brief Define structure holding common data of a driver
  */
-struct ezDriverCommon
+typedef struct ezDriverCommon
 {
-    const char*     name;           /* Name of the driver instance */
-    uint8_t         version[3];     /* Version number including major, minor, patch */
-    ezDrvInstance_t *curr_inst;     /* Point to the current instance using the driver. NULL means the driver is available. */
-};
+    const char*                 name;           /* Name of the driver instance */
+    uint8_t                     version[3];     /* Version number including major, minor, patch */
+    ezDrvInstance_t             *curr_inst;     /* Point to the current instance using the driver. NULL means the driver is available. */
+    ezDrvOnReceiveEventCallback callback;       /* Callback funtion to handle the event from the HW driver, point to the callback of the instance which is using the driver */
+}ezDriver_t;
 
 
 /*****************************************************************************

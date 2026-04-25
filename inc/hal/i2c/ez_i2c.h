@@ -85,34 +85,34 @@ typedef struct
 } ezI2cConfig_t;
 
 
-typedef EZ_DRV_STATUS (*ezHwI2c_Initialize)(void *driver_h, ezI2cConfig_t *config);
-typedef EZ_DRV_STATUS (*ezHwI2c_TransmitSync)(void *driver_h,
+typedef EZ_DRV_STATUS (*ezHwI2c_Initialize)(ezDriver_t *driver_h, ezI2cConfig_t *config);
+typedef EZ_DRV_STATUS (*ezHwI2c_TransmitSync)(ezDriver_t *driver_h,
                                               uint16_t address,
                                               const uint8_t *data,
                                               size_t length,
                                               bool send_stop,
                                               uint32_t timeout_millis);
 
-typedef EZ_DRV_STATUS (*ezHwI2c_TransmitAsync)(void *driver_h,
+typedef EZ_DRV_STATUS (*ezHwI2c_TransmitAsync)(ezDriver_t *driver_h,
                                                uint16_t address,
                                                const uint8_t *data,
                                                size_t length,
                                                bool send_stop);
 
-typedef EZ_DRV_STATUS (*ezHwI2c_ReceiveSync)(void *driver_h,
+typedef EZ_DRV_STATUS (*ezHwI2c_ReceiveSync)(ezDriver_t *driver_h,
                                              uint16_t address,
                                              uint8_t *data,
                                              size_t length,
                                              bool send_stop,
                                              uint32_t timeout_millis);
 
-typedef EZ_DRV_STATUS (*ezHwI2c_ReceiveAsync)(void *driver_h,
+typedef EZ_DRV_STATUS (*ezHwI2c_ReceiveAsync)(ezDriver_t *driver_h,
                                               uint16_t address,
                                               uint8_t *data,
                                               size_t length,
                                               bool send_stop);
 
-typedef EZ_DRV_STATUS (*ezHwI2c_Probe)(void *driver_h,
+typedef EZ_DRV_STATUS (*ezHwI2c_Probe)(ezDriver_t *driver_h,
                                   uint16_t address,
                                   uint32_t timeout_millis);
 
@@ -136,9 +136,7 @@ struct ezI2cDriver
 };
 
 
-typedef struct{
-    struct ezDrvInstance    drv_instance;    /**< Driver instance */
-} ezI2cDrvInstance_t;
+typedef struct ezDrvInstance ezI2cDrvInstance_t;
 
 /*****************************************************************************
 * Component Variable Definitions

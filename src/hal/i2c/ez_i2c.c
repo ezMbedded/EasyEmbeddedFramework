@@ -52,7 +52,12 @@ static struct Node hw_driver_list = EZ_LINKEDLIST_INIT_NODE(hw_driver_list);
 /*****************************************************************************
 * Function Definitions
 *****************************************************************************/
-/* None */
+static void ezI2c_OnReceiveEvent(
+    void *driver_h,
+    uint8_t event_code,
+    void *param1,
+    void *param2
+);
 
 /*****************************************************************************
 * Public functions
@@ -67,6 +72,7 @@ EZ_DRV_STATUS ezI2c_SystemRegisterHwDriver(struct ezI2cDriver *hw_driver)
     }
 
     hw_driver->initialized = false;
+    hw_driver->common.callback = ezI2c_OnReceiveEvent;
     EZ_LINKEDLIST_ADD_TAIL(&hw_driver_list, &hw_driver->ll_node);
     EZDEBUG("Register OK");
     return STATUS_OK;
@@ -104,8 +110,8 @@ EZ_DRV_STATUS ezI2c_RegisterInstance(ezI2cDrvInstance_t *inst,
         if(strcmp(i2c_drv->common.name, driver_name) == 0)
         {
             EZDEBUG("Found driver!");
-            inst->drv_instance.driver = (void*)i2c_drv;
-            inst->drv_instance.callback = callback;
+            inst->driver = (void*)i2c_drv;
+            inst->callback = callback;
             return STATUS_OK;
         }
     }
@@ -120,7 +126,7 @@ EZ_DRV_STATUS ezI2c_UnregisterInstance(ezI2cDrvInstance_t *inst)
     {
         return STATUS_ERR_ARG;
     }
-    inst->drv_instance.driver = NULL;
+    inst->driver = NULL;
     EZDEBUG("unregister success");
     return STATUS_OK;
 }
@@ -145,7 +151,7 @@ EZ_DRV_STATUS ezI2c_Initialize(ezI2cDrvInstance_t *inst, ezI2cConfig_t *config)
 
     if(drv->interface.initialize != NULL)
     {
-        status = drv->interface.initialize(drv->interface.driver_h, config);
+        status = drv->interface.initialize(&drv->common, config);
     }
     ezDriver_UnlockDriver(&drv->common);
 
@@ -179,7 +185,7 @@ EZ_DRV_STATUS ezI2c_TransmitSync(ezI2cDrvInstance_t *inst,
 
         if(drv->interface.transmit_sync)
         {
-            status = drv->interface.transmit_sync(drv->interface.driver_h,
+            status = drv->interface.transmit_sync(&drv->common,
                 address,
                 data,
                 length,
@@ -211,13 +217,13 @@ EZ_DRV_STATUS ezI2c_TransmitAsync(ezI2cDrvInstance_t *inst,
         
         if(drv->interface.transmit_async)
         {
-            status = drv->interface.transmit_async(drv->interface.driver_h,
+            status = drv->interface.transmit_async(&drv->common,
                 address,
                 data,
                 length,
                 send_stop);
         }
-        ezDriver_UnlockDriver(&drv->common);
+        //Unlock will be done in the callbak when the async operation is done
     }
     return status;
 }
@@ -243,7 +249,7 @@ EZ_DRV_STATUS ezI2c_ReceiveSync(ezI2cDrvInstance_t *inst,
 
         if(drv->interface.receive_sync)
         {
-            status = drv->interface.receive_sync(drv->interface.driver_h,
+            status = drv->interface.receive_sync(&drv->common,
                 address,
                 data,
                 length,
@@ -275,13 +281,13 @@ EZ_DRV_STATUS ezI2c_ReceiveAsync(ezI2cDrvInstance_t *inst,
 
         if(drv->interface.receive_async)
         {
-            status = drv->interface.receive_async(drv->interface.driver_h,
+            status = drv->interface.receive_async(&drv->common,
                 address,
                 data,
                 length,
                 send_stop);
         }
-        ezDriver_UnlockDriver(&drv->common);
+        //Unlock will be done in the callbachk when the async operation is done
     }
     return status;
 }
@@ -305,7 +311,7 @@ EZ_DRV_STATUS ezI2c_Probe(ezI2cDrvInstance_t *inst,
         
         if(drv->interface.probe)
         {
-            status = drv->interface.probe(drv->interface.driver_h,
+            status = drv->interface.probe(&drv->common,
                 address,
                 timeout_millis);
         }
@@ -316,6 +322,31 @@ EZ_DRV_STATUS ezI2c_Probe(ezI2cDrvInstance_t *inst,
 /*****************************************************************************
 * Local functions
 *****************************************************************************/
+static void ezI2c_OnReceiveEvent(
+    void *driver_h,
+    uint8_t event_code,
+    void *param1,
+    void *param2)
+{
+    struct Node* it_node = NULL;
+    struct ezI2cDriver *i2c_drv = NULL;
+    
+    EZ_LINKEDLIST_FOR_EACH(it_node, &hw_driver_list)
+    {
+        i2c_drv = EZ_LINKEDLIST_GET_PARENT_OF(it_node, ll_node, struct ezI2cDriver);
+        if(i2c_drv->common.curr_inst != NULL && i2c_drv->common.curr_inst->driver == driver_h)
+        {
+            if(i2c_drv->common.callback)
+            {
+                i2c_drv->common.curr_inst->callback(event_code, param1, param2);
+                ezDriver_UnlockDriver(&i2c_drv->common);
+            }
+            break;
+        }
+    }
+}
+
+
 
 #endif /* EZ_I2C == 1 */
 /* End of file*/
