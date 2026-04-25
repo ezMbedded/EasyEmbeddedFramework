@@ -59,11 +59,16 @@ static struct Node instance_list = EZ_LINKEDLIST_INIT_NODE(instance_list);
 * Function Definitions
 *****************************************************************************/
 static void ezUart_PrintStatus(EZ_DRV_STATUS status);
-
+static void ezUart_OnReceiveEvent(
+    void *driver_h,
+    uint8_t event_code,
+    void *param1,
+    void *param2
+);
 
 /*****************************************************************************
-* Public functions
-*****************************************************************************/
+ * Public functions
+ *****************************************************************************/
 EZ_DRV_STATUS ezUart_SystemRegisterHwDriver(struct ezUartDriver *hw_uart_driver)
 {
     EZ_DRV_STATUS status = STATUS_ERR_GENERIC;
@@ -77,6 +82,7 @@ EZ_DRV_STATUS ezUart_SystemRegisterHwDriver(struct ezUartDriver *hw_uart_driver)
     else
     {
         EZ_LINKEDLIST_ADD_TAIL(&hw_driver_list, &hw_uart_driver->ll_node);
+        hw_uart_driver->common.callback = ezUart_OnReceiveEvent;
         status = STATUS_OK;
     }
 
@@ -125,7 +131,7 @@ EZ_DRV_STATUS ezUart_RegisterInstance(ezUartDrvInstance_t *inst,
             if(strcmp(uart_drv->common.name, driver_name) == 0)
             {
                 inst->driver = (void*)uart_drv;
-                inst->calback = callback;
+                inst->callback = callback;
                 status = STATUS_OK;
                 EZDEBUG("Found driver!");
                 break;
@@ -166,19 +172,18 @@ EZ_DRV_STATUS ezUart_Initialize(ezUartDrvInstance_t *inst)
     drv = (struct ezUartDriver*)ezDriver_GetDriverFromInstance(inst);
     if(drv != NULL)
     {
-        EZTRACE("Found driver");
-        status = STATUS_BUSY;
-        if(ezDriver_IsDriverAvailable(inst, &drv->common) == true)
+        if(ezDriver_LockDriver(inst, &drv->common) == false)
         {
-            EZTRACE("Driver = %s is available", drv->common.name);
-            status = STATUS_ERR_INF_NOT_EXIST;
-            ezDriver_LockDriver(inst, &drv->common);
-            if(drv->interface.initialize)
-            {
-                status = drv->interface.initialize(drv->interface.index);
-            }
-            ezDriver_UnlockDriver(&drv->common);
+            EZERROR("Driver is busy");
+            return STATUS_BUSY;
         }
+
+        status = STATUS_ERR_INF_NOT_EXIST;
+        if(drv->interface.initialize)
+        {
+            status = drv->interface.initialize(&drv->common);
+        }
+        ezDriver_UnlockDriver(&drv->common);    
     }
     ezUart_PrintStatus(status);
     return status;
@@ -194,19 +199,18 @@ EZ_DRV_STATUS ezUart_Deinitialize(ezUartDrvInstance_t *inst)
     drv = (struct ezUartDriver*)ezDriver_GetDriverFromInstance(inst);
     if(drv != NULL)
     {
-        EZTRACE("Found driver");
-        status = STATUS_BUSY;
-        if(ezDriver_IsDriverAvailable(inst, &drv->common) == true)
+        if(ezDriver_LockDriver(inst, &drv->common) == false)
         {
-            EZTRACE("Driver = %s is available", drv->common.name);
-            status = STATUS_ERR_INF_NOT_EXIST;
-            ezDriver_LockDriver(inst, &drv->common);
-            if(drv->interface.deinitialize)
-            {
-                status = drv->interface.deinitialize(drv->interface.index);
-            }
-            ezDriver_UnlockDriver(&drv->common);
+            EZERROR("Driver is busy");
+            return STATUS_BUSY;
         }
+
+        status = STATUS_ERR_INF_NOT_EXIST;
+        if(drv->interface.deinitialize)
+        {
+            status = drv->interface.deinitialize(&drv->common);
+        }
+        ezDriver_UnlockDriver(&drv->common);
     }
     ezUart_PrintStatus(status);
     return status;
@@ -222,21 +226,21 @@ EZ_DRV_STATUS ezUart_AsyncTransmit(ezUartDrvInstance_t *inst, const uint8_t *tx_
     drv = (struct ezUartDriver*)ezDriver_GetDriverFromInstance(inst);
     if(drv != NULL)
     {
-        EZTRACE("Found driver");
-        status = STATUS_BUSY;
-        if(ezDriver_IsDriverAvailable(inst, &drv->common) == true)
+        if(ezDriver_LockDriver(inst, &drv->common) == false)
         {
-            EZTRACE("Driver = %s is available", drv->common.name);
-            status = STATUS_ERR_INF_NOT_EXIST;
-            ezDriver_LockDriver(inst, &drv->common);
-            if(drv->interface.async_transmit)
-            {
-                status = drv->interface.async_transmit(drv->interface.index,
-                                                       tx_buff,
-                                                       buff_size);
-            }
-            /* Driver is unlocked by the HW implementation in the callback function */
+            EZERROR("Driver is busy");
+            return STATUS_BUSY;
         }
+
+        status = STATUS_ERR_INF_NOT_EXIST;
+        if(drv->interface.async_transmit)
+        {
+            status = drv->interface.async_transmit(
+                &drv->common,
+                tx_buff,
+                buff_size);
+        }
+        /* Driver is unlocked by the HW implementation in the callback function */
     }
     ezUart_PrintStatus(status);
     return status;
@@ -252,21 +256,20 @@ EZ_DRV_STATUS ezUart_AsyncReceive(ezUartDrvInstance_t *inst, uint8_t *rx_buff, u
     drv = (struct ezUartDriver*)ezDriver_GetDriverFromInstance(inst);
     if(drv != NULL)
     {
-        EZTRACE("Found driver");
-        status = STATUS_BUSY;
-        if(ezDriver_IsDriverAvailable(inst, &drv->common) == true)
+        if(ezDriver_LockDriver(inst, &drv->common) == false)
         {
-            EZTRACE("Driver = %s is available", drv->common.name);
-            status = STATUS_ERR_INF_NOT_EXIST;
-            ezDriver_LockDriver(inst, &drv->common);
-            if(drv->interface.async_receive)
-            {
-                status = drv->interface.async_receive(drv->interface.index,
-                                                       rx_buff,
-                                                       buff_size);
-            }
-            /* Driver is unlocked by the HW implementation in the callback function */
+            EZERROR("Driver is busy");
+            return STATUS_BUSY;
         }
+
+        status = STATUS_ERR_INF_NOT_EXIST;
+        if(drv->interface.async_receive)
+        {
+            status = drv->interface.async_receive(&drv->common,
+                                                    rx_buff,
+                                                    buff_size);
+        }
+        /* Driver is unlocked by the HW implementation in the callback function */
     }
     ezUart_PrintStatus(status);
     return status;
@@ -283,22 +286,21 @@ EZ_DRV_STATUS ezUart_SyncTransmit(ezUartDrvInstance_t *inst, const uint8_t *tx_b
     drv = (struct ezUartDriver*)ezDriver_GetDriverFromInstance(inst);
     if(drv != NULL)
     {
-        EZTRACE("Found driver");
-        status = STATUS_BUSY;
-        if(ezDriver_IsDriverAvailable(inst, &drv->common) == true)
+        if(ezDriver_LockDriver(inst, &drv->common) == false)
         {
-            EZTRACE("Driver = %s is available", drv->common.name);
-            status = STATUS_ERR_INF_NOT_EXIST;
-            ezDriver_LockDriver(inst, &drv->common);
-            if(drv->interface.sync_transmit)
-            {
-                status = drv->interface.sync_transmit(drv->interface.index,
-                                                      tx_buff,
-                                                      buff_size,
-                                                      timeout_millis);
-            }
-            ezDriver_UnlockDriver(&drv->common);
+            EZERROR("Driver is busy");
+            return STATUS_BUSY;
         }
+        
+        status = STATUS_ERR_INF_NOT_EXIST;
+        if(drv->interface.sync_transmit)
+        {
+            status = drv->interface.sync_transmit(&drv->common,
+                                                    tx_buff,
+                                                    buff_size,
+                                                    timeout_millis);
+        }
+        ezDriver_UnlockDriver(&drv->common);
     }
     ezUart_PrintStatus(status);
     return status;
@@ -315,22 +317,21 @@ EZ_DRV_STATUS ezUart_SyncReceive(ezUartDrvInstance_t *inst, uint8_t *rx_buff, ui
     drv = (struct ezUartDriver*)ezDriver_GetDriverFromInstance(inst);
     if(drv != NULL)
     {
-        EZTRACE("Found driver");
-        status = STATUS_BUSY;
-        if(ezDriver_IsDriverAvailable(inst, &drv->common) == true)
+        if(ezDriver_LockDriver(inst, &drv->common) == false)
         {
-            EZTRACE("Driver = %s is available", drv->common.name);
-            status = STATUS_ERR_INF_NOT_EXIST;
-            ezDriver_LockDriver(inst, &drv->common);
-            if(drv->interface.sync_receive)
-            {
-                status = drv->interface.sync_receive(drv->interface.index,
-                                                     rx_buff,
-                                                     buff_size,
-                                                     timeout_millis);
-            }
-            ezDriver_UnlockDriver(&drv->common);
+            EZERROR("Driver is busy");
+            return STATUS_BUSY;
         }
+
+        status = STATUS_ERR_INF_NOT_EXIST;
+        if(drv->interface.sync_receive)
+        {
+            status = drv->interface.sync_receive(&drv->common,
+                rx_buff,
+                buff_size,
+                timeout_millis);
+        }
+        ezDriver_UnlockDriver(&drv->common);
     }
     ezUart_PrintStatus(status);
     return status;
@@ -346,20 +347,19 @@ EZ_DRV_STATUS ezUart_GetConfig(ezUartDrvInstance_t *inst, struct ezUartConfigura
     drv = (struct ezUartDriver*)ezDriver_GetDriverFromInstance(inst);
     if(drv != NULL)
     {
-        EZTRACE("Found driver");
-        status = STATUS_BUSY;
-        if(ezDriver_IsDriverAvailable(inst, &drv->common) == true)
+        if(ezDriver_LockDriver(inst, &drv->common) == false)
         {
-            EZTRACE("Driver = %s is available", drv->common.name);
-            status = STATUS_ERR_ARG;
-            ezDriver_LockDriver(inst, &drv->common);
-            if(config != NULL)
-            {
-                *config = &drv->config;
-                status = STATUS_OK;
-            }
-            ezDriver_UnlockDriver(&drv->common);
+            EZERROR("Driver is busy");
+            return STATUS_BUSY;
         }
+
+        status = STATUS_ERR_ARG;
+        if(config != NULL)
+        {
+            *config = &drv->config;
+            status = STATUS_OK;
+        }
+        ezDriver_UnlockDriver(&drv->common);
     }
     ezUart_PrintStatus(status);
     return status;
@@ -376,19 +376,17 @@ EZ_DRV_STATUS ezUart_UpdateConfig(ezUartDrvInstance_t *inst)
     drv = (struct ezUartDriver*)ezDriver_GetDriverFromInstance(inst);
     if(drv != NULL)
     {
-        EZTRACE("Found driver");
-        status = STATUS_BUSY;
-        if(ezDriver_IsDriverAvailable(inst, &drv->common) == true)
+        if(ezDriver_LockDriver(inst, &drv->common) == false)
         {
-            EZTRACE("Driver = %s is available", drv->common.name);
-            status = STATUS_ERR_INF_NOT_EXIST;
-            ezDriver_LockDriver(inst, &drv->common);
-            if(drv->interface.update_conf)
-            {
-                status = drv->interface.update_conf(drv->interface.index);
-            }
-            ezDriver_UnlockDriver(&drv->common);
+            EZERROR("Driver is busy");
+            return STATUS_BUSY;
         }
+
+        if(drv->interface.update_conf)
+        {
+            status = drv->interface.update_conf(&drv->common);
+        }
+        ezDriver_UnlockDriver(&drv->common);
     }
     ezUart_PrintStatus(status);
     return status;
@@ -398,7 +396,30 @@ EZ_DRV_STATUS ezUart_UpdateConfig(ezUartDrvInstance_t *inst)
 /*****************************************************************************
 * Local functions
 *****************************************************************************/
-
+static void ezUart_OnReceiveEvent(
+    void *driver_h,
+    uint8_t event_code,
+    void *param1,
+    void *param2
+)
+{
+    struct Node* it_node = NULL;
+    struct ezUartDriver *uart_drv = NULL;
+    
+    EZ_LINKEDLIST_FOR_EACH(it_node, &hw_driver_list)
+    {
+        uart_drv = EZ_LINKEDLIST_GET_PARENT_OF(it_node, ll_node, struct ezUartDriver);
+        if(uart_drv->common.curr_inst != NULL && uart_drv->common.curr_inst->driver == driver_h)
+        {
+            if(uart_drv->common.callback)
+            {
+                uart_drv->common.curr_inst->callback(event_code, param1, param2);
+            }
+            ezDriver_UnlockDriver(&uart_drv->common);
+            break;
+        }
+    }
+}
 
 /*****************************************************************************
 * Function: ezUart_PrintStatus

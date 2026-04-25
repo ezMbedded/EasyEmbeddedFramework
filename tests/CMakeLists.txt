@@ -34,14 +34,6 @@ if(ENABLE_EZ_KERNEL)
     add_subdirectory(service/kernel)
 endif()
 
-if(ENABLE_EZ_HAL_ECHO)
-    add_subdirectory(service/driver/hal_echo)
-endif()
-
-if(ENABLE_EZ_UART)
-    add_subdirectory(service/driver/uart)
-endif()
-
 if(ENABLE_EZ_QUEUE)
     add_subdirectory(utilities/queue)
 endif()
@@ -58,8 +50,16 @@ if(ENABLE_EZ_RING_BUFFER)
     add_subdirectory(utilities/ring_buffer)
 endif()
 
+if(ENABLE_EZ_UART)
+    add_subdirectory(hal/uart)
+endif()
+
 if(ENABLE_EZ_GPIO)
     add_subdirectory(hal/gpio)
+endif()
+
+if(ENABLE_EZ_I2C)
+    add_subdirectory(hal/i2c)
 endif()
 
 if(ENABLE_EZ_RPC)
