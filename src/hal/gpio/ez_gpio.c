@@ -53,7 +53,13 @@ static struct Node hw_driver_list = EZ_LINKEDLIST_INIT_NODE(hw_driver_list);
 /*****************************************************************************
 * Function Definitions
 *****************************************************************************/
-/* None */
+static void ezGpio_OnReceiveEvent(
+    void *driver_h,
+    uint8_t event_code,
+    void *param1,
+    void *param2
+);
+
 
 /*****************************************************************************
 * Public functions
@@ -69,6 +75,7 @@ EZ_DRV_STATUS ezGpio_SystemRegisterHwDriver(struct ezGpioDriver *hw_gpio_driver)
     else
     {
         hw_gpio_driver->initialized = false;
+        hw_gpio_driver->common.callback = ezGpio_OnReceiveEvent;
         EZ_LINKEDLIST_ADD_TAIL(&hw_driver_list, &hw_gpio_driver->ll_node);
         EZDEBUG("Register OK");
         return STATUS_OK;
@@ -142,7 +149,7 @@ EZ_DRV_STATUS ezGpio_Initialize(ezGpioDrvInstance_t *inst, uint16_t pin_index, e
     status = STATUS_ERR_INF_NOT_EXIST;
     if(drv->interface.init_pin != NULL)
     {
-        status = drv->interface.init_pin(inst, pin_index, config);
+        status = drv->interface.init_pin(&drv->common, pin_index, config);
     }
     ezDriver_UnlockDriver(&drv->common);
 
@@ -189,7 +196,7 @@ EZ_GPIO_PIN_STATE ezGpio_ReadPin(ezGpioDrvInstance_t *inst, uint16_t pin_index)
         EZTRACE("Driver = %s is available", drv->common.name);
         if(drv->interface.read_pin)
         {
-            state = drv->interface.read_pin(inst, pin_index);
+            state = drv->interface.read_pin(&drv->common, pin_index);
         }
         ezDriver_UnlockDriver(&drv->common);
     }
@@ -217,7 +224,7 @@ EZ_DRV_STATUS ezGpio_WritePin(ezGpioDrvInstance_t *inst, uint16_t pin_index, EZ_
         status = STATUS_ERR_INF_NOT_EXIST;
         if(drv->interface.write_pin)
         {
-            status = drv->interface.write_pin(inst, pin_index, state);
+            status = drv->interface.write_pin(&drv->common, pin_index, state);
         }
         ezDriver_UnlockDriver(&drv->common);
     }
@@ -246,7 +253,7 @@ EZ_DRV_STATUS ezGpio_TogglePin(ezGpioDrvInstance_t *inst, uint16_t pin_index)
         status = STATUS_ERR_INF_NOT_EXIST;
         if(drv->interface.toggle_pin)
         {
-            status = drv->interface.toggle_pin(inst, pin_index);
+            status = drv->interface.toggle_pin(&drv->common, pin_index);
         }
         ezDriver_UnlockDriver(&drv->common);
     }
@@ -257,7 +264,30 @@ EZ_DRV_STATUS ezGpio_TogglePin(ezGpioDrvInstance_t *inst, uint16_t pin_index)
 /*****************************************************************************
 * Local functions
 *****************************************************************************/
-
+static void ezGpio_OnReceiveEvent(
+    void *driver_h,
+    uint8_t event_code,
+    void *param1,
+    void *param2
+)
+{
+    struct Node* it_node = NULL;
+    struct ezGpioDriver *gpio_drv = NULL;
+    
+    EZ_LINKEDLIST_FOR_EACH(it_node, &hw_driver_list)
+    {
+        gpio_drv = EZ_LINKEDLIST_GET_PARENT_OF(it_node, ll_node, struct ezGpioDriver);
+        if(gpio_drv->common.curr_inst != NULL && gpio_drv->common.curr_inst->driver == driver_h)
+        {
+            if(gpio_drv->common.callback)
+            {
+                gpio_drv->common.curr_inst->callback(event_code, param1, param2);
+            }
+            ezDriver_UnlockDriver(&gpio_drv->common);
+            break;
+        }
+    }
+}
 
 #endif /* EZ_GPIO == 1 */
 /* End of file*/

@@ -106,26 +106,26 @@ typedef struct ezHwGpioConfig
   * @param[in]  config: configuration of the GPIO pin
   * @return     EZ_DRV_STATUS
   */
-typedef EZ_DRV_STATUS (*ezHwGpio_Initialize)(ezGpioDrvInstance_t *inst, uint16_t pin_index, ezHwGpioConfig_t *config);
+typedef EZ_DRV_STATUS (*ezHwGpio_Initialize)(ezDriver_t *handle, uint16_t pin_index, ezHwGpioConfig_t *config);
 
 /** @brief Read state of a pin
  *  @param[in]  pin_index: index of the GPIO pin
  *  @return     EZ_GPIO_PIN_LOW or EZ_GPIO_PIN_HIGH
  */
-typedef EZ_GPIO_PIN_STATE(*ezHwGpio_ReadPin)(ezGpioDrvInstance_t *inst, uint16_t pin_index);
+typedef EZ_GPIO_PIN_STATE(*ezHwGpio_ReadPin)(ezDriver_t *handle, uint16_t pin_index);
 
 /** @brief Write state of a pin
  *  @param[in]  pin_index: index of the GPIO pin
  *  @param[in]  state: state of the pin
  *  @return     EZ_DRV_STATUS
  */
-typedef EZ_DRV_STATUS(*ezHwGpio_WritePin)(ezGpioDrvInstance_t *inst, uint16_t pin_index, EZ_GPIO_PIN_STATE state);
+typedef EZ_DRV_STATUS(*ezHwGpio_WritePin)(ezDriver_t *handle, uint16_t pin_index, EZ_GPIO_PIN_STATE state);
 
 /** @brief Toggle state of a pin
  *  @param[in]  pin_index: index of the GPIO pin
  *  @return     EZ_DRV_STATUS
  */
-typedef EZ_DRV_STATUS(*ezHwGpio_TogglePin)(ezGpioDrvInstance_t *inst, uint16_t pin_index);
+typedef EZ_DRV_STATUS(*ezHwGpio_TogglePin)(ezDriver_t *handle, uint16_t pin_index);
 
 
 /** @brief GPIO driver interface
