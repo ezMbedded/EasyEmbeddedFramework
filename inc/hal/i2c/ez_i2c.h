@@ -118,7 +118,6 @@ typedef EZ_DRV_STATUS (*ezHwI2c_Probe)(ezDriver_t *driver_h,
 
 struct ezHwI2cInterface
 {
-    void                   *driver_h;       /**< Pointer to the HW driver handle to identify which hw driver is used */
     ezHwI2c_Initialize     initialize;      /**< Initialize I2C interface */
     ezHwI2c_TransmitSync   transmit_sync;   /**< Transmit data synchronously */
     ezHwI2c_TransmitAsync  transmit_async;  /**< Transmit data asynchronously */

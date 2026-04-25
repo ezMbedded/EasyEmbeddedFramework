@@ -114,7 +114,7 @@ typedef struct ezDrvInstance ezUartDrvInstance_t;
  *  @param[in]  index: index of the HW Uart instance
  *  @return     STATUS_OK if success, otherwise STATUS_XXX. @see EZ_DRV_STATUS
  */
-typedef EZ_DRV_STATUS(*ezHwUart_Initialize)(uint8_t index);
+typedef EZ_DRV_STATUS(*ezHwUart_Initialize)(ezDriver_t *handle);
 
 
 /** @brief Deinitialize the Hw Uart
@@ -122,7 +122,7 @@ typedef EZ_DRV_STATUS(*ezHwUart_Initialize)(uint8_t index);
  *  @param[in]  index: index of the HW Uart instance
  *  @return     STATUS_OK if success, otherwise STATUS_XXX. @see EZ_DRV_STATUS
  */
-typedef EZ_DRV_STATUS(*ezHwUart_Deinitialize)(uint8_t index);
+typedef EZ_DRV_STATUS(*ezHwUart_Deinitialize)(ezDriver_t *handle);
 
 
 /** @brief Transmit data asynchornously
@@ -132,7 +132,7 @@ typedef EZ_DRV_STATUS(*ezHwUart_Deinitialize)(uint8_t index);
  *  @param[in]  buff_size: size of the buffer
  *  @return     STATUS_OK if success, otherwise STATUS_XXX. @see EZ_DRV_STATUS
  */
-typedef EZ_DRV_STATUS(*ezHwUart_AsyncTransmit)(uint8_t index, const uint8_t *tx_buff, uint16_t buff_size);
+typedef EZ_DRV_STATUS(*ezHwUart_AsyncTransmit)(ezDriver_t *handle, const uint8_t *tx_buff, uint16_t buff_size);
 
 
 /** @brief Receive data asynchornously
@@ -142,7 +142,7 @@ typedef EZ_DRV_STATUS(*ezHwUart_AsyncTransmit)(uint8_t index, const uint8_t *tx_
  *  @param[in]  buff_size: size of the buffer
  *  @return     STATUS_OK if success, otherwise STATUS_XXX. @see EZ_DRV_STATUS
  */
-typedef EZ_DRV_STATUS(*ezHwUart_AsyncReceive)(uint8_t index, uint8_t *rx_buff, uint16_t buff_size);
+typedef EZ_DRV_STATUS(*ezHwUart_AsyncReceive)(ezDriver_t *handle, uint8_t *rx_buff, uint16_t buff_size);
 
 
 /** @brief Transmit data synchronously
@@ -153,7 +153,7 @@ typedef EZ_DRV_STATUS(*ezHwUart_AsyncReceive)(uint8_t index, uint8_t *rx_buff, u
  *  @param[in]  timeout_millis: timeout in millisecond
  *  @return     STATUS_OK if success, otherwise STATUS_XXX. @see EZ_DRV_STATUS
  */
-typedef EZ_DRV_STATUS(*ezHwUart_SyncTransmit)(uint8_t index, const uint8_t *tx_buff, uint16_t buff_size, uint32_t timeout_millis);
+typedef EZ_DRV_STATUS(*ezHwUart_SyncTransmit)(ezDriver_t *handle, const uint8_t *tx_buff, uint16_t buff_size, uint32_t timeout_millis);
 
 
 /** @brief Receive data synchronously
@@ -164,7 +164,7 @@ typedef EZ_DRV_STATUS(*ezHwUart_SyncTransmit)(uint8_t index, const uint8_t *tx_b
  *  @param[in]  timeout_millis: timeout in millisecond
  *  @return     STATUS_OK if success, otherwise STATUS_XXX. @see EZ_DRV_STATUS
  */
-typedef EZ_DRV_STATUS(*ezHwUart_SyncReceive)(uint8_t index, uint8_t *rx_buff, uint16_t buff_size, uint32_t timeout_millis);
+typedef EZ_DRV_STATUS(*ezHwUart_SyncReceive)(ezDriver_t *handle, uint8_t *rx_buff, uint16_t buff_size, uint32_t timeout_millis);
 
 
 /** @brief Update the configuration
@@ -172,14 +172,13 @@ typedef EZ_DRV_STATUS(*ezHwUart_SyncReceive)(uint8_t index, uint8_t *rx_buff, ui
  *  @param[in]  index: index of the HW Uart instance
  *  @return     STATUS_OK if success, otherwise STATUS_ERR_XXX. @see EZ_DRV_STATUS
  */
-typedef EZ_DRV_STATUS(*ezHwUart_UpdateConfig)(uint8_t index);
+typedef EZ_DRV_STATUS(*ezHwUart_UpdateConfig)(ezDriver_t *handle);
 
 
 /** @brief List of API must be supported by the Hw implementation
  */
 struct ezHwUartInterface
 {
-    uint8_t                 index;          /**< Index of the driver instance */
     ezHwUart_Initialize     initialize;     /**< Initialize function */
     ezHwUart_Deinitialize   deinitialize;   /**< Deinitialize function */
     ezHwUart_AsyncTransmit  async_transmit; /**< Transmit data asynchorously. Events are reported via callback in ezDriverCommon -> ezDrvInstance_t -> calback*/
@@ -324,7 +323,7 @@ EZ_DRV_STATUS ezUart_UnregisterInstance(ezUartDrvInstance_t *inst);
 * @details Normall, user do not need to call this function. The HW uart
 *          implementation take care of the initialization.
 *
-* @param[in]    iinst: Driver instance
+* @param[in]    inst: Driver instance
 * @return       STATUS_OK: Success
 *               STATUS_XXX: Error code defined in EZ_DRV_STATUS
 *

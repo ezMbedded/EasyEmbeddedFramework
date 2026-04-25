@@ -59,7 +59,12 @@ static struct Node instance_list = EZ_LINKEDLIST_INIT_NODE(instance_list);
 * Function Definitions
 *****************************************************************************/
 static void ezUart_PrintStatus(EZ_DRV_STATUS status);
-
+static void ezUart_OnReceiveEvent(
+    void *driver_h,
+    uint8_t event_code,
+    void *param1,
+    void *param2
+);
 
 /*****************************************************************************
  * Public functions
@@ -77,6 +82,7 @@ EZ_DRV_STATUS ezUart_SystemRegisterHwDriver(struct ezUartDriver *hw_uart_driver)
     else
     {
         EZ_LINKEDLIST_ADD_TAIL(&hw_driver_list, &hw_uart_driver->ll_node);
+        hw_uart_driver->common.callback = ezUart_OnReceiveEvent;
         status = STATUS_OK;
     }
 
@@ -175,7 +181,7 @@ EZ_DRV_STATUS ezUart_Initialize(ezUartDrvInstance_t *inst)
         status = STATUS_ERR_INF_NOT_EXIST;
         if(drv->interface.initialize)
         {
-            status = drv->interface.initialize(drv->interface.index);
+            status = drv->interface.initialize(&drv->common);
         }
         ezDriver_UnlockDriver(&drv->common);    
     }
@@ -202,7 +208,7 @@ EZ_DRV_STATUS ezUart_Deinitialize(ezUartDrvInstance_t *inst)
         status = STATUS_ERR_INF_NOT_EXIST;
         if(drv->interface.deinitialize)
         {
-            status = drv->interface.deinitialize(drv->interface.index);
+            status = drv->interface.deinitialize(&drv->common);
         }
         ezDriver_UnlockDriver(&drv->common);
     }
@@ -230,7 +236,7 @@ EZ_DRV_STATUS ezUart_AsyncTransmit(ezUartDrvInstance_t *inst, const uint8_t *tx_
         if(drv->interface.async_transmit)
         {
             status = drv->interface.async_transmit(
-                drv->interface.index,
+                &drv->common,
                 tx_buff,
                 buff_size);
         }
@@ -259,7 +265,7 @@ EZ_DRV_STATUS ezUart_AsyncReceive(ezUartDrvInstance_t *inst, uint8_t *rx_buff, u
         status = STATUS_ERR_INF_NOT_EXIST;
         if(drv->interface.async_receive)
         {
-            status = drv->interface.async_receive(drv->interface.index,
+            status = drv->interface.async_receive(&drv->common,
                                                     rx_buff,
                                                     buff_size);
         }
@@ -289,7 +295,7 @@ EZ_DRV_STATUS ezUart_SyncTransmit(ezUartDrvInstance_t *inst, const uint8_t *tx_b
         status = STATUS_ERR_INF_NOT_EXIST;
         if(drv->interface.sync_transmit)
         {
-            status = drv->interface.sync_transmit(drv->interface.index,
+            status = drv->interface.sync_transmit(&drv->common,
                                                     tx_buff,
                                                     buff_size,
                                                     timeout_millis);
@@ -320,7 +326,7 @@ EZ_DRV_STATUS ezUart_SyncReceive(ezUartDrvInstance_t *inst, uint8_t *rx_buff, ui
         status = STATUS_ERR_INF_NOT_EXIST;
         if(drv->interface.sync_receive)
         {
-            status = drv->interface.sync_receive(drv->interface.index,
+            status = drv->interface.sync_receive(&drv->common,
                 rx_buff,
                 buff_size,
                 timeout_millis);
@@ -378,7 +384,7 @@ EZ_DRV_STATUS ezUart_UpdateConfig(ezUartDrvInstance_t *inst)
 
         if(drv->interface.update_conf)
         {
-            status = drv->interface.update_conf(drv->interface.index);
+            status = drv->interface.update_conf(&drv->common);
         }
         ezDriver_UnlockDriver(&drv->common);
     }
@@ -390,7 +396,30 @@ EZ_DRV_STATUS ezUart_UpdateConfig(ezUartDrvInstance_t *inst)
 /*****************************************************************************
 * Local functions
 *****************************************************************************/
-
+static void ezUart_OnReceiveEvent(
+    void *driver_h,
+    uint8_t event_code,
+    void *param1,
+    void *param2
+)
+{
+    struct Node* it_node = NULL;
+    struct ezUartDriver *uart_drv = NULL;
+    
+    EZ_LINKEDLIST_FOR_EACH(it_node, &hw_driver_list)
+    {
+        uart_drv = EZ_LINKEDLIST_GET_PARENT_OF(it_node, ll_node, struct ezUartDriver);
+        if(uart_drv->common.curr_inst != NULL && uart_drv->common.curr_inst->driver == driver_h)
+        {
+            if(uart_drv->common.callback)
+            {
+                uart_drv->common.curr_inst->callback(event_code, param1, param2);
+            }
+            ezDriver_UnlockDriver(&uart_drv->common);
+            break;
+        }
+    }
+}
 
 /*****************************************************************************
 * Function: ezUart_PrintStatus

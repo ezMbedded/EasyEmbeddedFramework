@@ -339,8 +339,8 @@ static void ezI2c_OnReceiveEvent(
             if(i2c_drv->common.callback)
             {
                 i2c_drv->common.curr_inst->callback(event_code, param1, param2);
-                ezDriver_UnlockDriver(&i2c_drv->common);
             }
+            ezDriver_UnlockDriver(&i2c_drv->common);
             break;
         }
     }
