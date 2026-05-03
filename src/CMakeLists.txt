@@ -24,7 +24,6 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang" OR CMAKE_CXX_COMPILER_ID MATCHES "GNU
         -Wduplicated-cond
         -Wduplicated-branches
         -Wlogical-op
-        -Wcast-align
     )
 
     add_compile_definitions(
