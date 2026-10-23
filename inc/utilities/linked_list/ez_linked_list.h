@@ -22,8 +22,8 @@
  * 
  */
 
-#ifndef _LINKEDLIST_H
-#define _LINKEDLIST_H
+#ifndef EZ_LINKED_LIST_H 
+#define EZ_LINKED_LIST_H 
 
 #ifdef __cplusplus
 extern "C" {
@@ -78,17 +78,17 @@ extern "C" {
 /*@brief Insert a node to head
  *
  */
-#define EZ_LINKEDLIST_ADD_HEAD(list_head,node) ezLinkedList_AppendNode(node, (list_head)->next)
+#define EZ_LINKEDLIST_ADD_HEAD(list_head,node) ezLinkedList_InsertHead(list_head, node)
 
 /*@brief Insert a node to tail
   *
  */
-#define EZ_LINKEDLIST_ADD_TAIL(list_head,node) ezLinkedList_AppendNode(node, (list_head)->prev)
+#define EZ_LINKEDLIST_ADD_TAIL(list_head,node) ezLinkedList_InsertTail(list_head, node)
 
 /*@brief unlink a node
  *
  */
-#define EZ_LINKEDLIST_UNLINK_NODE(node) (node)->prev->next = (node)->next;(node)->next->prev = (node)->prev;ezLinkedList_InitNode(node);
+#define EZ_LINKEDLIST_UNLINK_NODE(node)     ezLinkedList_UnlinkNode(node)
 
 /*@brief check if a list is empty
  *
@@ -195,52 +195,90 @@ bool ezLinkedList_AppendNode(struct Node *new_node, struct Node *appended_node);
 
 
 /*****************************************************************************
-* Function : ezLinkedList_InsertNewHead
+* Function : ezLinkedList_InsertHead
 *//** 
-* @brief Add a new node to the current head position
+* @brief Add a new node to first position of the linked list
 *
-* @details New node will be the head of the linked list
+* @details The new node is inserted right after the list sentinel, so it
+*          becomes the first node of the list
 *
-* @param    current_head: (IN)pointer to the current head
+* @param    list: (IN)pointer to the linked list (sentinel)
 * @param    new_node: (IN)pointer to the new node to be inserted
-* @return   pointer to the new head or NULL if operation fails
+* @return   true if success, else false
 *
 * @pre None
 * @post None
 *
 * @code
+* struct Node list;
 * struct Node new_node;
+* ezLinkedList_InitNode(&list);
 * ezLinkedList_InitNode(&new_node);
-* struct Node *new_head = ezLinkedList_InsertNewHead(&new_node, current_head);
+* ezLinkedList_InsertHead(&list, &new_node);
 * @endcode
 *
-* @see ezmLL_InitNode
+* @see ezLinkedList_InitNode
 *
 *****************************************************************************/
-struct Node *ezLinkedList_InsertNewHead (struct Node * current_head,
-                                         struct Node *new_node);
+static inline bool ezLinkedList_InsertHead (struct Node * list, struct Node *new_node)
+{
+    return ezLinkedList_AppendNode(new_node, list);
+}
 
 
 /*****************************************************************************
-* Function : ezLinkedList_UnlinkCurrentHead
+* Function : ezLinkedList_InsertTail
 *//** 
-* @brief Unlink the current head of the linked list
+* @brief Add a new node to last position of the linked list
 *
-* @details After the operation, the new head position will be changed to
-* head->next
+* @details The new node is inserted right before the list sentinel, so it
+*          becomes the last node of the list
 *
-* @param    head: (IN)pointer to the current head
-* @return   pointer to the unlinked head or NULL
+* @param    list: (IN)pointer to the linked list (sentinel)
+* @param    new_node: (IN)pointer to the new node to be inserted
+* @return   true if success, else false
 *
 * @pre None
 * @post None
 *
 * @code
-* struct Node *unlinked_head = ezLinkedList_UnlinkCurrentHead(head);
+* struct Node list;
+* struct Node new_node;
+* ezLinkedList_InitNode(&list);
+* ezLinkedList_InitNode(&new_node);
+* ezLinkedList_InsertTail(&list, &new_node);
+* @endcode
+*
+* @see ezLinkedList_InitNode
+*
+*****************************************************************************/
+static inline bool ezLinkedList_InsertTail (struct Node * list, struct Node *new_node)
+{
+    return (list != NULL) && ezLinkedList_AppendNode(new_node, list->prev);
+}
+
+
+/*****************************************************************************
+* Function : ezLinkedList_RemoveFirst
+*//** 
+* @brief Remove the first node from the linked list
+*
+* @details The first node is the one right after the list sentinel. The
+*          removed node is re-initialized, so it points to itself, and the
+*          list stays valid.
+*
+* @param    list: (IN)pointer to the linked list (sentinel)
+* @return   pointer to the removed node or NULL if the list is empty
+*
+* @pre None
+* @post None
+*
+* @code
+* struct Node *removed_node = ezLinkedList_RemoveFirst(&list);
 * @endcode
 *
 *****************************************************************************/
-struct Node *ezLinkedList_UnlinkCurrentHead(struct Node *head);
+struct Node * ezLinkedList_RemoveFirst(struct Node * list);
 
 
 /*****************************************************************************
@@ -264,11 +302,47 @@ struct Node *ezLinkedList_UnlinkCurrentHead(struct Node *head);
 *****************************************************************************/
 bool ezLinkedList_IsNodeInList(struct Node *head, struct Node *searched_node);
 
+/*****************************************************************************
+ * Function : ezLinkedList_UnlinkNode
+ *//**
+* @brief Unlink a node from a list
+* @details The node is unlinked from the list and re-initialized, so it points
+* to itself. The list remains valid after the operation.
+* @param    node: (IN)pointer to the node to be unlinked
+*   
+* @return   true if the node was successfully unlinked, false if the node was NULL
+* @pre None
+* @post The node is unlinked from the list and re-initialized.
+*       
+* @code
+* struct Node node;
+* ezLinkedList_InitNode(&node);
+* // Assume the node is part of a list
+* bool success = ezLinkedList_UnlinkNode(&node);
+* @endcode
+*   
+* @see ezLinkedList_InitNode
+*   
+*   
+*   
+* *************************************************************************/
+static inline bool ezLinkedList_UnlinkNode(struct Node *node)
+{
+    if (node != NULL)
+    {
+        node->prev->next = node->next;
+        node->next->prev = node->prev;
+        ezLinkedList_InitNode(node);
+        return true;
+    }
+    return false;
+}
+
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* CONFIG_HELPER_LINKEDLIST */
-#endif /* _LINKEDLIST_H */
+#endif /* EZ_LINKEDLIST */
+#endif /* EZ_LINKED_LIST_H  */
 
 /* End of file*/
