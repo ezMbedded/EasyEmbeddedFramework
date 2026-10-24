@@ -21,8 +21,8 @@
  * on a static memory buffer.
  */
 
-#ifndef _EZ_STATIC_ALLOC_H
-#define _EZ_STATIC_ALLOC_H
+#ifndef EZ_STATIC_ALLOC_H
+#define EZ_STATIC_ALLOC_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -38,13 +38,23 @@ extern "C" {
 
 #if (EZ_STATIC_ALLOC == 1)
 
-#include "stdint.h"
+#include <stdint.h>
+#include <stdbool.h>
+#include <stddef.h>
 #include "ez_linked_list.h"
 
 /*****************************************************************************
 * Component Preprocessor Macros
 *****************************************************************************/
-/* None */
+/**@brief Alignment of the allocated memory in byte. Must be a power of two.
+ *
+ * Every address returned by ezStaticAlloc_Malloc() is a multiple of this
+ * value and every request is rounded up to a multiple of it. Define it in the
+ * build configuration to override the default (size of a pointer).
+ */
+#ifndef CONFIG_STATIC_ALLOC_ALIGNMENT
+#define CONFIG_STATIC_ALLOC_ALIGNMENT   (sizeof(void*))
+#endif /* CONFIG_STATIC_ALLOC_ALIGNMENT */
 
 
 /*****************************************************************************
@@ -61,8 +71,8 @@ struct MemList
     /**< List to manage the allocated blocks*/
     uint8_t* buff;
     /**< Pointer to the memory buffer */
-    uint16_t buff_size;
-    /**< Size of the buffer */
+    size_t buff_size;
+    /**< Size of the managed buffer in byte */
 };
 
 
@@ -72,7 +82,7 @@ struct MemBlock
 {
     struct Node node;   /* Linked list node */
     void* buff;         /* Pointer to the allocated memory */
-    uint16_t buff_size; /* Size of the allocated memory */
+    size_t buff_size;   /* Size of the allocated memory */
 };
 
 
@@ -98,6 +108,16 @@ typedef struct MemList ezmMemList;
 * @details After the initialization, the memory buffer can not be used
 * directly, but through the ezStaticAlloc API
 *
+* The handle is only marked as ready when the initialization succeeded. The
+* block descriptors are taken from a pool shared by all memory lists (see
+* CONFIG_NUM_OF_MEM_BLOCK), so initialization fails when the pool is empty.
+* Call ezStaticAlloc_DeinitMemList() to give the descriptors back.
+*
+* The managed area starts at the first address inside the buffer which is a
+* multiple of CONFIG_STATIC_ALLOC_ALIGNMENT and its size is rounded down to a
+* multiple of it. Up to (alignment - 1) bytes at each end of the buffer are
+* therefore not used, and initialization fails if nothing is left.
+*
 * @param[in]    *mem_list:      handle to manage memory buffer
 * @param[in]    *buffer:        buffer to be managed
 * @param[in]    buffer_size:    size of the buffer
@@ -114,7 +134,33 @@ typedef struct MemList ezmMemList;
 * @endcode
 *
 *****************************************************************************/
-bool ezStaticAlloc_InitMemList(ezmMemList* mem_list, void* buff, uint16_t buff_size);
+bool ezStaticAlloc_InitMemList(ezmMemList* mem_list, void* buff, size_t buff_size);
+
+
+/*****************************************************************************
+* Function : ezStaticAlloc_DeinitMemList
+*//** 
+* @brief Release a memory list which was initialized before
+*
+* @details All block descriptors of the list are given back to the shared
+* pool and the handle is not ready anymore. Pointers returned by
+* ezStaticAlloc_Malloc() of this list must not be used after this call.
+*
+* @param[in]    *mem_list:  handle to manage memory buffer
+* @return       true if the list was ready and is released, else false
+*
+* @pre mem_list must initialized
+* @post mem_list is not ready
+*
+* \b Example
+* @code
+* bool success = ezStaticAlloc_DeinitMemList(&mem_list);
+* @endcode
+*
+* @see ezStaticAlloc_InitMemList
+*
+*****************************************************************************/
+bool ezStaticAlloc_DeinitMemList(ezmMemList* mem_list);
 
 
 /*****************************************************************************
@@ -151,7 +197,12 @@ bool ezStaticAlloc_IsMemListReady(ezmMemList *mem_list);
 *
 * @param[in]    *mem_list:  handle to manage memory buffer
 * @param[in]    alloc_size: number of byte to be allocated
-* @return       address of the allocated memory
+* @return       address of the allocated memory, NULL if the list is not
+*               ready, the size is 0 or there is no free block that is big
+*               enough
+*
+* @note The returned address is aligned to CONFIG_STATIC_ALLOC_ALIGNMENT and
+* the size is rounded up to a multiple of it. The size is not limited to 16 bit.
 *
 * @pre mem_list must initialized
 * @post None
@@ -171,7 +222,7 @@ bool ezStaticAlloc_IsMemListReady(ezmMemList *mem_list);
 * @see ezStaticAlloc_InitMemList
 *
 *****************************************************************************/
-void *ezStaticAlloc_Malloc(ezmMemList* mem_list, uint16_t alloc_size);
+void *ezStaticAlloc_Malloc(ezmMemList* mem_list, size_t alloc_size);
 
 
 /*****************************************************************************
@@ -201,7 +252,7 @@ void *ezStaticAlloc_Malloc(ezmMemList* mem_list, uint16_t alloc_size);
 *
 * if(ezStaticAlloc_Free(&mem_list, foo) == false)
 * {
-*     printf(error");
+*     printf("error");
 * }
 * @endcode
 *
@@ -209,6 +260,50 @@ void *ezStaticAlloc_Malloc(ezmMemList* mem_list, uint16_t alloc_size);
 *
 *****************************************************************************/
 bool ezStaticAlloc_Free(ezmMemList *mem_list, void *alloc_addr);
+
+
+/*****************************************************************************
+* Function : ezStaticAlloc_ReserveMemoryBlock
+*//** 
+* @brief Reserve a block of a free list without moving it to the alloc list
+*
+* @details Advanced function for modules which manage the life cycle of a
+* block on their own (for example ez_ipc). The first free block that is big
+* enough is split if possible and returned. The size is rounded up to a
+* multiple of CONFIG_STATIC_ALLOC_ALIGNMENT. The returned node stays in the
+* free list and must be moved with ezStaticAlloc_MoveBlock() or unlinked.
+*
+* @param[in]    *free_list_head:    head of the free list
+* @param[in]    block_size_byte:    number of byte to be reserved
+* @return       node of the reserved block, NULL if there is none
+*
+* @pre free_list_head belongs to an initialized mem list
+* @post None
+*
+* @see ezStaticAlloc_MoveBlock
+*
+*****************************************************************************/
+struct Node* ezStaticAlloc_ReserveMemoryBlock(struct Node* free_list_head, size_t block_size_byte);
+
+
+/*****************************************************************************
+* Function : ezStaticAlloc_MoveBlock
+*//** 
+* @brief Move a block from one list to the tail of another list
+*
+* @details Advanced function, see ezStaticAlloc_ReserveMemoryBlock
+*
+* @param[in]    *move_node:         node of the block
+* @param[in]    *from_list_head:    list that contains the node
+* @param[in]    *to_list_head:      destination list
+* @return       true if the block is moved, false if an argument is NULL or
+*               the node is not in from_list_head
+*
+* @pre None
+* @post None
+*
+*****************************************************************************/
+bool ezStaticAlloc_MoveBlock(struct Node* move_node, struct Node* from_list_head, struct Node* to_list_head);
 
 
 /*****************************************************************************
@@ -335,6 +430,6 @@ void ezStaticAlloc_PrintAllocList(ezmMemList* mem_list);
 #endif
 
 #endif /* EZ_STATIC_ALLOC == 1*/
-#endif /* _EZ_STATIC_ALLOC_H */
+#endif /* EZ_STATIC_ALLOC_H */
 
 /* End of file*/

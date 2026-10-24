@@ -86,13 +86,6 @@ static IpcInstance instance_pool[CONFIG_NUM_OF_IPC_INSTANCE] = {0};    /**< pool
 /*****************************************************************************
 * Function Definitions
 *****************************************************************************/
-/**Function to manipulate the buffer of the ipc. Keyword extern is used because these 
- * functions are not meant to be shared with the user
- */
-extern struct Node*      ezmStcMem_ReserveMemoryBlock(struct Node* free_list_head, uint16_t block_size_byte);
-extern bool              ezmStcMem_MoveBlock(struct Node* move_node, struct Node* from_list_head, struct Node* to_list_head);
-extern struct MemBlock*  GetFreeBlock(void);
-extern void              ReleaseBlock(struct MemBlock* block);
 static void              ezIpc_ResetInstance    (uint8_t instance_index);
 
 
@@ -108,7 +101,7 @@ void ezIpc_InitModule(void)
 }
 
 
-ezmMailBox ezIpc_GetInstance(uint8_t* ipc_buffer, uint16_t buffer_size, ezmIpc_MessageCallback fnCallback)
+ezmMailBox ezIpc_GetInstance(uint8_t* ipc_buffer, size_t buffer_size, ezmIpc_MessageCallback fnCallback)
 {
     ezmMailBox free_instance = CONFIG_NUM_OF_IPC_INSTANCE;
     for (uint8_t i = 0; i < CONFIG_NUM_OF_IPC_INSTANCE; i++)
@@ -117,8 +110,6 @@ ezmMailBox ezIpc_GetInstance(uint8_t* ipc_buffer, uint16_t buffer_size, ezmIpc_M
         {
             instance_pool[i].is_busy = true;
             instance_pool[i].fnCallback = fnCallback;
-            instance_pool[i].memory_list.buff = ipc_buffer;
-            instance_pool[i].memory_list.buff_size = buffer_size;
             (void)ezStaticAlloc_InitMemList(&instance_pool[i].memory_list, ipc_buffer, buffer_size);
             free_instance = (ezmMailBox)i;
             break;
@@ -128,7 +119,7 @@ ezmMailBox ezIpc_GetInstance(uint8_t* ipc_buffer, uint16_t buffer_size, ezmIpc_M
 }
 
 
-void *ezIpc_InitMessage(ezmMailBox send_to, uint16_t size_in_byte)
+void *ezIpc_InitMessage(ezmMailBox send_to, size_t size_in_byte)
 {
     void            *buffer_address = NULL;
     IpcInstance     *send_to_instance = NULL;
@@ -137,7 +128,11 @@ void *ezIpc_InitMessage(ezmMailBox send_to, uint16_t size_in_byte)
     if (size_in_byte > 0 && send_to < CONFIG_NUM_OF_IPC_INSTANCE)
     {
         send_to_instance = GET_INSTANCE(send_to);
-        pending_node = ezmStcMem_ReserveMemoryBlock(&send_to_instance->memory_list.free_list_head, size_in_byte);
+        if (ezStaticAlloc_IsMemListReady(&send_to_instance->memory_list))
+        {
+            pending_node = ezStaticAlloc_ReserveMemoryBlock(&send_to_instance->memory_list.free_list_head, size_in_byte);
+        }
+
         if (NULL != pending_node)
         {
             buffer_address = GET_BLOCK(pending_node)->buff;
@@ -163,7 +158,7 @@ bool ezIpc_SendMessage(ezmMailBox send_to, void *message)
         {
             if (GET_BLOCK(it_node)->buff == message)
             {
-                ezmStcMem_MoveBlock(it_node, &send_to_instance->pending_list_head, &send_to_instance->memory_list.alloc_list_head);
+                ezStaticAlloc_MoveBlock(it_node, &send_to_instance->pending_list_head, &send_to_instance->memory_list.alloc_list_head);
                 if (NULL != send_to_instance->fnCallback)
                 {
                     send_to_instance->fnCallback();
@@ -178,7 +173,7 @@ bool ezIpc_SendMessage(ezmMailBox send_to, void *message)
 }
 
 
-void* ezIpc_ReceiveMessage(ezmMailBox receive_from, uint16_t *message_size)
+void* ezIpc_ReceiveMessage(ezmMailBox receive_from, size_t *message_size)
 {
     void        *buffer_address = NULL;
     IpcInstance *instance = NULL;

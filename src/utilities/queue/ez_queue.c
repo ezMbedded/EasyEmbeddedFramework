@@ -75,12 +75,11 @@ ezSTATUS ezQueue_CreateQueue(ezQueue *queue, uint8_t *buff, uint32_t buff_size)
 
     EZTRACE("ezQueue_CreateQueue( size = %d)", buff_size);
 
-    memset(buff, 0, buff_size);
-
     if (queue != NULL && buff != NULL && buff_size > 0)
     {
+        memset(buff, 0, buff_size);
         ezLinkedList_InitNode(&queue->q_item_list);
-        if (ezStaticAlloc_InitMemList(&queue->mem_list, buff, (uint16_t)buff_size) == true)
+        if (ezStaticAlloc_InitMemList(&queue->mem_list, buff, buff_size) == true)
         {
             status = ezSUCCESS;
             EZDEBUG("create queue success");
@@ -181,7 +180,7 @@ ezReservedElement ezQueue_ReserveElement(ezQueue *queue, void **data, uint32_t d
         if (item != NULL)
         {
             item->data_size = data_size;
-            item->data = ezStaticAlloc_Malloc(&queue->mem_list, (uint16_t)data_size);
+            item->data = ezStaticAlloc_Malloc(&queue->mem_list, data_size);
 
             if (item->data == NULL)
             {
