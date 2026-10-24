@@ -36,13 +36,17 @@ if(ENABLE_THREADX)
     )
 
     FetchContent_GetProperties(threadx)
-    if(NOT threadx)
+    if(NOT threadx_POPULATED)
         message(STATUS "threadx is not available, downloading...")
         FetchContent_Populate(threadx)
         message(STATUS "Download completed")
     endif()
 
+    # ThreadX v6.4.1 declares cmake_minimum_required below 3.5, which CMake 4.x
+    # rejects. Raise the floor for this subdirectory only.
+    set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
     add_subdirectory(threadx)
+    unset(CMAKE_POLICY_VERSION_MINIMUM)
 endif()
 
 #Adding FreeRTOS -------------------------------------------------------------
@@ -55,7 +59,7 @@ if(ENABLE_FREERTOS)
     )
 
     FetchContent_GetProperties(freertos_kernel)
-    if(NOT freertos_kernel)
+    if(NOT freertos_kernel_POPULATED)
         message(STATUS "freertos is not available, downloading...")
         FetchContent_Populate(freertos_kernel)
         message(STATUS "freertos completed")

@@ -37,6 +37,7 @@ extern "C" {
 #if (EZ_IPC == 1)
 #include "stdint.h"
 #include "stdbool.h"
+#include <stddef.h>
 
 /*****************************************************************************
 * Component Preprocessor Macros
@@ -109,7 +110,7 @@ void ezIpc_InitModule(void);
 *
 *****************************************************************************/
 ezmMailBox ezIpc_GetInstance(uint8_t* ipc_buffer,
-                             uint16_t buffer_size,
+                             size_t buffer_size,
                              ezmIpc_MessageCallback fnCallback);
 
 
@@ -137,7 +138,7 @@ ezmMailBox ezIpc_GetInstance(uint8_t* ipc_buffer,
 * @see TBD
 *
 *****************************************************************************/
-void *ezIpc_InitMessage(ezmMailBox send_to, uint16_t size_in_byte);
+void *ezIpc_InitMessage(ezmMailBox send_to, size_t size_in_byte);
 
 
 /*****************************************************************************
@@ -179,7 +180,9 @@ bool ezIpc_SendMessage(ezmMailBox send_to, void *message);
 * message from the buffer
 *
 * @param[in]    receive_from: the handle, which message will be read out
-* @param[in]    *message_size: size of the message
+* @param[in]    *message_size: size of the message block. The block size is
+*               rounded up to CONFIG_STATIC_ALLOC_ALIGNMENT, so it can be bigger
+*               than the size requested in ezIpc_InitMessage
 *
 * @return   address of the message if there is one
 *
@@ -194,7 +197,7 @@ bool ezIpc_SendMessage(ezmMailBox send_to, void *message);
 * @see TBD
 *
 *****************************************************************************/
-void *ezIpc_ReceiveMessage(ezmMailBox receive_from, uint16_t *message_size);
+void *ezIpc_ReceiveMessage(ezmMailBox receive_from, size_t *message_size);
 
 
 /*****************************************************************************
