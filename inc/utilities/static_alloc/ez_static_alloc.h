@@ -76,7 +76,11 @@ struct MemList
 };
 
 
-/**@brief Header of a memory block
+/**@brief Record of a memory chunk
+ *
+ * The record is stored inside the managed buffer, directly in front of the data
+ * it describes. It is taken from the buffer together with the data when a chunk
+ * is allocated and given back with it when the chunk is freed.
  */
 struct MemBlock
 {
@@ -109,9 +113,11 @@ typedef struct MemList ezmMemList;
 * directly, but through the ezStaticAlloc API
 *
 * The handle is only marked as ready when the initialization succeeded. The
-* block descriptors are taken from a pool shared by all memory lists (see
-* CONFIG_NUM_OF_MEM_BLOCK), so initialization fails when the pool is empty.
-* Call ezStaticAlloc_DeinitMemList() to give the descriptors back.
+* records which track the chunks are stored inside the buffer, in front of the
+* data of each chunk (see struct MemBlock), so every allocation uses
+* sizeof(struct MemBlock) (rounded up to the alignment) bytes more than
+* requested. Initialization fails if the buffer can not hold one record and one
+* unit of data.
 *
 * The managed area starts at the first address inside the buffer which is a
 * multiple of CONFIG_STATIC_ALLOC_ALIGNMENT and its size is rounded down to a
@@ -142,8 +148,7 @@ bool ezStaticAlloc_InitMemList(ezmMemList* mem_list, void* buff, size_t buff_siz
 *//** 
 * @brief Release a memory list which was initialized before
 *
-* @details All block descriptors of the list are given back to the shared
-* pool and the handle is not ready anymore. Pointers returned by
+* @details The handle is not ready anymore. Pointers returned by
 * ezStaticAlloc_Malloc() of this list must not be used after this call.
 *
 * @param[in]    *mem_list:  handle to manage memory buffer
@@ -201,7 +206,10 @@ bool ezStaticAlloc_IsMemListReady(ezmMemList *mem_list);
 *               ready, the size is 0 or there is no free block that is big
 *               enough
 *
-* @note The returned address is aligned to CONFIG_STATIC_ALLOC_ALIGNMENT and
+* @note The record of the chunk is taken from the buffer in front of the data,
+* so the allocation fails if the record and the data do not fit together. The
+* record is released together with the data by ezStaticAlloc_Free().
+* The returned address is aligned to CONFIG_STATIC_ALLOC_ALIGNMENT and
 * the size is rounded up to a multiple of it. The size is not limited to 16 bit.
 *
 * @pre mem_list must initialized
@@ -265,7 +273,7 @@ bool ezStaticAlloc_Free(ezmMemList *mem_list, void *alloc_addr);
 /*****************************************************************************
 * Function : ezStaticAlloc_ReserveMemoryBlock
 *//** 
-* @brief Reserve a block of a free list without moving it to the alloc list
+* @brief Reserve a chunk of a free list without moving it to the alloc list
 *
 * @details Advanced function for modules which manage the life cycle of a
 * block on their own (for example ez_ipc). The first free block that is big

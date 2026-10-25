@@ -18,10 +18,12 @@
  *  @date   26.02.2024
  *  @brief  Implementation of the static memory allocation
  *
- *  @details The managed buffer is split into blocks. The block descriptors
- *  come from a pool shared by all memory lists. The free list is always sorted
- *  by address, so a returned block only has to be merged with its direct
- *  neighbours.
+ *  @details The managed buffer is split into chunks. Every chunk starts with
+ *  its own record (struct MemBlock) followed by the data, so the records are
+ *  carved out of the managed buffer and no external pool is needed. Allocating
+ *  takes the record and the data from the buffer, freeing gives both back. The
+ *  free list is always sorted by address, so a returned chunk only has to be
+ *  merged with its direct neighbours.
  */
 
 /*****************************************************************************
@@ -60,15 +62,20 @@
     #define STCMEMHEXDUMP(a,b)
 #endif
 
-#ifndef CONFIG_NUM_OF_MEM_BLOCK
-#define CONFIG_NUM_OF_MEM_BLOCK 128
-#endif /*CONFIG_NUM_OF_MEM_BLOCK*/
-
 /* the alignment must be a power of two, otherwise the array size is negative */
 typedef char ezStaticAlloc_AlignmentCheck[((CONFIG_STATIC_ALLOC_ALIGNMENT) > 0U
     && (((CONFIG_STATIC_ALLOC_ALIGNMENT) & ((CONFIG_STATIC_ALLOC_ALIGNMENT) - 1U)) == 0U)) ? 1 : -1];
 
+/* the record is placed at the start of a chunk, so it must be properly aligned */
+typedef char ezStaticAlloc_RecordAlignmentCheck[((CONFIG_STATIC_ALLOC_ALIGNMENT) >= sizeof(void*)) ? 1 : -1];
+
+/* size of the record in front of the data of every chunk, a multiple of the alignment */
+#define RECORD_SIZE ((sizeof(struct MemBlock) + (CONFIG_STATIC_ALLOC_ALIGNMENT) - 1U) & ~((size_t)(CONFIG_STATIC_ALLOC_ALIGNMENT) - 1U))
 #define INIT_BLOCK(block, buff_ptr, size) do { ezLinkedList_InitNode(&(block)->node); (block)->buff = (buff_ptr); (block)->buff_size = (size); } while (0)
+/* place a record at the given address; the data follows right behind the record */
+#define INIT_RECORD(block, size) INIT_BLOCK((block), (uint8_t*)(block) + RECORD_SIZE, (size))
+/* first address behind the data of a chunk */
+#define CHUNK_END(block) ((uint8_t*)(block)->buff + (block)->buff_size)
 #define GET_LIST(x) ((struct MemList*)(x))
 #define GET_BLOCK(node_ptr) (EZ_LINKEDLIST_GET_PARENT_OF((node_ptr), node, struct MemBlock))
 
@@ -81,7 +88,7 @@ typedef char ezStaticAlloc_AlignmentCheck[((CONFIG_STATIC_ALLOC_ALIGNMENT) > 0U
 /*****************************************************************************
 * Component Variable Definitions
 *****************************************************************************/
-static struct MemBlock block_pool[CONFIG_NUM_OF_MEM_BLOCK] = { 0U };
+/* None */
 
 
 /*****************************************************************************
@@ -91,8 +98,6 @@ static void ezStaticAlloc_ReturnHeaderToFreeList(struct Node *free_list_head, st
 static void ezStaticAlloc_MergeAround(struct Node *free_list_head, struct Node *free_node);
 
 static size_t ezStaticAlloc_GetPadding(size_t value);
-static struct MemBlock* ezStaticAlloc_GetFreeBlock(void);
-static void ezStaticAlloc_ReleaseBlock(struct MemBlock* block);
 
 
 /*****************************************************************************
@@ -133,7 +138,8 @@ bool ezStaticAlloc_InitMemList(ezmMemList* mem_list, void* buff, size_t buff_siz
         /* the aligned address must not wrap around the address space */
         if (buff != NULL && buff_addr <= (UINTPTR_MAX - skipped_size))
         {
-            if (buff_size > skipped_size)
+            /* the first chunk needs room for its record and at least one unit of data */
+            if (buff_size > skipped_size && (buff_size - skipped_size) >= (RECORD_SIZE + alignment))
             {
                 /* round down: drop the tail bytes that do not fill a whole alignment unit */
                 usable_size = buff_size - skipped_size;
@@ -144,25 +150,19 @@ bool ezStaticAlloc_InitMemList(ezmMemList* mem_list, void* buff, size_t buff_siz
 
         if (aligned_buff != NULL && usable_size > 0U)
         {
-            free_block = ezStaticAlloc_GetFreeBlock();
+            /* the record of the first (free) chunk lives at the start of the buffer */
+            free_block = (struct MemBlock*)aligned_buff;
 
-            if (NULL != free_block)
+            ezLinkedList_InitNode(&GET_LIST(mem_list)->alloc_list_head);
+            ezLinkedList_InitNode(&GET_LIST(mem_list)->free_list_head);
+            INIT_RECORD(free_block, usable_size - RECORD_SIZE);
+
+            is_success = EZ_LINKEDLIST_ADD_HEAD(&GET_LIST(mem_list)->free_list_head, &free_block->node);
+
+            if (is_success)
             {
-                ezLinkedList_InitNode(&GET_LIST(mem_list)->alloc_list_head);
-                ezLinkedList_InitNode(&GET_LIST(mem_list)->free_list_head);
-                INIT_BLOCK(free_block, aligned_buff, usable_size);
-
-                is_success = EZ_LINKEDLIST_ADD_HEAD(&GET_LIST(mem_list)->free_list_head, &free_block->node);
-
-                if (is_success)
-                {
-                    GET_LIST(mem_list)->buff = aligned_buff;
-                    GET_LIST(mem_list)->buff_size = usable_size;
-                }
-                else
-                {
-                    ezStaticAlloc_ReleaseBlock(free_block);
-                }
+                GET_LIST(mem_list)->buff = aligned_buff;
+                GET_LIST(mem_list)->buff_size = usable_size;
             }
         }
     }
@@ -176,22 +176,14 @@ bool ezStaticAlloc_InitMemList(ezmMemList* mem_list, void* buff, size_t buff_siz
 bool ezStaticAlloc_DeinitMemList(ezmMemList* mem_list)
 {
     bool            is_success = false;
-    struct Node*    it_node = NULL;
 
     STCMEMPRINT("ezStaticAlloc_DeinitMemList()");
 
     if (ezStaticAlloc_IsMemListReady(mem_list))
     {
-        /* give all block descriptors back to the pool */
-        while ((it_node = ezLinkedList_RemoveFirst(&GET_LIST(mem_list)->free_list_head)) != NULL)
-        {
-            ezStaticAlloc_ReleaseBlock(GET_BLOCK(it_node));
-        }
-
-        while ((it_node = ezLinkedList_RemoveFirst(&GET_LIST(mem_list)->alloc_list_head)) != NULL)
-        {
-            ezStaticAlloc_ReleaseBlock(GET_BLOCK(it_node));
-        }
+        /* the records live inside the managed buffer, dropping the heads is enough */
+        ezLinkedList_InitNode(&GET_LIST(mem_list)->free_list_head);
+        ezLinkedList_InitNode(&GET_LIST(mem_list)->alloc_list_head);
 
         GET_LIST(mem_list)->buff = NULL;
         GET_LIST(mem_list)->buff_size = 0U;
@@ -434,44 +426,23 @@ static void ezStaticAlloc_MergeAround(struct Node* free_list_head, struct Node* 
         /* merge with the next block first so the previous block sees the full size */
         next_node = free_node->next;
         if (next_node != free_list_head &&
-            ((uint8_t*)GET_BLOCK(free_node)->buff + GET_BLOCK(free_node)->buff_size) == (uint8_t*)GET_BLOCK(next_node)->buff)
+            CHUNK_END(GET_BLOCK(free_node)) == (uint8_t*)GET_BLOCK(next_node))
         {
             STCMEMPRINT("Next adjacent block is free");
-            GET_BLOCK(free_node)->buff_size = GET_BLOCK(free_node)->buff_size + GET_BLOCK(next_node)->buff_size;
+            /* the record of the next chunk becomes part of the data */
+            GET_BLOCK(free_node)->buff_size = GET_BLOCK(free_node)->buff_size + RECORD_SIZE + GET_BLOCK(next_node)->buff_size;
             EZ_LINKEDLIST_UNLINK_NODE(next_node);
-            ezStaticAlloc_ReleaseBlock(GET_BLOCK(next_node));
         }
 
         prev_node = free_node->prev;
         if (prev_node != free_list_head &&
-            ((uint8_t*)GET_BLOCK(prev_node)->buff + GET_BLOCK(prev_node)->buff_size) == (uint8_t*)GET_BLOCK(free_node)->buff)
+            CHUNK_END(GET_BLOCK(prev_node)) == (uint8_t*)GET_BLOCK(free_node))
         {
             STCMEMPRINT("Previous adjacent block is free");
-            GET_BLOCK(prev_node)->buff_size = GET_BLOCK(prev_node)->buff_size + GET_BLOCK(free_node)->buff_size;
+            GET_BLOCK(prev_node)->buff_size = GET_BLOCK(prev_node)->buff_size + RECORD_SIZE + GET_BLOCK(free_node)->buff_size;
             EZ_LINKEDLIST_UNLINK_NODE(free_node);
-            ezStaticAlloc_ReleaseBlock(GET_BLOCK(free_node));
         }
     }
-}
-
-static struct MemBlock* ezStaticAlloc_GetFreeBlock(void)
-{
-    struct MemBlock* free_block = NULL;
-    for (uint16_t i = 0; i < CONFIG_NUM_OF_MEM_BLOCK; i++)
-    {
-        if (block_pool[i].buff == NULL)
-        {
-            free_block = &block_pool[i];
-            ezLinkedList_InitNode(&free_block->node);
-            break;
-        }
-    }
-    return free_block;
-}
-
-static void ezStaticAlloc_ReleaseBlock(struct MemBlock* block)
-{
-    INIT_BLOCK(block, NULL, 0U);
 }
 
 struct Node* ezStaticAlloc_ReserveMemoryBlock(struct Node* free_list_head, size_t block_size_byte)
@@ -497,17 +468,18 @@ struct Node* ezStaticAlloc_ReserveMemoryBlock(struct Node* free_list_head, size_
             if (GET_BLOCK(iterate_Node)->buff_size >= reserve_size)
             {
                 remain_block = NULL;
-                if (GET_BLOCK(iterate_Node)->buff_size > reserve_size)
+
+                /* The remainder becomes a new free chunk with its own record in
+                 * front of its data. If it can not hold the record and at least
+                 * one unit of data, hand out the whole chunk instead. */
+                if (GET_BLOCK(iterate_Node)->buff_size >= (reserve_size + RECORD_SIZE + CONFIG_STATIC_ALLOC_ALIGNMENT))
                 {
-                    remain_block = ezStaticAlloc_GetFreeBlock();
+                    remain_block = (struct MemBlock*)((uint8_t*)GET_BLOCK(iterate_Node)->buff + reserve_size);
                 }
 
-                /* If no block descriptor is left, hand out the whole block
-                 * instead of shrinking it, otherwise the remainder is lost. */
                 if (remain_block)
                 {
-                    remain_block->buff_size = GET_BLOCK(iterate_Node)->buff_size - reserve_size;
-                    remain_block->buff = (uint8_t*)GET_BLOCK(iterate_Node)->buff + reserve_size;
+                    INIT_RECORD(remain_block, GET_BLOCK(iterate_Node)->buff_size - reserve_size - RECORD_SIZE);
                     /* keep the free list sorted by address */
                     (void)ezLinkedList_AppendNode(&remain_block->node, iterate_Node);
                     GET_BLOCK(iterate_Node)->buff_size = reserve_size;
