@@ -79,10 +79,11 @@ ezSTATUS ezQueue_CreateQueue(ezQueue *queue, uint8_t *buff, uint32_t buff_size)
     if (queue != NULL && buff != NULL && buff_size > 0)
     {
         ezLinkedList_InitNode(&queue->q_item_list);
+        /* clear before the init: the allocator stores its records in the buffer */
+        memset(buff, 0, buff_size);
         if (ezStaticAlloc_InitMemList(&queue->mem_list, buff, buff_size) == true)
         {
             queue->num_of_element = 0;
-            memset(buff, 0, buff_size);
             status = ezSUCCESS;
             EZDEBUG("create queue success");
         }

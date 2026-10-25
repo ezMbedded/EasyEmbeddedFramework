@@ -30,7 +30,7 @@ Component's structure
 ============================
 The static allocation component is composed of the following elements:
 - `MemList` (or `ezmMemList`): Main structure managing the static buffer, free list, and allocated list
-- `MemBlock`: Header for each memory block, used for both free and allocated blocks
+- `MemBlock`: Record of each chunk, stored inside the managed buffer in front of the chunk's data, used for both free and allocated chunks
 - `Node`: Linked list node for managing block lists
 - User-provided static memory buffer (uint8_t array)
 
@@ -43,12 +43,12 @@ Mermaid diagram:
        Node free_list_head
        Node alloc_list_head
        uint8_t* buff
-       uint16_t buff_size
+       size_t buff_size
      }
      class MemBlock {
        Node node
        void* buff
-       uint16_t buff_size
+       size_t buff_size
      }
      MemList o-- "*" MemBlock : manages
      MemBlock o-- Node : node
@@ -65,9 +65,9 @@ External behavior:
 Internal behavior:
 
 - The memory manager maintains two linked lists: one for free blocks and one for allocated blocks.
-- When allocating, the manager searches for a free block large enough for the request, splits it if necessary, and moves it to the allocated list.
-- When freeing, the block is removed from the allocated list, added to the free list, and adjacent free blocks are merged.
-- The buffer and all block headers are statically allocated; no dynamic memory is used.
+- Every chunk in the buffer is laid out as ``[MemBlock record][data]``. When allocating, the manager searches for a free chunk large enough for the request, splits it if the remainder can hold another record plus data, and moves the chunk to the allocated list.
+- When freeing, the chunk (record and data) is removed from the allocated list, added to the sorted free list, and adjacent free chunks are merged; a merged neighbour's record becomes part of the data.
+- The records are carved out of the user buffer, so each allocation costs ``sizeof(MemBlock)`` (rounded up to the alignment) bytes of overhead. There is no global block pool and no limit on the number of chunks other than the buffer size.
 
 Component's data type
 ============================
@@ -77,7 +77,7 @@ The static allocation component uses the following data types:
 - `MemBlock`: Structure representing each memory block
 - `Node`: Linked list node for block management
 - `uint8_t*`: Pointer to the static memory buffer
-- `uint16_t`: For buffer size and block sizes
+- `size_t`: For buffer size and block sizes
 - `bool`: For status returns
 
 All memory managed by this component is accessed as void pointers, allowing flexible use for different data types.
