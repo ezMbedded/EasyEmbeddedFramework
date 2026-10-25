@@ -36,6 +36,7 @@ extern "C" {
 
 #if (EZ_QUEUE == 1U)
 #include <stdint.h>
+#include <stdbool.h>
 #include "ez_utilities_common.h"
 #include "ez_linked_list.h"
 #include "ez_static_alloc.h"
@@ -61,10 +62,11 @@ struct ezQueue
 {
     struct Node q_item_list;    /**< list of queue element */
     struct MemList mem_list;    /**< memory list, needed for static memory allocation*/
+    uint32_t num_of_element;    /**< number of element in the queue */
 };
 
 
-/** @brief queue structure
+/** @brief handle of an element reserved by ezQueue_ReserveElement
  */
 typedef void* ezReservedElement;
 
@@ -84,8 +86,8 @@ typedef void* ezReservedElement;
 * @brief This function creates a data queue
 *
 * @param    *queue: (IN)pointer to the a queue structure, see ezQueue
-* @param    *buff: (IN) memory buffer providind to the queue to work
-* @param    *buff_size: (IN)size of the memory buffer
+* @param    *buff: (IN) memory buffer provided to the queue to work
+* @param    buff_size: (IN)size of the memory buffer
 * @return   ezSUCCESS or ezFAIL
 *
 * @pre None
@@ -113,13 +115,15 @@ ezSTATUS ezQueue_CreateQueue(ezQueue *queue, uint8_t *buff, uint32_t buff_size);
 * @details
 *
 * @param    *queue: (IN)pointer to the a queue structure, see ezQueue
-* @return   ezSUCCESS or ezFAIL
+* @return   ezSUCCESS if an element was removed
+*           ezFAIL: if the queue is empty, invalid argument or freeing the
+*           element failed (the element is removed from the queue anyway)
 *
 * @pre queue must be initialized
 * @post None
 *
 * @code
-* if(ezQueue_Pop(&queue) == ezSUCCESS)
+* if(ezQueue_PopFront(&queue) == ezSUCCESS)
 * {
 *     printf("Success");
 * }
@@ -139,13 +143,15 @@ ezSTATUS ezQueue_PopFront(ezQueue *queue);
 * @details
 *
 * @param    *queue: (IN)pointer to the a queue structure, see ezQueue
-* @return   ezSUCCESS or ezFAIL
+* @return   ezSUCCESS if an element was removed
+*           ezFAIL: if the queue is empty, invalid argument or freeing the
+*           element failed (the element is removed from the queue anyway)
 *
-* @pre Precondition
-* @post Postcondition
+* @pre queue must be initialized
+* @post None
 *
 * @code
-* if(ezQueue_Pop(&queue) == ezSUCCESS)
+* if(ezQueue_PopBack(&queue) == ezSUCCESS)
 * {
 *     printf("Success");
 * }
@@ -175,12 +181,12 @@ ezSTATUS ezQueue_PopBack(ezQueue *queue);
 * @return   NULL if fail
 *
 * @pre queue must be initialized
-* @post Postcondition
+* @post None
 *
 * @code
 * ezReservedElement elem;
 * 
-* elem = ezQueue_ReserveElement(&queue, buff, 32);
+* elem = ezQueue_ReserveElement(&queue, (void**)&buff, 32);
 * if(elem != NULL)
 * {
 *     memset(buff, 0xaa, 32);
@@ -206,7 +212,7 @@ ezReservedElement ezQueue_ReserveElement(ezQueue* queue, void **data, uint32_t d
 * @return   ezSUCCESS or ezFAIL
 *
 * @pre queue is initialized and element is created using ezQueue_ReserveElement
-* @post Postcondition
+* @post None
 *
 * @code
 * @endcode
@@ -228,7 +234,7 @@ ezSTATUS ezQueue_PushReservedElement(ezQueue *queue, ezReservedElement element);
 * @return   ezSUCCESS or ezFAIL
 *
 * @pre queue is initialized and element is created using ezQueue_ReserveElement
-* @post Postcondition
+* @post None
 *
 * @code
 * @endcode
@@ -283,8 +289,8 @@ ezSTATUS ezQueue_Push(ezQueue* queue, void *data, uint32_t data_size);
 *
 * @code
 * uint8_t *front_element_data = NULL;
-* uint32_t *data_size = NULL;
-* if(ezQueue_GetFront(&queue, &front_element_data, &data_size) == ezSUCCESS)
+* size_t data_size = 0;
+* if(ezQueue_GetFront(&queue, (void**)&front_element_data, &data_size) == ezSUCCESS)
 * {
 *     printf("Success");
 * }
@@ -293,7 +299,7 @@ ezSTATUS ezQueue_Push(ezQueue* queue, void *data, uint32_t data_size);
 * @see ezQueue_CreateQueue
 *
 *****************************************************************************/
-ezSTATUS ezQueue_GetFront(ezQueue *queue, void **data, uint32_t *data_size);
+ezSTATUS ezQueue_GetFront(ezQueue *queue, void **data, size_t *data_size);
 
 
 /*****************************************************************************
@@ -311,12 +317,12 @@ ezSTATUS ezQueue_GetFront(ezQueue *queue, void **data, uint32_t *data_size);
 *           ezFAIL: if the queue is empty or invalid function arguments
 *
 * @pre queue is initialized
-* @post Postcondition
+* @post None
 *
 * @code
 * uint8_t *back_element_data = NULL;
-* uint32_t *data_size = NULL;
-* if(ezQueue_GetFront(&queue, &back_element_data, &data_size) == ezSUCCESS)
+* size_t data_size = 0;
+* if(ezQueue_GetBack(&queue, (void**)&back_element_data, &data_size) == ezSUCCESS)
 * {
 *     printf("Success");
 * }
@@ -325,13 +331,13 @@ ezSTATUS ezQueue_GetFront(ezQueue *queue, void **data, uint32_t *data_size);
 * @see ezQueue_CreateQueue
 *
 *****************************************************************************/
-ezSTATUS ezQueue_GetBack(ezQueue* queue, void **data, uint32_t *data_size);
+ezSTATUS ezQueue_GetBack(ezQueue* queue, void **data, size_t *data_size);
 
 
 /*****************************************************************************
-* Function : sum
+* Function : ezQueue_GetNumOfElement
 *//** 
-* @brief ezQueue_GetNumOfElement
+* @brief Get the number of elements in the queue
 *
 * @details
 *
@@ -339,7 +345,7 @@ ezSTATUS ezQueue_GetBack(ezQueue* queue, void **data, uint32_t *data_size);
 * @return   Number of elements
 *
 * @pre queue is initialized
-* @post Postcondition
+* @post None
 *
 * @code
 * uint32_t queue_size = ezQueue_GetNumOfElement(&queue);
@@ -349,19 +355,6 @@ ezSTATUS ezQueue_GetBack(ezQueue* queue, void **data, uint32_t *data_size);
 *
 *****************************************************************************/
 uint32_t ezQueue_GetNumOfElement(ezQueue* queue);
-
-
-/******************************************************************************
-* Function : ezQueue_IsQueueReady
-*//**
-* @Description:
-*
-* This function returns readay status of the queue
-*
-* @param    *queue: (IN)pointer to the a queue structure, see ezQueue
-* @return   True if ready, else false
-*
-*******************************************************************************/
 
 
 /*****************************************************************************
@@ -383,9 +376,9 @@ uint32_t ezQueue_GetNumOfElement(ezQueue* queue);
 * @see None
 *
 *****************************************************************************/
-uint32_t ezQueue_IsQueueReady(ezQueue *queue);
+bool ezQueue_IsQueueReady(ezQueue *queue);
 
-#endif /* _EZ_QUEUE */
+#endif /* EZ_QUEUE */
 
 #ifdef __cplusplus
 }
