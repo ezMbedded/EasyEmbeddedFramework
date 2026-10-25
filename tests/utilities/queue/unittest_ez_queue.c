@@ -92,6 +92,9 @@ TEST_GROUP_RUNNER(ez_queue)
     RUN_TEST_CASE(ez_queue, GetBackPop);
     RUN_TEST_CASE(ez_queue, OverflowQueue);
     RUN_TEST_CASE(ez_queue, ezQueue_ReserveElement);
+    RUN_TEST_CASE(ez_queue, ReleaseReservedElement);
+    RUN_TEST_CASE(ez_queue, ReservedElementGuards);
+    RUN_TEST_CASE(ez_queue, DrainQueue);
 }
 
 
@@ -121,11 +124,23 @@ TEST(ez_queue, PopEmptyQueue)
 {
     ezSTATUS status = ezSUCCESS;
     uint8_t *test_data = NULL;
-    uint32_t test_data_size = 0U;
+    size_t test_data_size = 0U;
 
     status = ezQueue_GetFront(&queue, (void**)&test_data, &test_data_size);
     TEST_ASSERT_EQUAL(ezFAIL, status);
     TEST_ASSERT_EQUAL(0, test_data_size);
+
+    status = ezQueue_PopFront(&queue);
+    TEST_ASSERT_EQUAL(ezFAIL, status);
+
+    status = ezQueue_PopBack(&queue);
+    TEST_ASSERT_EQUAL(ezFAIL, status);
+
+    status = ezQueue_PopFront(NULL);
+    TEST_ASSERT_EQUAL(ezFAIL, status);
+
+    status = ezQueue_PopBack(NULL);
+    TEST_ASSERT_EQUAL(ezFAIL, status);
 }
 
 
@@ -173,7 +188,7 @@ TEST(ez_queue, test_GetFrontPop)
     ezSTATUS status = ezSUCCESS;
     uint32_t queue_size = 0U;
     uint8_t *test_data = NULL;
-    uint32_t test_data_size = 0U;
+    size_t test_data_size = 0U;
 
     status = ezQueue_Push(&queue, item_1, sizeof(item_1));
     status = ezQueue_Push(&queue, item_2, sizeof(item_2));
@@ -243,7 +258,7 @@ TEST(ez_queue, GetBackPop)
     ezSTATUS status = ezSUCCESS;
     uint32_t queue_size = 0U;
     uint8_t *test_data = NULL;
-    uint32_t test_data_size = 0U;
+    size_t test_data_size = 0U;
 
     if (status == ezSUCCESS)
     {
@@ -393,7 +408,7 @@ TEST(ez_queue, ezQueue_ReserveElement)
 
     to_be_tested_struct = NULL;
     to_be_tested_stream = NULL;
-    uint32_t data_size = 0;
+    size_t data_size = 0;
 
     status = ezQueue_GetFront(&queue, (void *)&to_be_tested_struct, &data_size);
     TEST_ASSERT_EQUAL(ezSUCCESS, status);
@@ -413,6 +428,83 @@ TEST(ez_queue, ezQueue_ReserveElement)
     TEST_ASSERT_EQUAL(ezSUCCESS, status);
     TEST_ASSERT_EQUAL(0, ezQueue_GetNumOfElement(&queue));
 }
+
+
+TEST(ez_queue, ReleaseReservedElement)
+{
+    void *data = NULL;
+    ezReservedElement elem = NULL;
+    ezReservedElement elem_after = NULL;
+
+    elem = ezQueue_ReserveElement(&queue, &data, 200);
+    TEST_ASSERT_NOT_NULL(elem);
+    TEST_ASSERT_EQUAL(0, ezQueue_GetNumOfElement(&queue));
+
+    /* not enough room while the element is reserved */
+    elem_after = ezQueue_ReserveElement(&queue, &data, 200);
+    TEST_ASSERT_NULL(elem_after);
+
+    /* the memory is available again once the element is released */
+    TEST_ASSERT_EQUAL(ezSUCCESS, ezQueue_ReleaseReservedElement(&queue, elem));
+    elem_after = ezQueue_ReserveElement(&queue, &data, 200);
+    TEST_ASSERT_NOT_NULL(elem_after);
+    TEST_ASSERT_EQUAL(ezSUCCESS, ezQueue_ReleaseReservedElement(&queue, elem_after));
+}
+
+
+TEST(ez_queue, ReservedElementGuards)
+{
+    void *data = NULL;
+    ezReservedElement elem = NULL;
+
+    elem = ezQueue_ReserveElement(&queue, &data, 16);
+    TEST_ASSERT_NOT_NULL(elem);
+
+    TEST_ASSERT_EQUAL(ezSUCCESS, ezQueue_PushReservedElement(&queue, elem));
+    TEST_ASSERT_EQUAL(1, ezQueue_GetNumOfElement(&queue));
+
+    /* the only element of the queue must be detected as already pushed */
+    TEST_ASSERT_EQUAL(ezFAIL, ezQueue_PushReservedElement(&queue, elem));
+    TEST_ASSERT_EQUAL(1, ezQueue_GetNumOfElement(&queue));
+
+    /* a pushed element must not be released */
+    TEST_ASSERT_EQUAL(ezFAIL, ezQueue_ReleaseReservedElement(&queue, elem));
+    TEST_ASSERT_EQUAL(1, ezQueue_GetNumOfElement(&queue));
+
+    TEST_ASSERT_EQUAL(ezFAIL, ezQueue_PushReservedElement(NULL, elem));
+    TEST_ASSERT_EQUAL(ezFAIL, ezQueue_PushReservedElement(&queue, NULL));
+    TEST_ASSERT_EQUAL(ezFAIL, ezQueue_ReleaseReservedElement(NULL, elem));
+    TEST_ASSERT_EQUAL(ezFAIL, ezQueue_ReleaseReservedElement(&queue, NULL));
+}
+
+
+TEST(ez_queue, DrainQueue)
+{
+    uint8_t *test_data = NULL;
+    size_t test_data_size = 0U;
+    uint32_t i = 0U;
+
+    /* push and pop many times, the memory must always be given back */
+    for (i = 0U; i < 50U; i++)
+    {
+        TEST_ASSERT_EQUAL(ezSUCCESS, ezQueue_Push(&queue, item_3, sizeof(item_3)));
+        TEST_ASSERT_EQUAL(ezSUCCESS, ezQueue_Push(&queue, item_4, sizeof(item_4)));
+        TEST_ASSERT_EQUAL(2, ezQueue_GetNumOfElement(&queue));
+        TEST_ASSERT_EQUAL(ezSUCCESS, ezQueue_PopFront(&queue));
+        TEST_ASSERT_EQUAL(ezSUCCESS, ezQueue_PopBack(&queue));
+        TEST_ASSERT_EQUAL(0, ezQueue_GetNumOfElement(&queue));
+    }
+
+    /* popping an empty queue must fail and not change anything */
+    TEST_ASSERT_EQUAL(ezFAIL, ezQueue_PopFront(&queue));
+    TEST_ASSERT_EQUAL(ezFAIL, ezQueue_PopBack(&queue));
+    TEST_ASSERT_EQUAL(0, ezQueue_GetNumOfElement(&queue));
+    TEST_ASSERT_EQUAL(ezFAIL, ezQueue_GetFront(&queue, (void**)&test_data, &test_data_size));
+
+    TEST_ASSERT_EQUAL(ezSUCCESS, ezQueue_Push(&queue, item_1, sizeof(item_1)));
+    TEST_ASSERT_EQUAL(1, ezQueue_GetNumOfElement(&queue));
+}
+
 
 /******************************************************************************
 * Internal functions
