@@ -19,6 +19,7 @@ set(FRAMEWORK_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 target_sources(ez_state_machine_lib
     PRIVATE
         ez_state_machine.c
+        ez_state_machine_v2.c
 )
 
 
@@ -26,6 +27,7 @@ target_sources(ez_state_machine_lib
 target_compile_definitions(ez_state_machine_lib
     PUBLIC
         EZ_STATE_MACHINE=$<BOOL:${ENABLE_EZ_STATE_MACHINE}>
+        EZ_STATE_MACHINE_V2=$<BOOL:${ENABLE_EZ_STATE_MACHINE_V2}>
     PRIVATE
         EZ_BUILD_WITH_CMAKE=$<BOOL:${BUILD_WITH_CMAKE}>
 )
