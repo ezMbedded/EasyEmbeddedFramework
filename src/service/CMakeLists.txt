@@ -23,7 +23,7 @@ if(ENABLE_EZ_TASK_WORKER)
     add_subdirectory(task_worker)
 endif()
 
-if(ENABLE_EZ_STATE_MACHINE)
+if(ENABLE_EZ_STATE_MACHINE OR ENABLE_EZ_STATE_MACHINE_V2)
     add_subdirectory(state_machine)
 endif()
 
@@ -74,6 +74,7 @@ target_link_libraries(ez_service_lib
         $<$<BOOL:${ENABLE_EZ_EVENT_BUS}>:ez_event_bus_lib>
         $<$<BOOL:${ENABLE_EZ_TASK_WORKER}>:ez_task_worker_lib>
         $<$<BOOL:${ENABLE_EZ_STATE_MACHINE}>:ez_state_machine_lib>
+        $<$<BOOL:${ENABLE_EZ_STATE_MACHINE_V2}>:ez_state_machine_lib>
         $<$<BOOL:${ENABLE_DATA_MODEL}>:ez_data_model_lib>
         $<$<BOOL:${ENABLE_EZ_CLI}>:ez_cli_lib>
         $<$<BOOL:${ENABLE_EZ_RPC}>:ez_rpc_lib>

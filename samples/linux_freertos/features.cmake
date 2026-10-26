@@ -19,6 +19,7 @@ option(ENABLE_EZ_EVENT_BUS         "Enable the Event Bus module"            ON)
 option(ENABLE_EZ_KERNEL            "Enable the Kernel service"              OFF)
 option(ENABLE_EZ_TASK_WORKER       "Enable the task worker"                 ON)
 option(ENABLE_EZ_STATE_MACHINE     "Enable state machine"                   ON)
+option(ENABLE_EZ_STATE_MACHINE_V2  "Enable state machine v2"                ON)
 
 # Configure application framework
 option(ENABLE_DATA_MODEL        "Enable the Event Notifier module"          ON)
