@@ -29,21 +29,33 @@
 #include "ez_default_logging_level.h"
 
 #define DEBUG_LVL   EZ_EVENT_LOGGING_LEVEL      /**< logging level */
-#define MOD_NAME    "EVENT_NOTIFY"  /**< module name */
+#define MOD_NAME    "EVENT_BUS"     /**< module name */
 
 #include "string.h"
 #include "ez_logging.h"
+#include "ez_utilities_common.h"
 
 /*****************************************************************************
 * Component Preprocessor Macros
 *****************************************************************************/
-/* None */
+/** @brief Size of the event header in the queue element, the event data follows
+ *         it. Aligned like the queue does, so the data is aligned too
+ */
+#define EZ_EVENT_BUS_EVENT_HEADER_SIZE  EZ_ALIGN_UP(sizeof(ezEventBus_EventHeader_t), CONFIG_STATIC_ALLOC_ALIGNMENT)
+
+/** @brief Get the event data, which is right after the header */
+#define EZ_EVENT_BUS_EVENT_DATA(header) ((void *)((uint8_t *)(header) + EZ_EVENT_BUS_EVENT_HEADER_SIZE))
 
 
 /*****************************************************************************
 * Component Typedefs
 *****************************************************************************/
-
+/** @brief Event header structure */
+typedef struct
+{
+    uint32_t event_code;    /**< Event code */
+    size_t event_data_size; /**< Size of event data, 0 if the event has no data */
+}ezEventBus_EventHeader_t;
 
 
 /*****************************************************************************
@@ -66,11 +78,11 @@ ezSTATUS ezEventBus_CreateBus(
     uint8_t *buff,
     uint32_t buff_size)
 {
-    EZDEBUG("evntNoti_CreateSubject()");
+    EZDEBUG("ezEventBus_CreateBus()");
 
     if(buff == NULL || buff_size == 0U || event_bus == NULL)
     {
-        EZERROR("  Cannot create subject, invalid buffer");
+        EZERROR("  Cannot create event bus, invalid argument");
         return ezSTATUS_ARG_INVALID;
     }
 
@@ -83,15 +95,20 @@ void ezEventBus_ResetBus(ezEventBus_t * event_bus)
 {
     if (event_bus)
     {
-        ezLinkedList_InitNode(&event_bus->node);
-        uint32_t num_of_event = ezQueue_GetNumOfElement(&event_bus->event_queue);
-        for (uint32_t i = 0; i < num_of_event; i++)
+        /* Unlink every listener, so they are not left pointing into this bus */
+        while(ezLinkedList_RemoveFirst(&event_bus->node) != NULL)
         {
-            ezQueue_PopFront(&event_bus->event_queue);
+            /* Nothing to do */
         }
 
-        num_of_event = ezQueue_GetNumOfElement(&event_bus->event_queue);
-        if(num_of_event != 0U)
+        uint32_t num_of_event = ezQueue_GetNumOfElement(&event_bus->event_queue);
+        while(num_of_event > 0U
+              && ezQueue_PopFront(&event_bus->event_queue) == ezSUCCESS)
+        {
+            num_of_event--;
+        }
+
+        if(ezQueue_GetNumOfElement(&event_bus->event_queue) != 0U)
         {
             EZDEBUG("Event bus reset NOK");
         }
@@ -101,18 +118,18 @@ void ezEventBus_ResetBus(ezEventBus_t * event_bus)
 
 ezSTATUS ezEventBus_CreateListener(ezEventListener_t *listener, EVENT_CALLBACK callback)
 {
-    EZDEBUG("evntNoti_CreateListener()");
+    EZDEBUG("ezEventBus_CreateListener()");
     ezSTATUS status = ezFAIL;
 
     if (listener != NULL && callback != NULL)
     {
         listener->callback = callback;
         status = ezSUCCESS;
-        EZDEBUG("  Create Observer OK");
+        EZDEBUG("  Create listener OK");
     }
     else
     {
-        EZERROR("  Cannot create observer, invalid argument");
+        EZERROR("  Cannot create listener, invalid argument");
     }
 
     return status;
@@ -121,53 +138,34 @@ ezSTATUS ezEventBus_CreateListener(ezEventListener_t *listener, EVENT_CALLBACK c
 
 ezSTATUS ezEventBus_Run(ezEventBus_t * event_bus)
 {
-    uint32_t event_code = 0U;
-    void *data = NULL;
-    uint32_t data_size = 0U;
+    ezSTATUS status = ezSUCCESS;
+    uint32_t num_of_events = 0U;
+    size_t element_size = 0U;
     struct Node* it_node = NULL;
     ezEventListener_t *listener = NULL;
-    
+    ezEventBus_EventHeader_t *header = NULL;
+
     if(event_bus == NULL)
     {
         EZWARNING("Invalid argument");
         return ezSTATUS_ARG_INVALID;
     }
 
-    if(ezQueue_GetNumOfElement(&event_bus->event_queue) >= 2U)
+    num_of_events = ezQueue_GetNumOfElement(&event_bus->event_queue);
+    while(num_of_events > 0U)
     {
-        /* Get event code */
+        /* Get the event at the front of the queue */
         if(ezQueue_GetFront(
             &event_bus->event_queue,
-            &data,
-            &data_size) != ezSUCCESS)
+            (void**)&header,
+            &element_size) != ezSUCCESS)
         {
-            EZERROR("Cannot get event code from queue");
-            (void)ezQueue_PopFront(&event_bus->event_queue); /* pop event code */
-            (void)ezQueue_PopFront(&event_bus->event_queue); /* pop event data */
-            return ezFAIL;
-        }
-
-        
-        if(data_size != sizeof(uint32_t))
-        {
-            EZERROR("Invalid event code size");
-            (void)ezQueue_PopFront(&event_bus->event_queue); /* pop event code */
-            (void)ezQueue_PopFront(&event_bus->event_queue); /* pop event data */
-            return ezFAIL;
-        }
-
-        event_code = *(uint32_t*)data;
-        (void)ezQueue_PopFront(&event_bus->event_queue);
-
-        /* Get event data */
-        if(ezQueue_GetFront(
-            &event_bus->event_queue,
-            (void*)&data,
-            &data_size) != ezSUCCESS)
-        {
-            EZERROR("Cannot get event data from queue");
-            (void)ezQueue_PopFront(&event_bus->event_queue); /* pop event data */
-            return ezFAIL;
+            /* Drop the event, or the queue would be stuck on it forever */
+            EZERROR("Cannot get event from queue");
+            (void)ezQueue_PopFront(&event_bus->event_queue);
+            num_of_events--;
+            status = ezFAIL;
+            continue;
         }
 
         /* Notify all listeners */
@@ -177,34 +175,43 @@ ezSTATUS ezEventBus_Run(ezEventBus_t * event_bus)
                 it_node,
                 node,
                 ezEventListener_t);
-            if(listener != NULL && listener->callback != NULL)
+            if(listener->callback != NULL)
             {
-                listener->callback(event_code, data, data_size);
+                listener->callback(
+                    header->event_code,
+                    (header->event_data_size > 0U) ? EZ_EVENT_BUS_EVENT_DATA(header) : NULL,
+                    header->event_data_size);
             }
         }
-
-         (void)ezQueue_PopFront(&event_bus->event_queue); /* pop event data */
+        (void)ezQueue_PopFront(&event_bus->event_queue);
+        num_of_events--;
     }
-    return ezSUCCESS;
+    return status;
 }
 
 ezSTATUS ezEventBus_Listen(ezEventBus_t *event_bus, ezEventListener_t *listener)
 {
-    EZDEBUG("evntNoti_SubscribeEvent()");
+    EZDEBUG("ezEventBus_Listen()");
     ezSTATUS status = ezFAIL;
 
     if (event_bus != NULL
         && listener != NULL)
     {
+        if(ezLinkedList_IsNodeInList(&event_bus->node, &listener->node))
+        {
+            EZWARNING("  listener is already listening to this bus");
+            return ezFAIL;
+        }
+
         EZ_LINKEDLIST_ADD_HEAD(&event_bus->node, &listener->node);
 
-        EZDEBUG("  subscribing success");
-        EZDEBUG("  num of subscriber [num = %d]", ezLinkedList_GetListSize(&event_bus->node));
+        EZDEBUG("  listen success");
+        EZDEBUG("  num of listener [num = %d]", ezLinkedList_GetListSize(&event_bus->node));
         status = ezSUCCESS;
     }
     else
     {
-        EZWARNING("  cannot subscribe - null pointer, or max subscribers reached");
+        EZWARNING("  cannot listen - invalid argument");
     }
 
     return status;
@@ -213,7 +220,7 @@ ezSTATUS ezEventBus_Listen(ezEventBus_t *event_bus, ezEventListener_t *listener)
 
 ezSTATUS ezEventBus_Unlisten(ezEventBus_t *event_bus, ezEventListener_t *listener)
 {
-    EZDEBUG("evntNoti_UnsubscribeEvent()");
+    EZDEBUG("ezEventBus_Unlisten()");
     ezSTATUS status = ezFAIL;
 
     if (event_bus != NULL &&
@@ -222,13 +229,13 @@ ezSTATUS ezEventBus_Unlisten(ezEventBus_t *event_bus, ezEventListener_t *listene
     {
         EZ_LINKEDLIST_UNLINK_NODE(&listener->node);
 
-        EZDEBUG("  unsubscribing success");
-        EZDEBUG("  num of subscriber [num = %d]", ezLinkedList_GetListSize(&event_bus->node));
+        EZDEBUG("  unlisten success");
+        EZDEBUG("  num of listener [num = %d]", ezLinkedList_GetListSize(&event_bus->node));
         status = ezSUCCESS;
     }
     else
     {
-        EZWARNING("  cannot unsubscribe - null pointer");
+        EZWARNING("  cannot unlisten - invalid argument or listener not on this bus");
     }
 
     return status;
@@ -253,43 +260,60 @@ uint16_t ezEventBus_GetNumOfListeners(ezEventBus_t *event_bus)
 }
 
 
-bool ezEventBus_SendEvent(
+ezSTATUS ezEventBus_SendEvent(
     ezEventBus_t *event_bus,
     uint32_t event_code,
-    void *event_data,
+    const void *event_data,
     size_t event_data_size)
 {
-    ezReservedElement q_element_event_code = NULL;
-    ezReservedElement q_element_data = NULL;
-    void *code = NULL;
-    void *data = NULL;
+    ezReservedElement q_element = NULL;
+    size_t alloc_size = 0U;
+    ezEventBus_EventHeader_t *header = NULL;
 
-    EZDEBUG("evntNoti_NotifyEnvent()");
+    EZDEBUG("ezEventBus_SendEvent()");
     if(event_bus == NULL)
     {
         EZWARNING("  Invalid argument");
-        return false;
+        return ezSTATUS_ARG_INVALID;
     }
 
-    
-    q_element_event_code = ezQueue_ReserveElement(&event_bus->event_queue, &code, sizeof(uint32_t));
-    q_element_data = ezQueue_ReserveElement(&event_bus->event_queue, &data, (uint32_t)event_data_size);
+    /* An event without data is valid: no data or no size means an empty event */
+    if(event_data == NULL || event_data_size == 0U)
+    {
+        event_data = NULL;
+        event_data_size = 0U;
+    }
 
-    if(q_element_event_code == NULL || q_element_data == NULL)
+    if(event_data_size > (UINT32_MAX - EZ_EVENT_BUS_EVENT_HEADER_SIZE - CONFIG_STATIC_ALLOC_ALIGNMENT))
+    {
+        EZWARNING("  Event data too big");
+        return ezSTATUS_ARG_INVALID;
+    }
+
+    alloc_size = EZ_EVENT_BUS_EVENT_HEADER_SIZE + event_data_size;
+    q_element = ezQueue_ReserveElement(&event_bus->event_queue, (void**)&header, (uint32_t)alloc_size);
+
+    if(q_element == NULL)
     {
         EZWARNING("Cannot reserve event queue element");
-        ezQueue_ReleaseReservedElement(&event_bus->event_queue, q_element_event_code);
-        ezQueue_ReleaseReservedElement(&event_bus->event_queue, q_element_data);
-        return false;
+        return ezFAIL;
     }
 
-    *(uint32_t*)code = event_code;
-    memcpy(data, event_data, event_data_size);
-   
-    ezQueue_PushReservedElement(&event_bus->event_queue, q_element_event_code);
-    ezQueue_PushReservedElement(&event_bus->event_queue, q_element_data);
+    header->event_code = event_code;
+    header->event_data_size = event_data_size;
+    if(event_data != NULL)
+    {
+        memcpy(EZ_EVENT_BUS_EVENT_DATA(header), event_data, event_data_size);
+    }
 
-    return true;
+    if(ezQueue_PushReservedElement(&event_bus->event_queue, q_element) != ezSUCCESS)
+    {
+        EZWARNING("Cannot push event queue element");
+        (void)ezQueue_ReleaseReservedElement(&event_bus->event_queue, q_element);
+        return ezFAIL;
+    }
+
+    return ezSUCCESS;
 }
 
 /*****************************************************************************

@@ -55,8 +55,16 @@ extern "C" {
  *         notify the subscriber about an event.
  *         event_code: number representing an event. Specified by the event
  *         subject
- *         data: pointer to the event data
- *         data_size: size of the event data
+ *         data: pointer to the event data. NULL if the event has no data. The
+ *         data is only valid during the callback, copy it to keep it
+ *         data_size: size of the event data. 0 if the event has no data
+ *
+ *  @warning The callback is called from ezEventBus_Run() while the bus is
+ *           delivering an event. It MUST NOT call ezEventBus_Unlisten() or
+ *           ezEventBus_ResetBus() on that bus, otherwise the delivery walks a
+ *           list that is being modified and the event data is released while
+ *           the other listeners still use it. Calling ezEventBus_SendEvent()
+ *           is allowed, the new event is delivered by the next run.
  */
 typedef int (*EVENT_CALLBACK)(uint32_t event_code, const void *data, size_t data_size);
 
@@ -129,7 +137,9 @@ ezSTATUS ezEventBus_CreateBus(
 *//**
 * @brief This function resets an event bus
 *
-* @details It resets the linked list and unlinks all nodes of that list
+* @details It unlinks all listeners from the bus, so they can listen again, and
+*          drops all the events that are waiting in the queue.
+*          It must not be called from a listener callback, see EVENT_CALLBACK.
 *
 * @param[in]    event_bus: Pointer to the event bus
 * @return       None
@@ -181,9 +191,18 @@ ezSTATUS ezEventBus_CreateListener(ezEventListener_t * listener, EVENT_CALLBACK 
  * 
  * @details This function should be called periodically to ensure that events
  *         are processed and listeners are notified in a timely manner.
+ *         It delivers the events that are in the queue when it is called, in
+ *         the order they were sent. Events sent by the listeners during the
+ *         delivery are delivered by the next call.
+ *         An event that cannot be read from the queue is dropped and the
+ *         function returns ezFAIL after delivering the other events.
  * @param[in]    event_bus: Pointer to the event bus
  * @return       ezSTATUS
- *  
+ *
+ * @warning Listeners must not call ezEventBus_Unlisten() or
+ *          ezEventBus_ResetBus() on the bus from their callback, see
+ *          EVENT_CALLBACK.
+ *
  * @pre Event bus must be created
  * @post None
  * \b Example
@@ -273,33 +292,42 @@ uint16_t ezEventBus_GetNumOfListeners(ezEventBus_t *event_bus);
 /******************************************************************************
 * Function: ezEventBus_SendEvent
 *//**
-* @brief This function send an event to the bus
+* @brief This function sends an event to the bus
 *
-* @details
+* @details The event is copied to the queue of the bus and delivered to the
+*          listeners by the next ezEventBus_Run(). It can be called from a
+*          listener callback.
+*          The event data is optional. If event_data is NULL or event_data_size
+*          is 0, the event has no data: the listeners get NULL and 0.
 *
 * @param[in]    event_bus: Pointer to the event bus
 * @param[in]    event_code: Event code. Defined by users
-* @param[in]    param1: Companion paramneter 1, set to NULL if unused
-* @param[in]    param1: Companion paramneter 2, set to NULL if unused
-* @return       None
+* @param[in]    event_data: Pointer to the event data, which is copied. NULL if
+*                           the event has no data
+* @param[in]    event_data_size: Size of the event data in bytes. 0 if the event
+*                                has no data
+* @return       ezSUCCESS if the event is queued,
+*               ezSTATUS_ARG_INVALID if event_bus is NULL or the data is too big,
+*               ezFAIL if the queue has no space for the event
 *
-* @pre  subject must be created. event_code, param1, and param2 are defined by
-*       the user
+* @pre  Event bus must be created. event_code and the data are defined by the
+*       user
 * @post None
 *
 * \b Example
 * @code
-* evntNoti_NotifyEnvent(&subject, ENUM_ERROR_CODE, NULL, NULL);
+* (void) ezEventBus_SendEvent(&event_bus, ENUM_ERROR_CODE, NULL, 0);
 * @endcode
 *
-* @see ezEventNotifier_CreateSubject
+* @see ezEventBus_CreateBus, ezEventBus_Run
 *
 *******************************************************************************/
-bool ezEventBus_SendEvent(
+ezSTATUS ezEventBus_SendEvent(
     ezEventBus_t *event_bus,
     uint32_t event_code,
-    void *event_data,
+    const void *event_data,
     size_t event_data_size);
+
 
 #endif /* (EZ_EVENT_BUS == 1U) */
 
