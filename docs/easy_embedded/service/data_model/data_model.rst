@@ -66,13 +66,20 @@ External behaviour
 1. Initialization: The application allocates an array of ``ezDataPoint_t``
    (each describing an index and size) and a contiguous buffer. It calls
    ``ezDataModel_Initialize`` passing the `ezDataModel_t` descriptor, the
-   points array, and the buffer. The initializer partitions the buffer and
-   assigns each point's ``data`` pointer into that buffer.
-2. Setting values: ``ezDataModel_SetDataPoint`` copies the caller's bytes
-   into the pre-assigned buffer area for the specified index and marks the
-   point ``isDirty = true``.
+   points array, and the buffer. The initializer zeroes the buffer, partitions
+   it, assigns each point's ``data`` pointer into that buffer, clears all dirty
+   flags, and returns ``true`` on success or ``false`` if the configuration is
+   invalid.
+2. Setting values: ``ezDataModel_SetDataPoint`` takes the data and its size in
+   bytes. The size must equal the size of the data point, otherwise
+   ``ezSTATUS_ARG_INVALID`` is returned and nothing is written. On success it
+   copies the bytes into the pre-assigned buffer area for the specified index
+   and marks the point ``isDirty = true``. ``ezFAIL`` is returned when the
+   index does not exist.
 3. Reading values: ``ezDataModel_GetDataPoint`` returns a pointer to the
-   stored bytes and the data size. No copy is performed on read.
+   stored bytes and the data size. No copy is performed on read, so the pointer
+   refers to live data. Because every data point is aligned (see below), it can
+   be cast to a pointer of the matching type.
 4. Dirty scanning: ``ezDataModel_GetFirstDirty`` scans the points and returns
    the index of the first point with ``isDirty == true`` (or
    ``DATA_POINT_INVALID`` when none are dirty).
@@ -83,24 +90,40 @@ External behaviour
 Internal behaviour
 ------------------
 
-- Allocation: During initialization the component walks the provided
-  ``ezDataPoint_t`` array and assigns regions of the contiguous buffer to
-  each point in order; it asserts on size/ordering violations and ensures
-  the buffer is large enough.
+- Allocation: During initialization the component zeroes the buffer, walks the
+  provided ``ezDataPoint_t`` array and assigns regions of the contiguous buffer
+  to each point in order. Violations of the invariants below are detected at
+  run time (not by assertion), logged as errors, and make
+  ``ezDataModel_Initialize`` return ``false``.
+- Alignment: Each data point is aligned to the lowest set bit of its size,
+  capped at ``EZ_DATA_MODEL_ALIGNMENT`` (default 8 bytes, must be a power of
+  two, can be overridden at build time). Since ``sizeof`` of a type is a
+  multiple of its alignment, a ``uint16_t`` point is 2-byte aligned, a
+  ``uint32_t`` or ``float`` point 4-byte aligned, and a ``double`` or larger
+  point 8-byte aligned. The alignment is computed from the real buffer address,
+  so the buffer itself does not have to be aligned. Padding bytes count
+  against the buffer size, so size the buffer with some slack.
 - Lookup: Data points are stored in index-sorted order and lookups use a
   binary search (see ``ezDataModel_FindDataPointByIndex``) to locate a
   point by index. This gives O(log N) lookup performance for reads/writes.
-- Concurrency: The component is intentionally minimal and does not provide
-  locking; the caller must ensure mutual exclusion if the data model is
-  accessed from concurrent contexts.
+- Dirty scanning: ``ezDataModel_GetFirstDirty`` is a linear scan, O(N) per
+  call.
+- Concurrency: The component is intentionally minimal and not thread safe.
+  Setting a value (copy, then dirty flag) is not atomic, and returned data
+  pointers refer to live data. The caller must ensure mutual exclusion if the
+  data model is accessed from concurrent tasks or ISRs.
 
 Component invariants and failure modes
 -------------------------------------
 
-- The ``ezDataPoint_t`` array must be sorted by ``index`` and each entry
-  must have a non-zero ``size``. Initialization asserts these invariants.
-- If the buffer is too small for the provided points, initialization fails
-  (assertion) and the data model must not be used.
+- The ``ezDataPoint_t`` array must be sorted by strictly increasing ``index``
+  (no duplicates), each entry must have a non-zero ``size``, and no index may
+  be ``DATA_POINT_INVALID`` (``UINT32_MAX``, reserved).
+- The buffer must be large enough for all points including alignment padding.
+- If any of these is violated, ``ezDataModel_Initialize`` returns ``false``
+  and leaves the model empty (``data_points = NULL``, no data points), so that
+  later calls fail safely with an error or ``NULL`` instead of touching memory.
+  The application should treat this as a fatal configuration error.
 
 Data Flow
 ============================
@@ -128,6 +151,7 @@ Key types defined by the component:
   - ``size``: number of bytes allocated for the value.
   - ``data``: pointer into the data model buffer where the bytes reside.
   - ``isDirty``: boolean flag indicating whether the point has changed.
+    Cleared by ``ezDataModel_Initialize``.
 
 - ``ezDataModel_t``: container struct holding:
   - the pointer to the ``ezDataPoint_t`` array,
@@ -136,7 +160,8 @@ Key types defined by the component:
 
 - Constants and APIs:
   - ``DATA_POINT_INVALID``: returned by ``ezDataModel_GetFirstDirty`` when
-    no dirty points are found.
+    no dirty points are found. It is reserved and cannot be used as an index.
+  - ``EZ_DATA_MODEL_ALIGNMENT``: maximum alignment of a data point in bytes.
   - Public API functions: ``ezDataModel_Initialize``,
     ``ezDataModel_SetDataPoint``, ``ezDataModel_GetDataPoint``,
     ``ezDataModel_GetFirstDirty``, ``ezDataModel_ClearDirtyFlags``, and
@@ -146,7 +171,8 @@ Implementation notes
 ============================
 
 - The design favors a static, deterministic memory layout (no dynamic
-  allocations at runtime) and predictable lookup time via binary search.
+  allocations at runtime) and predictable lookup time via binary search. Data points are zero-initialized
+  and aligned, so scalar values can be read through typed pointers.
 - The component intentionally keeps semantics simple so it can be composed
   with other services such as an event bus or a synchronizer that reacts to
   dirty data points.
