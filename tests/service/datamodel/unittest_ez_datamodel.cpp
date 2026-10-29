@@ -26,6 +26,8 @@
 *******************************************************************************/
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
+#include <string>
 #include "ez_data_model.h"
 #include "fff.h"
 #include <catch2/catch_test_macros.hpp>
@@ -106,7 +108,8 @@ TEST_CASE_METHOD(DatamodelTestsFixture, "Set data", "[service][datamodel]")
         ezSTATUS status = ezDataModel_SetDataPoint(
             &data_model,
             DATA_POINT_UINT8_IDX,
-            &expected_value);
+            &expected_value,
+            sizeof(expected_value));
         REQUIRE(status == ezSUCCESS);
 
         value = (const uint8_t*)ezDataModel_GetDataPoint(
@@ -131,7 +134,8 @@ TEST_CASE_METHOD(DatamodelTestsFixture, "Set data", "[service][datamodel]")
         ezSTATUS status = ezDataModel_SetDataPoint(
             &data_model,
             DATA_POINT_BOOL_IDX,
-            &expected_value);
+            &expected_value,
+            sizeof(expected_value));
         REQUIRE(status == ezSUCCESS);
 
         size_t data_size = 0U;
@@ -157,7 +161,8 @@ TEST_CASE_METHOD(DatamodelTestsFixture, "Set data", "[service][datamodel]")
         ezSTATUS status = ezDataModel_SetDataPoint(
             &data_model,
             DATA_POINT_INT16_IDX,
-            &expected_value);
+            &expected_value,
+            sizeof(expected_value));
         REQUIRE(status == ezSUCCESS);
 
         size_t data_size = 0U;
@@ -184,7 +189,8 @@ TEST_CASE_METHOD(DatamodelTestsFixture, "Set data", "[service][datamodel]")
         ezSTATUS status = ezDataModel_SetDataPoint(
             &data_model,
             DATA_POINT_UINT32_IDX,
-            &expected_value);
+            &expected_value,
+            sizeof(expected_value));
         REQUIRE(status == ezSUCCESS);
 
         size_t data_size = 0U;
@@ -210,7 +216,8 @@ TEST_CASE_METHOD(DatamodelTestsFixture, "Set data", "[service][datamodel]")
         ezSTATUS status = ezDataModel_SetDataPoint(
             &data_model,
             DATA_POINT_FLOAT_IDX,
-            &expected_value);
+            &expected_value,
+            sizeof(expected_value));
         REQUIRE(status == ezSUCCESS);
 
         size_t data_size = 0U;
@@ -232,11 +239,12 @@ TEST_CASE_METHOD(DatamodelTestsFixture, "Set data", "[service][datamodel]")
     SECTION("Set STRING data point")
     {
         const char *value = NULL;
-        const char* expected_value = "hello world";
+        char expected_value[DATA_POINT_STRING_SIZE] = "hello world";
         ezSTATUS status = ezDataModel_SetDataPoint(
             &data_model,
             DATA_POINT_STRING_IDX,
-            (void*)expected_value);
+            expected_value,
+            sizeof(expected_value));
         REQUIRE(status == ezSUCCESS);
 
         size_t data_size = 0U;
@@ -269,19 +277,22 @@ TEST_CASE_METHOD(DatamodelTestsFixture, "Data is not overflown", "[service][data
         status = ezDataModel_SetDataPoint(
             &data_model,
             DATA_POINT_BOOL_IDX,
-            &bool_value);
+            &bool_value,
+            sizeof(bool_value));
         REQUIRE(status == ezSUCCESS);
 
         status = ezDataModel_SetDataPoint(
             &data_model,
             DATA_POINT_UINT8_IDX,
-            &uint8_value);
+            &uint8_value,
+            sizeof(uint8_value));
         REQUIRE(status == ezSUCCESS);
 
         status = ezDataModel_SetDataPoint(
             &data_model,
             DATA_POINT_UINT16_IDX,
-            &uint16_value);
+            &uint16_value,
+            sizeof(uint16_value));
         REQUIRE(status == ezSUCCESS);
 
         THEN("Data is not overflown")
@@ -314,6 +325,116 @@ TEST_CASE_METHOD(DatamodelTestsFixture, "Data is not overflown", "[service][data
             REQUIRE(data_size == sizeof(uint16_value));
             CHECK(*read_uint16_value == uint16_value);
         }
+    }
+}
+
+
+TEST_CASE_METHOD(DatamodelTestsFixture, "Set data is validated", "[service][datamodel]")
+{
+    SECTION("Size mismatch is rejected and nothing is written")
+    {
+        uint32_t value = 0xDEADBEEF;
+        ezSTATUS status = ezDataModel_SetDataPoint(
+            &data_model,
+            DATA_POINT_UINT16_IDX,
+            &value,
+            sizeof(value));
+        CHECK(status == ezSTATUS_ARG_INVALID);
+        CHECK(ezDataModel_GetFirstDirty(&data_model) == DATA_POINT_INVALID);
+    }
+
+    SECTION("Unknown index is rejected")
+    {
+        uint8_t value = 1;
+        CHECK(ezDataModel_SetDataPoint(&data_model, 1000U, &value, sizeof(value)) == ezFAIL);
+        size_t data_size = 1U;
+        CHECK(ezDataModel_GetDataPoint(&data_model, 1000U, &data_size) == NULL);
+        CHECK(data_size == 0U);
+    }
+
+    SECTION("NULL arguments are rejected")
+    {
+        uint8_t value = 1;
+        CHECK(ezDataModel_SetDataPoint(NULL, DATA_POINT_UINT8_IDX, &value, sizeof(value)) == ezSTATUS_ARG_INVALID);
+        CHECK(ezDataModel_SetDataPoint(&data_model, DATA_POINT_UINT8_IDX, NULL, sizeof(value)) == ezSTATUS_ARG_INVALID);
+    }
+}
+
+
+TEST_CASE_METHOD(DatamodelTestsFixture, "Data points are zeroed and aligned", "[service][datamodel]")
+{
+    size_t data_size = 0U;
+
+    for(size_t i = 0U; i < sizeof(data_points)/sizeof(data_points[0]); i++)
+    {
+        const uint8_t *value = (const uint8_t*)ezDataModel_GetDataPoint(
+            &data_model,
+            data_points[i].index,
+            &data_size);
+        REQUIRE(value != NULL);
+        REQUIRE(data_size == data_points[i].size);
+
+        for(size_t j = 0U; j < data_size; j++)
+        {
+            CHECK(value[j] == 0U);
+        }
+    }
+
+    const void *ptr = ezDataModel_GetDataPoint(&data_model, DATA_POINT_UINT16_IDX, &data_size);
+    CHECK((uintptr_t)ptr % alignof(uint16_t) == 0U);
+    ptr = ezDataModel_GetDataPoint(&data_model, DATA_POINT_UINT32_IDX, &data_size);
+    CHECK((uintptr_t)ptr % alignof(uint32_t) == 0U);
+    ptr = ezDataModel_GetDataPoint(&data_model, DATA_POINT_FLOAT_IDX, &data_size);
+    CHECK((uintptr_t)ptr % alignof(float) == 0U);
+    ptr = ezDataModel_GetDataPoint(&data_model, DATA_POINT_DOUBLE_IDX, &data_size);
+    CHECK((uintptr_t)ptr % alignof(double) == 0U);
+}
+
+
+TEST_CASE("Initialize rejects invalid configuration", "[service][datamodel]")
+{
+    static uint8_t local_buff[64];
+    ezDataModel_t model;
+
+    SECTION("NULL or empty arguments")
+    {
+        ezDataPoint_t points[] = {{0U, 4U, NULL, false}};
+        CHECK_FALSE(ezDataModel_Initialize(NULL, points, 1U, local_buff, sizeof(local_buff)));
+        CHECK_FALSE(ezDataModel_Initialize(&model, NULL, 1U, local_buff, sizeof(local_buff)));
+        CHECK_FALSE(ezDataModel_Initialize(&model, points, 0U, local_buff, sizeof(local_buff)));
+        CHECK_FALSE(ezDataModel_Initialize(&model, points, 1U, NULL, sizeof(local_buff)));
+        CHECK_FALSE(ezDataModel_Initialize(&model, points, 1U, local_buff, 0U));
+    }
+
+    SECTION("Buffer too small, model stays unusable")
+    {
+        ezDataPoint_t points[] = {{0U, 32U, NULL, false}, {1U, 64U, NULL, false}};
+        CHECK_FALSE(ezDataModel_Initialize(&model, points, 2U, local_buff, sizeof(local_buff)));
+
+        uint8_t value = 1;
+        CHECK(ezDataModel_SetDataPoint(&model, 0U, &value, 32U) != ezSUCCESS);
+        CHECK(ezDataModel_GetFirstDirty(&model) == DATA_POINT_INVALID);
+    }
+
+    SECTION("Zero size")
+    {
+        ezDataPoint_t points[] = {{0U, 0U, NULL, false}};
+        CHECK_FALSE(ezDataModel_Initialize(&model, points, 1U, local_buff, sizeof(local_buff)));
+    }
+
+    SECTION("Indexes not strictly increasing")
+    {
+        ezDataPoint_t unsorted[] = {{2U, 4U, NULL, false}, {1U, 4U, NULL, false}};
+        CHECK_FALSE(ezDataModel_Initialize(&model, unsorted, 2U, local_buff, sizeof(local_buff)));
+
+        ezDataPoint_t duplicated[] = {{1U, 4U, NULL, false}, {1U, 4U, NULL, false}};
+        CHECK_FALSE(ezDataModel_Initialize(&model, duplicated, 2U, local_buff, sizeof(local_buff)));
+    }
+
+    SECTION("Reserved invalid index")
+    {
+        ezDataPoint_t points[] = {{DATA_POINT_INVALID, 4U, NULL, false}};
+        CHECK_FALSE(ezDataModel_Initialize(&model, points, 1U, local_buff, sizeof(local_buff)));
     }
 }
 
