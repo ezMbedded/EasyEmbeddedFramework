@@ -1,0 +1,1075 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../../../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>State Machine V2 &#8212; Easy Embedded Framework 1.0.0-0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/basic.css?v=b08954a9" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/alabaster.css?v=27fed22d" />
+    <script src="../../../_static/documentation_options.js?v=87e8cd4c"></script>
+    <script src="../../../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script type="module">import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.12.1/dist/mermaid.esm.min.mjs";
+
+
+
+
+
+const initStyles = () => {
+    const defaultStyle = document.createElement('style');
+    defaultStyle.textContent = "pre.mermaid {\n    /* Same as .mermaid-container > pre */\n    display: block;\n    width: 100%;\n}\n\npre.mermaid > svg {\n    /* Same as .mermaid-container > pre > svg */\n    height: 500px;\n    width: 100%;\n    max-width: 100% !important;\n}";
+    document.head.appendChild(defaultStyle);
+
+    const fullscreenStyle = document.createElement('style');
+    fullscreenStyle.textContent = ".mermaid-container {\n    position: relative;\n    display: flex;\n    flex-direction: row;\n    width: 100%;\n}\n\n.mermaid-container > pre {\n    display: block;\n    width: 100%;\n}\n\n.mermaid-container > pre > svg {\n    height: 500px;\n    width: 100%;\n    max-width: 100% !important;\n}\n\n.mermaid-fullscreen-btn {\n    position: absolute;\n    width: 28px;\n    height: 28px;\n    background: rgba(255, 255, 255, 0.95);\n    border: 1px solid rgba(0, 0, 0, 0.3);\n    border-radius: 4px;\n    cursor: pointer;\n    display: flex;\n    align-items: center;\n    justify-content: center;\n    transition: all 0.2s;\n    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);\n    font-size: 14px;\n    line-height: 1;\n    padding: 0;\n    color: #333;\n}\n\n.mermaid-fullscreen-btn:hover {\n    opacity: 100% !important;\n    background: rgba(255, 255, 255, 1);\n    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.3);\n    transform: scale(1.1);\n}\n\n.mermaid-fullscreen-btn.dark-theme {\n    background: rgba(50, 50, 50, 0.95);\n    border: 1px solid rgba(255, 255, 255, 0.3);\n    color: #e0e0e0;\n}\n\n.mermaid-fullscreen-btn.dark-theme:hover {\n    background: rgba(60, 60, 60, 1);\n    box-shadow: 0 3px 10px rgba(255, 255, 255, 0.2);\n}\n\n.mermaid-fullscreen-modal {\n    display: none;\n    position: fixed !important;\n    top: 0 !important;\n    left: 0 !important;\n    width: 95vw;\n    height: 100vh;\n    background: rgba(255, 255, 255, 0.98);\n    z-index: 9999;\n    padding: 20px;\n    overflow: auto;\n}\n\n.mermaid-fullscreen-modal.dark-theme {\n    background: rgba(0, 0, 0, 0.98);\n}\n\n.mermaid-fullscreen-modal.active {\n    display: flex;\n    align-items: center;\n    justify-content: center;\n}\n\n.mermaid-container-fullscreen {\n    position: relative;\n    width: 95vw;\n    height: 90vh;\n    max-width: 95vw;\n    max-height: 90vh;\n    background: white;\n    border-radius: 8px;\n    padding: 20px;\n    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);\n    overflow: auto;\n    display: flex;\n    align-items: center;\n    justify-content: center;\n}\n\n.mermaid-container-fullscreen.dark-theme {\n    background: #1a1a1a;\n    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8);\n}\n\n.mermaid-container-fullscreen pre.mermaid {\n    width: 100%;\n    height: 100%;\n    display: flex;\n    align-items: center;\n    justify-content: center;\n}\n\n.mermaid-container-fullscreen .mermaid svg {\n    height: 100% !important;\n    width: 100% !important;\n    cursor: grab;\n}\n\n.mermaid-fullscreen-close {\n    position: fixed !important;\n    top: 20px !important;\n    right: 20px !important;\n    width: 40px;\n    height: 40px;\n    background: rgba(255, 255, 255, 0.95);\n    border: 1px solid rgba(0, 0, 0, 0.2);\n    border-radius: 50%;\n    cursor: pointer;\n    z-index: 10000;\n    display: flex;\n    align-items: center;\n    justify-content: center;\n    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);\n    transition: all 0.2s;\n    font-size: 24px;\n    line-height: 1;\n    color: #333;\n}\n\n.mermaid-fullscreen-close:hover {\n    background: white;\n    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);\n    transform: scale(1.1);\n}\n\n.mermaid-fullscreen-close.dark-theme {\n    background: rgba(50, 50, 50, 0.95);\n    border: 1px solid rgba(255, 255, 255, 0.2);\n    color: #e0e0e0;\n}\n\n.mermaid-fullscreen-close.dark-theme:hover {\n    background: rgba(60, 60, 60, 1);\n    box-shadow: 0 6px 16px rgba(255, 255, 255, 0.2);\n}\n\n.mermaid-fullscreen-modal .mermaid-fullscreen-btn {\n    display: none !important;\n}";
+    document.head.appendChild(fullscreenStyle);
+}
+
+// Detect if page has dark background
+const isDarkTheme = () => {
+    // We use a set of heuristics:
+    // 1. Check for common dark mode classes or attributes
+    // 2. Check computed background color brightness
+    if (document.documentElement.classList.contains('dark') ||
+        document.documentElement.getAttribute('data-theme') === 'dark' ||
+        document.body.classList.contains('dark') ||
+        document.body.getAttribute('data-theme') === 'dark') {
+        // console.log("Dark theme detected via class/attribute");
+        return true;
+    }
+    if (document.documentElement.classList.contains('light') ||
+        document.documentElement.getAttribute('data-theme') === 'light' ||
+        document.body.classList.contains('light') ||
+        document.body.getAttribute('data-theme') === 'light') {
+        // console.log("Light theme detected via class/attribute");
+        return false;
+    }
+    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        // console.log("Dark theme detected via prefers-color-scheme");
+        return true;
+    }
+    const bgColor = window.getComputedStyle(document.body).backgroundColor;
+    const match = bgColor.match(/rgb\((\d+),\s*(\d+),\s*(\d+)/);
+    if (match) {
+        const r = parseInt(match[1]);
+        const g = parseInt(match[2]);
+        const b = parseInt(match[3]);
+        const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+        // console.log("Background color brightness:", brightness);
+        return brightness < 128;
+    }
+    // console.log("No dark or light theme detected, defaulting to light theme");
+    return false;
+};
+
+let darkTheme = isDarkTheme();
+let modal = null;
+let modalContent = null;
+let previousScrollOffset = [window.scrollX, window.scrollY];
+let _lazyObserver = null;
+let _renderQueue = Promise.resolve();
+let closeModal = () => {};
+
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && modal?.classList.contains('active')) {
+        closeModal();
+    }
+});
+
+// Apply d3 zoom to each SVG. Idempotent: an SVG already wrapped is skipped,
+// so this is safe to call both for the initial batch and for diagrams that
+// render lazily once they become visible.
+const addZoomToSvgs = (svgs) => {
+    svgs.each(function() {
+        if (this.getAttribute('data-zoom-applied') === 'true') return;
+        var svg = d3.select(this);
+        svg.html("<g class='wrapper'>" + svg.html() + "</g>");
+        var inner = svg.select("g");
+        var zoom = d3.zoom().on("zoom", function(event) {
+            inner.attr("transform", event.transform);
+        });
+        svg.call(zoom);
+        this.setAttribute('data-zoom-applied', 'true');
+    });
+};
+
+const runMermaid = async (rerun) => {
+    console.log("Running mermaid diagrams, rerun =", rerun);
+    // clear all existing mermaid charts
+    let all_mermaids = document.querySelectorAll(".mermaid");
+
+    if (rerun) {
+        // Disconnect any previous lazy rendering observer
+        if (_lazyObserver) {
+            _lazyObserver.disconnect();
+            _lazyObserver = null;
+        }
+
+        all_mermaids.forEach((el) => {
+            el.removeAttribute('data-mermaid-deferred');
+            el.removeAttribute('data-mermaid-render-failed');
+            if(!el.hasAttribute("data-original-code")) {
+                // store original code
+                // console.log(`Storing original code for first run: `, el.innerHTML);
+                el.setAttribute('data-original-code', el.innerHTML);
+            }
+            if(el.getAttribute("data-processed") === "true") {
+                // remove and restore original
+                el.removeAttribute("data-processed");
+                // console.log(`Restoring original code for re-run: `, el.getAttribute('data-original-code'));
+                el.innerHTML = el.getAttribute('data-original-code');
+            } else {
+                // store original code
+                // console.log(`Storing original code for re-run: `, el.innerHTML);
+                el.setAttribute('data-original-code', el.innerHTML);
+            }
+        });
+
+        // Separate visible and hidden elements. Mermaid's layout engine measures
+        // text dimensions via the DOM, which fails for elements hidden by a parent
+        // (e.g., Reveal.js non-active slides, sphinx-design unopened tabs),
+        // producing broken SVGs. Render visible elements now, defer hidden ones.
+        const visible = [];
+        const hidden = [];
+        all_mermaids.forEach((el) => {
+            // offsetParent is null for display:none ancestors.
+            // getClientRects().length > 0 catches position:fixed elements
+            // (which also have null offsetParent but are still visible).
+            if (el.offsetParent !== null || el.getClientRects().length > 0) {
+                visible.push(el);
+            } else {
+                hidden.push(el);
+                el.setAttribute('data-mermaid-deferred', 'true');
+            }
+        });
+
+        if (visible.length > 0) {
+            try {
+                await mermaid.run({ nodes: visible });
+            } catch (e) {
+                console.error("Mermaid rendering failed:", e);
+            }
+        }
+
+        // Lazily render hidden elements when they become visible.
+        // Uses a promise chain (_renderQueue) to serialize rendering,
+        // since IntersectionObserver may report multiple entries at once
+        // and mermaid.run() is not safe to call concurrently.
+        if (hidden.length > 0) {
+            if (typeof IntersectionObserver === 'undefined') {
+                console.warn("IntersectionObserver not available; hidden mermaid diagrams will not render.");
+            } else {
+                _renderQueue = Promise.resolve();
+                _lazyObserver = new IntersectionObserver((entries) => {
+                    for (const entry of entries) {
+                        if (entry.isIntersecting && entry.target.getAttribute("data-processed") !== "true") {
+                            _lazyObserver.unobserve(entry.target);
+                            const el = entry.target;
+                            _renderQueue = _renderQueue.then(async () => {
+                                try {
+                                    await mermaid.run({ nodes: [el] });
+                                    el.removeAttribute('data-mermaid-deferred');
+                                    // Apply zoom to the now-rendered diagram, matching
+                                    // the decoration visible diagrams receive.
+                                    if (false) {
+                                        addZoomToSvgs(d3.selectAll("").select(function() {
+                                            return this.querySelector("svg");
+                                        }));
+                                    }
+                                } catch (e) {
+                                    console.error("Mermaid deferred rendering failed:", e);
+                                    el.removeAttribute('data-mermaid-deferred');
+                                    el.setAttribute('data-mermaid-render-failed', 'true');
+                                }
+                            });
+                        }
+                    }
+                });
+                hidden.forEach((el) => _lazyObserver.observe(el));
+            }
+        }
+    }
+
+    all_mermaids = document.querySelectorAll(".mermaid");
+    // Exclude deferred (hidden) and render-failed elements from completion checks
+    const mermaids_active = document.querySelectorAll(".mermaid:not([data-mermaid-deferred]):not([data-mermaid-render-failed])");
+    const mermaids_processed = document.querySelectorAll(".mermaid:not([data-mermaid-deferred]):not([data-mermaid-render-failed])[data-processed='true']");
+
+    if (false) {
+        const mermaids_to_add_zoom = 0 === -1 ? mermaids_active.length : 0;
+        if(mermaids_to_add_zoom > 0) {
+            var svgs = d3.selectAll("").select(function() {
+                return this.querySelector("svg");
+            });
+            // Wait until every active (visible) diagram has rendered. Deferred
+            // diagrams are excluded, so a fixed d3_node_count that counts a
+            // hidden diagram no longer loops forever waiting for its SVG.
+            if(mermaids_active.length !== mermaids_processed.length) {
+                setTimeout(() => runMermaid(false), 200);
+                return;
+            }
+            addZoomToSvgs(svgs);
+        }
+    } else if(mermaids_active.length !== mermaids_processed.length) {
+        // Wait for mermaid to process all diagrams
+        setTimeout(() => runMermaid(false), 200);
+        return;
+    }
+
+    // Stop here if not adding fullscreen capability
+    if (!true) return;
+
+    if (modal !== null ) {
+        // Destroy existing modal
+        modal.remove();
+        modal = null;
+        modalContent = null;
+    }
+
+    modal = document.createElement('div');
+    modal.className = 'mermaid-fullscreen-modal' + (darkTheme ? ' dark-theme' : '');
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('aria-label', 'Fullscreen diagram viewer');
+    modal.innerHTML = `
+        <button class="mermaid-fullscreen-close${darkTheme ? ' dark-theme' : ''}" aria-label="Close fullscreen">✕</button>
+        <div class="mermaid-container-fullscreen${darkTheme ? ' dark-theme' : ''}"></div>
+    `;
+    document.body.appendChild(modal);
+
+    modalContent = modal.querySelector('.mermaid-container-fullscreen');
+    const closeBtn = modal.querySelector('.mermaid-fullscreen-close');
+
+    closeModal = () => {
+        modal.classList.remove('active');
+        modalContent.innerHTML = '';
+        document.body.style.overflow = ''
+        window.scrollTo({left: previousScrollOffset[0], top: previousScrollOffset[1], behavior: 'instant'});
+    };
+
+    closeBtn.addEventListener('click', closeModal);
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) closeModal();
+    });
+    document.querySelectorAll('.mermaid').forEach((mermaidDiv) => {
+        if (mermaidDiv.parentNode.classList.contains('mermaid-container') ||
+            mermaidDiv.closest('.mermaid-fullscreen-modal')) {
+            // Already processed, adjust button class if needed
+            const existingBtn = mermaidDiv.parentNode.querySelector('.mermaid-fullscreen-btn');
+            if (existingBtn) {
+                existingBtn.className = 'mermaid-fullscreen-btn' + (darkTheme ? ' dark-theme' : '');
+            }
+            return;
+        }
+
+        const container = document.createElement('div');
+        container.className = 'mermaid-container';
+        mermaidDiv.parentNode.insertBefore(container, mermaidDiv);
+        container.appendChild(mermaidDiv);
+
+        const fullscreenBtn = document.createElement('button');
+        fullscreenBtn.className = 'mermaid-fullscreen-btn' + (darkTheme ? ' dark-theme' : '');
+        fullscreenBtn.setAttribute('aria-label', 'View diagram in fullscreen');
+        fullscreenBtn.textContent = "\u26f6";
+        fullscreenBtn.style.opacity = "50%";
+
+        // Calculate dynamic position based on diagram's margin and padding
+        const diagramStyle = window.getComputedStyle(mermaidDiv);
+        const marginTop = parseFloat(diagramStyle.marginTop) || 0;
+        const marginRight = parseFloat(diagramStyle.marginRight) || 0;
+        const paddingTop = parseFloat(diagramStyle.paddingTop) || 0;
+        const paddingRight = parseFloat(diagramStyle.paddingRight) || 0;
+        fullscreenBtn.style.top = `${marginTop + paddingTop + 4}px`;
+        fullscreenBtn.style.right = `${marginRight + paddingRight + 4}px`;
+
+        fullscreenBtn.addEventListener('click', () => {
+            previousScrollOffset = [window.scrollX, window.scrollY];
+            const clone = mermaidDiv.cloneNode(true);
+            modalContent.innerHTML = '';
+            modalContent.appendChild(clone);
+
+            const svg = clone.querySelector('svg');
+            if (svg) {
+                svg.removeAttribute('width');
+                svg.removeAttribute('height');
+                svg.style.width = '100%';
+                svg.style.height = 'auto';
+                svg.style.maxWidth = '100%';
+                svg.style.display = 'block';
+
+                if (false) {
+                    setTimeout(() => {
+                        const g = svg.querySelector('g');
+                        if (g) {
+                            var svgD3 = d3.select(svg);
+                            svgD3.html("<g class='wrapper'>" + svgD3.html() + "</g>");
+                            var inner = svgD3.select("g");
+                            var zoom = d3.zoom().on("zoom", function(event) {
+                                inner.attr("transform", event.transform);
+                            });
+                            svgD3.call(zoom);
+                        }
+                    }, 100);
+                }
+            }
+
+            modal.classList.add('active');
+            document.body.style.overflow = 'hidden';
+        });
+        container.appendChild(fullscreenBtn);
+    });
+};
+
+
+
+const load = async () => {
+    initStyles();
+
+
+    await runMermaid(true);
+
+    const reRunIfThemeChanges = async () => {
+        const newDarkTheme = isDarkTheme();
+        if (newDarkTheme !== darkTheme) {
+            darkTheme = newDarkTheme;
+            console.log("Theme change detected, re-running mermaid with", darkTheme ? "dark" : "default", "theme");
+            await mermaid.initialize(
+                {...{"startOnLoad": false},
+                ...{ darkMode: darkTheme, theme: darkTheme ? "dark" : "default" },
+                }
+            );
+            await runMermaid(true);
+        }
+    };
+
+    // Update theme classes when theme changes
+    const themeObserver = new MutationObserver(reRunIfThemeChanges);
+    themeObserver.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ['class', 'style', 'data-theme']
+    });
+    themeObserver.observe(document.body, {
+        attributes: true,
+        attributeFilter: ['class', 'style', 'data-theme']
+    });
+};
+
+
+
+
+
+console.log("Initializing mermaid with", darkTheme ? "dark" : "default", "theme");
+mermaid.initialize(
+    {...{"startOnLoad": false},
+    ...{ darkMode: darkTheme, theme: darkTheme ? "dark" : "default" },
+    }
+);
+
+window.addEventListener("load", load);
+window.runMermaid = runMermaid;</script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+    <link rel="next" title="Task Worker" href="../task_worker/task_worker.html" />
+    <link rel="prev" title="State Machine" href="state_machine.html" />
+   
+  <link rel="stylesheet" href="../../../_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <section id="state-machine-v2">
+<h1>State Machine V2<a class="headerlink" href="#state-machine-v2" title="Link to this heading">¶</a></h1>
+<section id="introduction">
+<h2>Introduction<a class="headerlink" href="#introduction" title="Link to this heading">¶</a></h2>
+<p>This document describes the second version of the State Machine component of the
+EzEmbedded Framework.</p>
+<p>The State Machine V2 is a table driven, event-driven finite state machine. The whole
+behavior of the machine is described by a <strong>transition table</strong>. Each row of the table
+says: <em>in this state, when this event arrives, if the guard allows it, run this action
+and go to that state</em>. The code that runs the machine is generic and never has to be
+changed when the behavior changes.</p>
+<p><strong>What this component does:</strong></p>
+<ul class="simple">
+<li><p>Describes the behavior with constant tables (can be placed in flash)</p></li>
+<li><p>Supports entry and exit functions for each state</p></li>
+<li><p>Supports guard functions that can block a transition</p></li>
+<li><p>Supports actions that run during a transition</p></li>
+<li><p>Supports internal transitions (run an action without leaving the state)</p></li>
+<li><p>Supports transitions that apply to every state (wildcard)</p></li>
+<li><p>Stores events in a queue, so events can be posted from callbacks or interrupts</p></li>
+<li><p>Reports what happened to every dispatched event</p></li>
+<li><p>Allows data sharing between callbacks via a user-defined context pointer</p></li>
+</ul>
+<p><strong>What this component does NOT do:</strong></p>
+<ul class="simple">
+<li><p>Does not support hierarchical (nested) state machines. Use the first version of
+the component if sub-state machines are needed</p></li>
+<li><p>Does not support orthogonal regions (parallel states)</p></li>
+<li><p>Does not implement history states</p></li>
+<li><p>Does not provide automatic code generation from state diagrams</p></li>
+<li><p>Does not allocate memory. The user provides the event buffer</p></li>
+</ul>
+<p><strong>Differences to the first version:</strong></p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 30.0%" />
+<col style="width: 35.0%" />
+<col style="width: 35.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"></th>
+<th class="head"><p>Version 1</p></th>
+<th class="head"><p>Version 2</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>Behavior</p></td>
+<td><p>Written in code (state functions return the next state)</p></td>
+<td><p>Described by a transition table</p></td>
+</tr>
+<tr class="row-odd"><td><p>Guards</p></td>
+<td><p>Inside the event handler</p></td>
+<td><p>Separate guard function per transition</p></td>
+</tr>
+<tr class="row-even"><td><p>Event</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">uint8_t</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">ezSm_Event_t</span></code> with id (16 bit) and a payload</p></td>
+</tr>
+<tr class="row-odd"><td><p>Result of an event</p></td>
+<td><p>None</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">ezSm_Result_t</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p>Hierarchy</p></td>
+<td><p>Sub-state machines</p></td>
+<td><p>Not supported</p></td>
+</tr>
+<tr class="row-odd"><td><p>Enable option</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">ENABLE_EZ_STATE_MACHINE</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">ENABLE_EZ_STATE_MACHINE_V2</span></code></p></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Use cases:</strong></p>
+<ul class="simple">
+<li><p>Protocol implementations (communication protocols, handshake sequences)</p></li>
+<li><p>Device control logic (power management, mode switching)</p></li>
+<li><p>User interface navigation</p></li>
+<li><p>Workflow and process control in embedded applications</p></li>
+</ul>
+</section>
+<section id="component-s-structure">
+<h2>Component’s structure<a class="headerlink" href="#component-s-structure" title="Link to this heading">¶</a></h2>
+<p>The component is composed of the following elements:</p>
+<p><strong>ezSm_State_t</strong> - Represents a single state:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">id</span></code>: Identifier of the state. The ids <code class="docutils literal notranslate"><span class="pre">EZ_SM_ANY_STATE</span></code> and <code class="docutils literal notranslate"><span class="pre">EZ_SM_STAY</span></code> are reserved</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">on_entry</span></code>: Function executed once when entering the state (optional)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">on_exit</span></code>: Function executed once when leaving the state (optional)</p></li>
+</ul>
+<p><strong>ezSm_Transition_t</strong> - Represents one row of the transition table:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">current_state</span></code>: The state in which the row applies. A state with the id
+<code class="docutils literal notranslate"><span class="pre">EZ_SM_ANY_STATE</span></code> makes the row apply in every state</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">event_id</span></code>: The event that triggers the row</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">guard</span></code>: Function that can block the transition (optional)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">action</span></code>: Function executed during the transition (optional)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">next_state</span></code>: The state to enter. A state with the id <code class="docutils literal notranslate"><span class="pre">EZ_SM_STAY</span></code> makes the row an
+internal transition</p></li>
+</ul>
+<p><strong>ezSm_Config_t</strong> - Describes the machine. It is constant and can be shared by several
+state machine instances:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">transitions_table</span></code> and <code class="docutils literal notranslate"><span class="pre">transitions_count</span></code>: The transition table</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">initial_state</span></code>: The state entered by <code class="docutils literal notranslate"><span class="pre">ezSm_Start()</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">on_transition</span></code>: Called after every state change (optional)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">on_unhandled</span></code>: Called when no row handles an event (optional)</p></li>
+</ul>
+<p><strong>ezSm_StateMachine_t</strong> - Represents one instance of the state machine. The fields are
+managed by the component and must not be changed by the user:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">config</span></code>: Pointer to the configuration. <code class="docutils literal notranslate"><span class="pre">NULL</span></code> as long as the machine is not initialized</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">context</span></code>: User-defined data pointer passed to every callback</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">current_state</span></code>: The active state</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">busy</span></code>: Set while an event is being processed</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">event_queue</span></code>: Queue holding the pending events</p></li>
+</ul>
+</section>
+<section id="component-s-behavior">
+<h2>Component’s behavior<a class="headerlink" href="#component-s-behavior" title="Link to this heading">¶</a></h2>
+<section id="external-behavior">
+<h3>External Behavior<a class="headerlink" href="#external-behavior" title="Link to this heading">¶</a></h3>
+<p>The state machine exposes the following API functions:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">ezSm_Init()</span></code>: Validates the configuration and creates the event queue</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ezSm_Start()</span></code>: Enters the initial state and runs its entry function</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ezSm_PostEvent()</span></code>: Copies an event into the queue. The event is processed later</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ezSm_DispatchEvent()</span></code>: Processes an event immediately</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ezSm_Run()</span></code>: Processes all queued events (call periodically)</p></li>
+</ul>
+<p><code class="docutils literal notranslate"><span class="pre">ezSm_DispatchEvent()</span></code> returns what happened to the event:</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 30.0%" />
+<col style="width: 70.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Result</p></th>
+<th class="head"><p>Meaning</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">EZ_SM_TRANSITIONED</span></code></p></td>
+<td><p>The state changed</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">EZ_SM_INTERNAL</span></code></p></td>
+<td><p>A row with <code class="docutils literal notranslate"><span class="pre">EZ_SM_STAY</span></code> matched. Only the action ran</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">EZ_SM_IGNORED</span></code></p></td>
+<td><p>No row matches this state and event. <code class="docutils literal notranslate"><span class="pre">on_unhandled</span></code> was called</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">EZ_SM_GUARD_BLOCKED</span></code></p></td>
+<td><p>Rows exist, but all of their guards returned false</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">EZ_SM_QUEUED</span></code></p></td>
+<td><p>The machine was busy, the event was queued instead</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">EZ_SM_ERROR</span></code></p></td>
+<td><p>Invalid argument, machine not initialized, or the queue is full</p></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="internal-behavior">
+<h3>Internal Behavior<a class="headerlink" href="#internal-behavior" title="Link to this heading">¶</a></h3>
+<p><strong>Initialization.</strong> <code class="docutils literal notranslate"><span class="pre">ezSm_Init()</span></code> checks the whole configuration before it changes the
+state machine object: the initial state, the table, and the state pointers of every row
+must not be <code class="docutils literal notranslate"><span class="pre">NULL</span></code>. The machine is marked as ready (<code class="docutils literal notranslate"><span class="pre">config</span></code> is set) only after the
+event queue is created. If anything fails, the object stays uninitialized and all other
+functions refuse to work with it.</p>
+<p><strong>Matching a row.</strong> <code class="docutils literal notranslate"><span class="pre">ezSm_DispatchEvent()</span></code> walks through the table from the first to
+the last row and takes the first row that:</p>
+<ol class="arabic simple">
+<li><p>has the same event id as the event,</p></li>
+<li><p>applies to the current state (same state id, or <code class="docutils literal notranslate"><span class="pre">EZ_SM_ANY_STATE</span></code>), and</p></li>
+<li><p>has no guard, or its guard returns true.</p></li>
+</ol>
+<p>If the guard of a row returns false, the walk continues with the next row. This allows
+several rows for the same state and event, ordered by priority, with an unguarded row at
+the end as the default.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Rows are matched in table order. Put the rows of specific states <strong>before</strong> the rows that
+use <code class="docutils literal notranslate"><span class="pre">EZ_SM_ANY_STATE</span></code>, otherwise the wildcard row hides them.</p>
+</div>
+<p><strong>Running a transition.</strong> For a row with a next state, the following happens in this order:</p>
+<ol class="arabic simple">
+<li><p>The <code class="docutils literal notranslate"><span class="pre">on_exit</span></code> function of the current state</p></li>
+<li><p>The <code class="docutils literal notranslate"><span class="pre">action</span></code> of the row</p></li>
+<li><p>The current state is changed to the next state</p></li>
+<li><p>The <code class="docutils literal notranslate"><span class="pre">on_entry</span></code> function of the new state</p></li>
+<li><p>The <code class="docutils literal notranslate"><span class="pre">on_transition</span></code> callback of the configuration</p></li>
+</ol>
+<p>The current state is already the new state when <code class="docutils literal notranslate"><span class="pre">on_entry</span></code> and <code class="docutils literal notranslate"><span class="pre">on_transition</span></code> run.
+A transition to the state that is already active is a normal transition: exit and entry
+functions run again.</p>
+<p>For a row with <code class="docutils literal notranslate"><span class="pre">EZ_SM_STAY</span></code>, only the action runs. The state, the exit and entry
+functions and <code class="docutils literal notranslate"><span class="pre">on_transition</span></code> are not touched. The action is optional, a row without
+an action simply consumes the event.</p>
+<p><strong>Unhandled events.</strong> If no row matches, <code class="docutils literal notranslate"><span class="pre">on_unhandled</span></code> is called and the result is
+<code class="docutils literal notranslate"><span class="pre">EZ_SM_IGNORED</span></code>. If at least one row matched but every guard blocked it,
+<code class="docutils literal notranslate"><span class="pre">on_unhandled</span></code> is <strong>not</strong> called and the result is <code class="docutils literal notranslate"><span class="pre">EZ_SM_GUARD_BLOCKED</span></code>.</p>
+<p><strong>Busy handling.</strong> While an event is processed, the machine is busy. An event dispatched
+in this time (for example from an action or from another context) is not processed,
+it is put into the queue and <code class="docutils literal notranslate"><span class="pre">EZ_SM_QUEUED</span></code> is returned. The test and the set of the busy
+flag are protected with the critical section macros. The queued event is processed by the
+next <code class="docutils literal notranslate"><span class="pre">ezSm_Run()</span></code>.</p>
+<p><strong>Running the queue.</strong> <code class="docutils literal notranslate"><span class="pre">ezSm_Run()</span></code> takes the events from the queue in FIFO order and
+dispatches them one by one. It returns the number of processed events.</p>
+<ul class="simple">
+<li><p>It returns 0 immediately when the machine is busy. Do not call it from a callback</p></li>
+<li><p>An entry of the queue that does not have the size of an event is logged and dropped,
+so it cannot block the events behind it</p></li>
+</ul>
+<p><strong>Flow of a dispatched event:</strong></p>
+<pre  class="mermaid">
+        flowchart TD
+   Start([ezSm_DispatchEvent]) --&gt; Valid{Initialized and&lt;br/&gt;event valid?}
+   Valid --&gt;|No| Error([EZ_SM_ERROR])
+   Valid --&gt;|Yes| Busy{Busy?}
+
+   Busy --&gt;|Yes| Post[Post event to queue]
+   Post --&gt; Queued([EZ_SM_QUEUED])
+
+   Busy --&gt;|No| Next[Take next row]
+   Next --&gt; More{Row left?}
+
+   More --&gt;|No| Matched{Any guard&lt;br/&gt;blocked?}
+   Matched --&gt;|Yes| Blocked([EZ_SM_GUARD_BLOCKED])
+   Matched --&gt;|No| Unhandled[&quot;on_unhandled&quot;] --&gt; Ignored([EZ_SM_IGNORED])
+
+   More --&gt;|Yes| Match{Event and state&lt;br/&gt;match?}
+   Match --&gt;|No| Next
+   Match --&gt;|Yes| Guard{Guard allows?}
+   Guard --&gt;|No| Next
+
+   Guard --&gt;|Yes| Stay{Next state is&lt;br/&gt;EZ_SM_STAY?}
+   Stay --&gt;|Yes| Action1[action] --&gt; Internal([EZ_SM_INTERNAL])
+   Stay --&gt;|No| Exit[on_exit] --&gt; Action2[action] --&gt; Change[Set new state]
+   Change --&gt; Entry[on_entry] --&gt; Trans[on_transition] --&gt; Done([EZ_SM_TRANSITIONED])
+    </pre></section>
+</section>
+<section id="data-flow">
+<h2>Data Flow<a class="headerlink" href="#data-flow" title="Link to this heading">¶</a></h2>
+<p>The following diagram illustrates how events and data flow through the state machine:</p>
+<pre  class="mermaid">
+        flowchart TD
+  subgraph Application
+    Post[&quot;ezSm_PostEvent()&quot;]
+    Dispatch[&quot;ezSm_DispatchEvent()&quot;]
+    Run[&quot;ezSm_Run()&quot;]
+  end
+
+  subgraph SM[&quot;ezSm_StateMachine_t&quot;]
+    Queue[&quot;event_queue&quot;]
+    Current[&quot;current_state&quot;]
+    Context[&quot;context (void*)&quot;]
+  end
+
+  subgraph Config[&quot;ezSm_Config_t (constant)&quot;]
+    Table[&quot;transition table&quot;]
+    Hooks[&quot;on_transition&lt;br/&gt;on_unhandled&quot;]
+  end
+
+  subgraph Callbacks[&quot;User callbacks&quot;]
+    Guard[&quot;guard(context, event)&quot;]
+    Action[&quot;action(context, event)&quot;]
+    State[&quot;on_entry(context)&lt;br/&gt;on_exit(context)&quot;]
+  end
+
+  Post --&gt; Queue
+  Run --&gt; Queue
+  Queue --&gt; Dispatch
+  Dispatch --&gt; Table
+  Table --&gt; Guard
+  Table --&gt; Action
+  Table --&gt; State
+  Dispatch --&gt; Current
+  Dispatch --&gt; Hooks
+  Context --&gt; Guard
+  Context --&gt; Action
+  Context --&gt; State
+    </pre><p><strong>Data exchange between callbacks:</strong></p>
+<ul class="simple">
+<li><p>Callbacks share data through the <code class="docutils literal notranslate"><span class="pre">context</span></code> pointer given to <code class="docutils literal notranslate"><span class="pre">ezSm_Init()</span></code></p></li>
+<li><p>The pointer is passed unchanged as first parameter to every callback</p></li>
+<li><p>Callbacks cast it to the structure type of the application</p></li>
+</ul>
+<p><strong>Event flow:</strong></p>
+<ol class="arabic simple">
+<li><p>Application code calls <code class="docutils literal notranslate"><span class="pre">ezSm_PostEvent()</span></code>. The event is <strong>copied</strong> into the queue</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ezSm_Run()</span></code> takes the events out of the queue in FIFO order</p></li>
+<li><p>Each event is dispatched: the table is searched and the matching row is executed</p></li>
+</ol>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>The event is copied, but the data it points to is not. If the payload of an event is a
+pointer (<code class="docutils literal notranslate"><span class="pre">event.data.data</span></code>), the data must stay valid until the event is processed.</p>
+</div>
+</section>
+<section id="component-s-data-type">
+<h2>Component’s data type<a class="headerlink" href="#component-s-data-type" title="Link to this heading">¶</a></h2>
+<section id="function-pointer-types">
+<h3>Function Pointer Types<a class="headerlink" href="#function-pointer-types" title="Link to this heading">¶</a></h3>
+<dl class="c type">
+<dt class="sig sig-object c" id="c.ezSm_StateFunction_t">
+<span class="k"><span class="pre">type</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">ezSm_StateFunction_t</span></span></span><a class="headerlink" href="#c.ezSm_StateFunction_t" title="Link to this definition">¶</a><br /></dt>
+<dd><p>Entry or exit function of a state.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Param context<span class="colon">:</span></dt>
+<dd class="field-odd"><p>User-defined context pointer</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="c type">
+<dt class="sig sig-object c" id="c.ezSm_GuardFunction_t">
+<span class="k"><span class="pre">type</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">ezSm_GuardFunction_t</span></span></span><a class="headerlink" href="#c.ezSm_GuardFunction_t" title="Link to this definition">¶</a><br /></dt>
+<dd><p>Function that decides if a transition may be taken.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Param context<span class="colon">:</span></dt>
+<dd class="field-odd"><p>User-defined context pointer</p>
+</dd>
+<dt class="field-even">Param event<span class="colon">:</span></dt>
+<dd class="field-even"><p>The event that is being processed</p>
+</dd>
+<dt class="field-odd">Return<span class="colon">:</span></dt>
+<dd class="field-odd"><p>true to allow the transition, false to block it</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="c type">
+<dt class="sig sig-object c" id="c.ezSm_ActionFunction_t">
+<span class="k"><span class="pre">type</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">ezSm_ActionFunction_t</span></span></span><a class="headerlink" href="#c.ezSm_ActionFunction_t" title="Link to this definition">¶</a><br /></dt>
+<dd><p>Function executed during a transition.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Param context<span class="colon">:</span></dt>
+<dd class="field-odd"><p>User-defined context pointer</p>
+</dd>
+<dt class="field-even">Param event<span class="colon">:</span></dt>
+<dd class="field-even"><p>The event that is being processed</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+<section id="structures">
+<h3>Structures<a class="headerlink" href="#structures" title="Link to this heading">¶</a></h3>
+<dl class="c struct">
+<dt class="sig sig-object c" id="c.ezSm_Event_t">
+<span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">ezSm_Event_t</span></span></span><a class="headerlink" href="#c.ezSm_Event_t" title="Link to this definition">¶</a><br /></dt>
+<dd><p>Represents an event.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Member id<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Event id (<code class="docutils literal notranslate"><span class="pre">ezSm_EventId_t</span></code>, 16 bit)</p>
+</dd>
+<dt class="field-even">Member data<span class="colon">:</span></dt>
+<dd class="field-even"><p>Payload, a union of <code class="docutils literal notranslate"><span class="pre">bool</span> <span class="pre">data_bool</span></code>, <code class="docutils literal notranslate"><span class="pre">uint32_t</span> <span class="pre">data_size</span></code>,
+<code class="docutils literal notranslate"><span class="pre">int32_t</span> <span class="pre">data_int</span></code>, <code class="docutils literal notranslate"><span class="pre">float</span> <span class="pre">data_float</span></code> and <code class="docutils literal notranslate"><span class="pre">void</span> <span class="pre">*data</span></code></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="c struct">
+<dt class="sig sig-object c" id="c.ezSm_State_t">
+<span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">ezSm_State_t</span></span></span><a class="headerlink" href="#c.ezSm_State_t" title="Link to this definition">¶</a><br /></dt>
+<dd><p>Represents a state.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Member id<span class="colon">:</span></dt>
+<dd class="field-odd"><p>State id (<code class="docutils literal notranslate"><span class="pre">ezSm_StateId_t</span></code>, 16 bit)</p>
+</dd>
+<dt class="field-even">Member on_entry<span class="colon">:</span></dt>
+<dd class="field-even"><p>Entry function (can be NULL)</p>
+</dd>
+<dt class="field-odd">Member on_exit<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Exit function (can be NULL)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="c struct">
+<dt class="sig sig-object c" id="c.ezSm_Transition_t">
+<span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">ezSm_Transition_t</span></span></span><a class="headerlink" href="#c.ezSm_Transition_t" title="Link to this definition">¶</a><br /></dt>
+<dd><p>Represents a row of the transition table.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Member current_state<span class="colon">:</span></dt>
+<dd class="field-odd"><p>State in which the row applies (can be a state with id <code class="docutils literal notranslate"><span class="pre">EZ_SM_ANY_STATE</span></code>)</p>
+</dd>
+<dt class="field-even">Member next_state<span class="colon">:</span></dt>
+<dd class="field-even"><p>State to enter (can be a state with id <code class="docutils literal notranslate"><span class="pre">EZ_SM_STAY</span></code>)</p>
+</dd>
+<dt class="field-odd">Member guard<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Guard function (can be NULL)</p>
+</dd>
+<dt class="field-even">Member action<span class="colon">:</span></dt>
+<dd class="field-even"><p>Action function (can be NULL)</p>
+</dd>
+<dt class="field-odd">Member event_id<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Event that triggers the row</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="c struct">
+<dt class="sig sig-object c" id="c.ezSm_Config_t">
+<span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">ezSm_Config_t</span></span></span><a class="headerlink" href="#c.ezSm_Config_t" title="Link to this definition">¶</a><br /></dt>
+<dd><p>Represents the configuration of a state machine.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Member transitions_table<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Pointer to the array of transitions</p>
+</dd>
+<dt class="field-even">Member transitions_count<span class="colon">:</span></dt>
+<dd class="field-even"><p>Number of transitions</p>
+</dd>
+<dt class="field-odd">Member initial_state<span class="colon">:</span></dt>
+<dd class="field-odd"><p>State entered by <code class="docutils literal notranslate"><span class="pre">ezSm_Start()</span></code></p>
+</dd>
+<dt class="field-even">Member on_transition<span class="colon">:</span></dt>
+<dd class="field-even"><p>Callback <code class="docutils literal notranslate"><span class="pre">void</span> <span class="pre">(*)(void</span> <span class="pre">*context,</span> <span class="pre">const</span> <span class="pre">ezSm_State_t</span> <span class="pre">*from,</span> <span class="pre">const</span> <span class="pre">ezSm_State_t</span> <span class="pre">*to,</span> <span class="pre">const</span> <span class="pre">ezSm_Event_t</span> <span class="pre">*event)</span></code>,
+called after a state change (can be NULL)</p>
+</dd>
+<dt class="field-odd">Member on_unhandled<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Callback <code class="docutils literal notranslate"><span class="pre">void</span> <span class="pre">(*)(void</span> <span class="pre">*context,</span> <span class="pre">const</span> <span class="pre">ezSm_State_t</span> <span class="pre">*state,</span> <span class="pre">const</span> <span class="pre">ezSm_Event_t</span> <span class="pre">*event)</span></code>,
+called when no row handles the event (can be NULL)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="c struct">
+<dt class="sig sig-object c" id="c.ezSm_StateMachine_t">
+<span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">ezSm_StateMachine_t</span></span></span><a class="headerlink" href="#c.ezSm_StateMachine_t" title="Link to this definition">¶</a><br /></dt>
+<dd><p>Represents a state machine instance. The members are managed by the component.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Member config<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Pointer to the configuration, NULL until initialized</p>
+</dd>
+<dt class="field-even">Member context<span class="colon">:</span></dt>
+<dd class="field-even"><p>User-defined context pointer</p>
+</dd>
+<dt class="field-odd">Member busy<span class="colon">:</span></dt>
+<dd class="field-odd"><p>True while an event is processed</p>
+</dd>
+<dt class="field-even">Member event_queue<span class="colon">:</span></dt>
+<dd class="field-even"><p>Queue holding the pending events</p>
+</dd>
+<dt class="field-odd">Member current_state<span class="colon">:</span></dt>
+<dd class="field-odd"><p>The active state</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+<section id="enumerations">
+<h3>Enumerations<a class="headerlink" href="#enumerations" title="Link to this heading">¶</a></h3>
+<dl class="c enum">
+<dt class="sig sig-object c" id="c.ezSm_Result_t">
+<span class="k"><span class="pre">enum</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">ezSm_Result_t</span></span></span><a class="headerlink" href="#c.ezSm_Result_t" title="Link to this definition">¶</a><br /></dt>
+<dd><p>Result of <code class="docutils literal notranslate"><span class="pre">ezSm_DispatchEvent()</span></code>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Enumerator EZ_SM_TRANSITIONED<span class="colon">:</span></dt>
+<dd class="field-odd"><p>State changed</p>
+</dd>
+<dt class="field-even">Enumerator EZ_SM_INTERNAL<span class="colon">:</span></dt>
+<dd class="field-even"><p>An internal transition was executed</p>
+</dd>
+<dt class="field-odd">Enumerator EZ_SM_IGNORED<span class="colon">:</span></dt>
+<dd class="field-odd"><p>No row handles the event</p>
+</dd>
+<dt class="field-even">Enumerator EZ_SM_GUARD_BLOCKED<span class="colon">:</span></dt>
+<dd class="field-even"><p>Rows exist, all guards returned false</p>
+</dd>
+<dt class="field-odd">Enumerator EZ_SM_QUEUED<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Machine was busy, event queued</p>
+</dd>
+<dt class="field-even">Enumerator EZ_SM_ERROR<span class="colon">:</span></dt>
+<dd class="field-even"><p>Invalid argument, not initialized, or queue full</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+<section id="constants">
+<h3>Constants<a class="headerlink" href="#constants" title="Link to this heading">¶</a></h3>
+<dl class="c macro">
+<dt class="sig sig-object c" id="c.EZ_SM_ANY_STATE">
+<span class="sig-name descname"><span class="n"><span class="pre">EZ_SM_ANY_STATE</span></span></span><a class="headerlink" href="#c.EZ_SM_ANY_STATE" title="Link to this definition">¶</a><br /></dt>
+<dd><p>State id (0xFFFF) that makes a transition row apply to every state.</p>
+</dd></dl>
+
+<dl class="c macro">
+<dt class="sig sig-object c" id="c.EZ_SM_STAY">
+<span class="sig-name descname"><span class="n"><span class="pre">EZ_SM_STAY</span></span></span><a class="headerlink" href="#c.EZ_SM_STAY" title="Link to this definition">¶</a><br /></dt>
+<dd><p>State id (0xFFFE) that makes a transition row an internal transition.</p>
+</dd></dl>
+
+<dl class="c macro">
+<dt class="sig sig-object c" id="c.EZ_STATE_MACHINE_ENTER_CRITICAL_SECTION">
+<span class="sig-name descname"><span class="n"><span class="pre">EZ_STATE_MACHINE_ENTER_CRITICAL_SECTION</span></span></span><a class="headerlink" href="#c.EZ_STATE_MACHINE_ENTER_CRITICAL_SECTION" title="Link to this definition">¶</a><br /></dt>
+<dd><p>Macro called before the busy flag or the queue is accessed. Empty by default.
+Define it, together with <code class="docutils literal notranslate"><span class="pre">EZ_STATE_MACHINE_EXIT_CRITICAL_SECTION</span></code>, when events are
+posted from interrupts or from several tasks.</p>
+</dd></dl>
+
+</section>
+</section>
+<section id="usage">
+<h2>Usage<a class="headerlink" href="#usage" title="Link to this heading">¶</a></h2>
+<p>The following example implements a simple device with the states <em>IDLE</em> and <em>RUNNING</em>.
+It can be started and stopped, and a <em>tick</em> event is only accepted while running.</p>
+<div class="highlight-c notranslate"><div class="highlight"><pre><span></span><span class="cp">#include</span><span class="w"> </span><span class="cpf">&quot;ez_state_machine_v2.h&quot;</span>
+
+<span class="k">typedef</span><span class="w"> </span><span class="k">enum</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">ST_IDLE</span><span class="p">,</span><span class="w"> </span><span class="n">ST_RUNNING</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="n">StateId</span><span class="p">;</span>
+<span class="k">typedef</span><span class="w"> </span><span class="k">enum</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">EV_START</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="n">EV_STOP</span><span class="p">,</span><span class="w"> </span><span class="n">EV_TICK</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="n">EventId</span><span class="p">;</span>
+
+<span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">ticks</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="n">DeviceData</span><span class="p">;</span>
+
+<span class="k">static</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">RunningEntry</span><span class="p">(</span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">context</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">((</span><span class="n">DeviceData</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">context</span><span class="p">)</span><span class="o">-&gt;</span><span class="n">ticks</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="k">static</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">CountTick</span><span class="p">(</span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">context</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">ezSm_Event_t</span><span class="w"> </span><span class="o">*</span><span class="n">event</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">((</span><span class="n">DeviceData</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">context</span><span class="p">)</span><span class="o">-&gt;</span><span class="n">ticks</span><span class="o">++</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="k">static</span><span class="w"> </span><span class="kt">bool</span><span class="w"> </span><span class="nf">IsStartAllowed</span><span class="p">(</span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">context</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">ezSm_Event_t</span><span class="w"> </span><span class="o">*</span><span class="n">event</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="n">event</span><span class="o">-&gt;</span><span class="n">data</span><span class="p">.</span><span class="n">data_bool</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+
+<span class="cm">/* States */</span>
+<span class="k">static</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">ezSm_State_t</span><span class="w"> </span><span class="n">idle</span><span class="w">    </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="n">ST_IDLE</span><span class="p">,</span><span class="w">    </span><span class="nb">NULL</span><span class="p">,</span><span class="w">         </span><span class="nb">NULL</span><span class="p">};</span>
+<span class="k">static</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">ezSm_State_t</span><span class="w"> </span><span class="n">running</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="n">ST_RUNNING</span><span class="p">,</span><span class="w"> </span><span class="n">RunningEntry</span><span class="p">,</span><span class="w"> </span><span class="nb">NULL</span><span class="p">};</span>
+<span class="k">static</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">ezSm_State_t</span><span class="w"> </span><span class="n">stay</span><span class="w">    </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="n">EZ_SM_STAY</span><span class="p">,</span><span class="w"> </span><span class="nb">NULL</span><span class="p">,</span><span class="w">         </span><span class="nb">NULL</span><span class="p">};</span>
+
+<span class="cm">/* Transition table: current state, next state, guard, action, event */</span>
+<span class="k">static</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">ezSm_Transition_t</span><span class="w"> </span><span class="n">transitions</span><span class="p">[]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="p">{</span><span class="o">&amp;</span><span class="n">idle</span><span class="p">,</span><span class="w">    </span><span class="o">&amp;</span><span class="n">running</span><span class="p">,</span><span class="w"> </span><span class="n">IsStartAllowed</span><span class="p">,</span><span class="w"> </span><span class="nb">NULL</span><span class="p">,</span><span class="w">      </span><span class="n">EV_START</span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span><span class="o">&amp;</span><span class="n">running</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">idle</span><span class="p">,</span><span class="w">    </span><span class="nb">NULL</span><span class="p">,</span><span class="w">           </span><span class="nb">NULL</span><span class="p">,</span><span class="w">      </span><span class="n">EV_STOP</span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span><span class="o">&amp;</span><span class="n">running</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">stay</span><span class="p">,</span><span class="w">    </span><span class="nb">NULL</span><span class="p">,</span><span class="w">           </span><span class="n">CountTick</span><span class="p">,</span><span class="w"> </span><span class="n">EV_TICK</span><span class="p">},</span>
+<span class="p">};</span>
+
+<span class="k">static</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">ezSm_Config_t</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="p">.</span><span class="n">transitions_table</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">transitions</span><span class="p">,</span>
+<span class="w">    </span><span class="p">.</span><span class="n">transitions_count</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">sizeof</span><span class="p">(</span><span class="n">transitions</span><span class="p">)</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="k">sizeof</span><span class="p">(</span><span class="n">transitions</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span>
+<span class="w">    </span><span class="p">.</span><span class="n">initial_state</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">&amp;</span><span class="n">idle</span><span class="p">,</span>
+<span class="w">    </span><span class="p">.</span><span class="n">on_transition</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">NULL</span><span class="p">,</span>
+<span class="w">    </span><span class="p">.</span><span class="n">on_unhandled</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">NULL</span><span class="p">,</span>
+<span class="p">};</span>
+
+<span class="k">static</span><span class="w"> </span><span class="n">ezSm_StateMachine_t</span><span class="w"> </span><span class="n">sm</span><span class="p">;</span><span class="w">      </span><span class="cm">/* zero initialized as a global variable */</span>
+<span class="k">static</span><span class="w"> </span><span class="n">DeviceData</span><span class="w"> </span><span class="n">data</span><span class="p">;</span>
+<span class="k">static</span><span class="w"> </span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">event_buffer</span><span class="p">[</span><span class="mi">256</span><span class="p">];</span>
+
+<span class="kt">void</span><span class="w"> </span><span class="nf">DeviceInit</span><span class="p">(</span><span class="kt">void</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">ezSm_Init</span><span class="p">(</span><span class="o">&amp;</span><span class="n">sm</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">config</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">data</span><span class="p">,</span><span class="w"> </span><span class="n">event_buffer</span><span class="p">,</span><span class="w"> </span><span class="k">sizeof</span><span class="p">(</span><span class="n">event_buffer</span><span class="p">)))</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">        </span><span class="n">ezSm_Start</span><span class="p">(</span><span class="o">&amp;</span><span class="n">sm</span><span class="p">);</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+
+<span class="kt">void</span><span class="w"> </span><span class="nf">DeviceStart</span><span class="p">(</span><span class="kt">void</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="n">ezSm_Event_t</span><span class="w"> </span><span class="n">event</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{.</span><span class="n">id</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">EV_START</span><span class="p">,</span><span class="w"> </span><span class="p">.</span><span class="n">data</span><span class="p">.</span><span class="n">data_bool</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">true</span><span class="p">};</span>
+<span class="w">    </span><span class="n">ezSm_PostEvent</span><span class="p">(</span><span class="o">&amp;</span><span class="n">sm</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">event</span><span class="p">);</span><span class="w">        </span><span class="cm">/* can be called from an interrupt */</span>
+<span class="p">}</span>
+
+<span class="kt">void</span><span class="w"> </span><span class="nf">DeviceTask</span><span class="p">(</span><span class="kt">void</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="n">ezSm_Run</span><span class="p">(</span><span class="o">&amp;</span><span class="n">sm</span><span class="p">);</span><span class="w">                      </span><span class="cm">/* call periodically */</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<section id="usage-rules">
+<h3>Usage rules<a class="headerlink" href="#usage-rules" title="Link to this heading">¶</a></h3>
+<ul class="simple">
+<li><p>The <code class="docutils literal notranslate"><span class="pre">ezSm_StateMachine_t</span></code> object must be zero initialized (a global or static variable)
+or passed through <code class="docutils literal notranslate"><span class="pre">ezSm_Init()</span></code> before any other function is called</p></li>
+<li><p>The configuration and all tables must stay valid as long as the state machine is used</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ezSm_Run()</span></code> must not be called from a state, guard, action or configuration callback</p></li>
+<li><p>Guards should have no side effects, because they can be evaluated for rows that are not taken</p></li>
+<li><p>Define the critical section macros if events are posted from interrupts or other tasks.
+<code class="docutils literal notranslate"><span class="pre">ezSm_Run()</span></code> and <code class="docutils literal notranslate"><span class="pre">ezSm_DispatchEvent()</span></code> themselves must be called from one context</p></li>
+<li><p>A malformed table is rejected by <code class="docutils literal notranslate"><span class="pre">ezSm_Init()</span></code>, but a wrong order of the rows
+(wildcard rows first) cannot be detected and hides the rows behind them</p></li>
+</ul>
+</section>
+</section>
+<section id="testing">
+<h2>Testing<a class="headerlink" href="#testing" title="Link to this heading">¶</a></h2>
+<p>The unit tests are located in <code class="docutils literal notranslate"><span class="pre">tests/service/state_machine/unittest_ez_state_machine_v2.cpp</span></code>.
+They are written with Catch2 as behavior driven scenarios, and use fff fakes for all callbacks.</p>
+</section>
+</section>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="../../../index.html">Easy Embedded Framework</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="../../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">System:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../system_overview.html">EasyEmbedded Framework Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../system_architecture.html">EasyEmbedded Framework Architecture</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Service:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../cli/cli.html">Command Line Interface (CLI)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../data_model/data_model.html">Data Model</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../ipc/ipc.html">Interprocess Communication (IPC)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../rpc/rpc.html">Remote Procedure Call (RPC)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../driver/driver.html">Driver</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../event_bus/event_bus.html">Event Bus</a></li>
+<li class="toctree-l1"><a class="reference internal" href="state_machine.html">State Machine</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">State Machine V2</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task_worker/task_worker.html">Task Worker</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Middlewares:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../middlewares/osal/osal.html">Operating System Abstraction Layer (OSAL)</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Utilities:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../utilities/assert/assert.html">Assert</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../utilities/hexdump/hexdump.html">Hexdump</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../utilities/linked_list/linked_list.html">Linked List</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../utilities/logging/logging.html">Logging</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../utilities/queue/queue.html">Queue</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../utilities/ring_buffer/ring_buffer.html">Ring Buffer</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../utilities/static_alloc/static_alloc.html">Static Allocation</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../../../index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="state_machine.html" title="previous chapter">State Machine</a></li>
+      <li>Next: <a href="../task_worker/task_worker.html" title="next chapter">Task Worker</a></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2026, Hai Nguyen.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 9.2.0</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+      |
+      <a href="../../../_sources/easy_embedded/service/state_machine/state_machine_v2.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>
