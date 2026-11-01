@@ -25,6 +25,24 @@
             }
         },
         {
+            "name": "linux_cpp_based",
+            "displayName": "Linux C++ based configuration",
+            "description": "C++ based configuration using Makefiles",
+            "generator": "Unix Makefiles",
+            "hidden": true,
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Linux"
+            },
+            "cacheVariables": {
+                "TARGET_PATH": "samples/linux_platform",
+                "CMAKE_C_FLAGS": "-m32",
+                "CMAKE_CXX_FLAGS": "-m32",
+                "CMAKE_EXE_LINKER_FLAGS": "-m32"
+            }
+        },
+        {
             "name": "linux_threadx",
             "displayName": "Linux base configuration using threadx rtos",
             "description": "Base configuration using threadx rtos",
@@ -83,6 +101,16 @@
             }
         },
         {
+            "name": "linux_platform_debug",
+            "displayName": "linux_platform_debug",
+            "description": "Debug configuration using ninja generator on linux",
+            "inherits": "linux_cpp_based",
+            "binaryDir": "${sourceDir}/build_linux_platform_debug",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
             "name": "linux_test_debug",
             "displayName": "linux_test_debug",
             "description": "Build, run unit test and measure coverage",
@@ -91,7 +119,7 @@
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug",
                 "CMAKE_C_FLAGS": "-m32 -fprofile-arcs -ftest-coverage -fPIC",
-                "CMAKE_CXX_FLAGS": "-m32",
+                "CMAKE_CXX_FLAGS": "-m32 -fprofile-arcs -ftest-coverage -fPIC",
                 "CMAKE_EXE_LINKER_FLAGS": "-m32"
             }
         },
@@ -124,6 +152,10 @@
         {
             "name": "linux_release",
             "configurePreset": "linux_release"
+        },
+        {
+            "name": "linux_platform_debug",
+            "configurePreset": "linux_platform_debug"
         },
         {
             "name": "linux_test_debug",
