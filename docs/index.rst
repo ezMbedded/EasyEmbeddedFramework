@@ -20,6 +20,12 @@ Table of contents:
 
 .. toctree::
    :maxdepth: 1
+   :caption: Platform:
+
+   easy_embedded/platform/platform.rst
+
+.. toctree::
+   :maxdepth: 1
    :caption: Service:
 
    easy_embedded/service/cli/cli.rst

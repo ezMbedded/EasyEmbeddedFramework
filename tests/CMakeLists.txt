@@ -70,4 +70,8 @@ if(ENABLE_EZ_CLI)
     add_subdirectory(service/cli)
 endif()
 
+if(ENABLE_EZ_PLATFORM)
+add_subdirectory(platform)
+endif()
+
 # End of file
