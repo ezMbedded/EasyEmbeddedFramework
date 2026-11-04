@@ -47,51 +47,72 @@ extern "C" {
 * Component Preprocessor Macros
 *****************************************************************************/
 
-/*@brief: iterate thru a link list starting from head
+/** @brief Iterate through a linked list, starting from the node after head.
  *
+ *  @details The loop ends when the iterator comes back to head. The list must
+ *  not be modified while iterating.
+ *
+ *  @param node: Iterator variable of type struct Node *
+ *  @param head: Pointer to the list head (sentinel)
  */
 #define EZ_LINKEDLIST_FOR_EACH(node,head)     for(node = (head)->next; node != head; node = (node)->next)
 
-/*@brief: initialize a node
+/** @brief Static initializer of a node. The node points to itself.
  *
+ *  @param name: Name of the node variable (not a pointer)
  */
 #define EZ_LINKEDLIST_INIT_NODE(name)         {&(name), &(name)}
 
-/* It deserves a whole story. Generally speaking, it use the same concept 
- * as in the linked list of the linux kernel
- * (type*)0 cast address 0 (zero) to data type "type"
- * (type*)0)->member access the member of type "type"
- * ((char*)&(((type*)0)->member) - (char*)((type*)0)): minus the address of the member and the addres 0
+/** @brief Offset in bytes of a member inside a structure type.
+ *
+ *  @details It uses the same concept as the linked list of the linux kernel:
+ *  (type*)0 casts address 0 (zero) to data type "type",
+ *  ((type*)0)->member accesses the member of type "type", and the address of
+ *  the member minus address 0 gives the offset.
+ *
+ *  @param type: Structure type
+ *  @param member: Name of the member inside the structure
  */
 #define OFFSET(type, member) ((char*)&(((type*)0)->member) - (char*)((type*)0))
 
-/*@brief Get the parent of the data structure, where the linked list is embedded
+/** @brief Get the parent of the data structure, where the linked list node is
+ *  embedded.
  *
+ *  @param ptr: Pointer to the embedded struct Node
+ *  @param member: Name of the struct Node member inside the parent type
+ *  @param type: Type of the parent structure
  */
 #define EZ_LINKEDLIST_GET_PARENT_OF(ptr,member,type) (type*)((char*)ptr - OFFSET(type, member))
 
-/*@brief advance a node to next node
+/** @brief Advance a node to the next node.
  *
+ *  @param node: Node variable of type struct Node *, assigned the next node
  */
 #define EZ_LINKEDLIST_TO_NEXT_NODE(node) node = node->next
 
-/*@brief Insert a node to head
+/** @brief Insert a node to the head of a list. See ezLinkedList_InsertHead.
  *
+ *  @param list_head: Pointer to the list head (sentinel)
+ *  @param node: Pointer to the node to insert
  */
 #define EZ_LINKEDLIST_ADD_HEAD(list_head,node) ezLinkedList_InsertHead(list_head, node)
 
-/*@brief Insert a node to tail
-  *
+/** @brief Insert a node to the tail of a list. See ezLinkedList_InsertTail.
+ *
+ *  @param list_head: Pointer to the list head (sentinel)
+ *  @param node: Pointer to the node to insert
  */
 #define EZ_LINKEDLIST_ADD_TAIL(list_head,node) ezLinkedList_InsertTail(list_head, node)
 
-/*@brief unlink a node
+/** @brief Unlink a node from its list. See ezLinkedList_UnlinkNode.
  *
+ *  @param node: Pointer to the node to unlink
  */
 #define EZ_LINKEDLIST_UNLINK_NODE(node)     ezLinkedList_UnlinkNode(node)
 
-/*@brief check if a list is empty
+/** @brief Check if a list is empty.
  *
+ *  @param list_head: Pointer to the list head (sentinel)
  */
 #define IS_LIST_EMPTY(list_head) ((list_head)->next == (list_head))
 
@@ -127,12 +148,14 @@ struct Node
 * @details The indication for new node is that, both head and tail point to
 *          itself
 *
-* @param    node: (IN)pointer to node
-* @return   None
+* @param    node: (IN)pointer to node, must not be NULL
 *
-* @pre None
-* @post Node is intialized.
+* @pre node is not NULL
+* @post Node is initialized.
+* @isr_safe{no}
+* @blocking{no}
 *
+* \b Example
 * @code
 * struct Node new_node;
 * ezLinkedList_InitNode(&new_node);
@@ -152,11 +175,14 @@ void ezLinkedList_InitNode (struct Node* node);
 * of nodes
 *
 * @param    list_head: (IN)pointer to the head of the list
-* @return   number of node
+* @return   number of node, 0 if list_head is NULL or the list is empty
 *
 * @pre None
 * @post None
+* @isr_safe{no}
+* @blocking{no}
 *
+* \b Example
 * @code
 * uint16_t size = ezLinkedList_GetListSize(head);
 * @endcode
@@ -170,25 +196,34 @@ uint16_t ezLinkedList_GetListSize(struct Node* list_head);
 *//** 
 * @brief Append a node after a node
 *
-* @details Detail description
+* @details The new node is linked right after appended_node.
 *
 * @param    new_node: (IN)pointer to the new node
 * @param    appended_node: (IN)pointer to the node, which new node will be
-                           appended to
+*                          appended to
 * @return   true if success, else false
 *
-* @pre None
-* @post None
+* @retval true   Node appended
+* @retval false  new_node or appended_node is NULL
 *
+* @pre None
+* @post On success, new_node follows appended_node.
+* @isr_safe{no}
+* @blocking{no}
+*
+* \b Example
 * @code
 * struct Node new_node;
 * struct Node appended_node;
 * ezLinkedList_InitNode(&new_node);
 * ezLinkedList_InitNode(&appended_node);
-* ezLinkedList_AppendNode(&new_node, &appended_node);
+* if (!ezLinkedList_AppendNode(&new_node, &appended_node))
+* {
+*     HandleError();
+* }
 * @endcode
 *
-* @see ezmLL_InitNode
+* @see ezLinkedList_InitNode
 *
 *****************************************************************************/
 bool ezLinkedList_AppendNode(struct Node *new_node, struct Node *appended_node);
@@ -206,15 +241,24 @@ bool ezLinkedList_AppendNode(struct Node *new_node, struct Node *appended_node);
 * @param    new_node: (IN)pointer to the new node to be inserted
 * @return   true if success, else false
 *
-* @pre None
-* @post None
+* @retval true   Node inserted
+* @retval false  list or new_node is NULL
 *
+* @pre None
+* @post On success, new_node is the first node of the list.
+* @isr_safe{no}
+* @blocking{no}
+*
+* \b Example
 * @code
 * struct Node list;
 * struct Node new_node;
 * ezLinkedList_InitNode(&list);
 * ezLinkedList_InitNode(&new_node);
-* ezLinkedList_InsertHead(&list, &new_node);
+* if (!ezLinkedList_InsertHead(&list, &new_node))
+* {
+*     HandleError();
+* }
 * @endcode
 *
 * @see ezLinkedList_InitNode
@@ -238,15 +282,24 @@ static inline bool ezLinkedList_InsertHead (struct Node * list, struct Node *new
 * @param    new_node: (IN)pointer to the new node to be inserted
 * @return   true if success, else false
 *
-* @pre None
-* @post None
+* @retval true   Node inserted
+* @retval false  list or new_node is NULL
 *
+* @pre None
+* @post On success, new_node is the last node of the list.
+* @isr_safe{no}
+* @blocking{no}
+*
+* \b Example
 * @code
 * struct Node list;
 * struct Node new_node;
 * ezLinkedList_InitNode(&list);
 * ezLinkedList_InitNode(&new_node);
-* ezLinkedList_InsertTail(&list, &new_node);
+* if (!ezLinkedList_InsertTail(&list, &new_node))
+* {
+*     HandleError();
+* }
 * @endcode
 *
 * @see ezLinkedList_InitNode
@@ -270,11 +323,20 @@ static inline bool ezLinkedList_InsertTail (struct Node * list, struct Node *new
 * @param    list: (IN)pointer to the linked list (sentinel)
 * @return   pointer to the removed node or NULL if the list is empty
 *
-* @pre None
-* @post None
+* @retval NULL  list is NULL or the list is empty
 *
+* @pre None
+* @post On success, the removed node is no longer in the list.
+* @isr_safe{no}
+* @blocking{no}
+*
+* \b Example
 * @code
 * struct Node *removed_node = ezLinkedList_RemoveFirst(&list);
+* if (removed_node == NULL)
+* {
+*     HandleEmptyList();
+* }
 * @endcode
 *
 *****************************************************************************/
@@ -286,15 +348,22 @@ struct Node * ezLinkedList_RemoveFirst(struct Node * list);
 *//** 
 * @brief Check if a node is in a list
 *
-* @details
+* @details This function transverses the list starting after head and compares
+* each node with searched_node.
 *
 * @param    head: (IN)pointer to head of the list
 * @param    searched_node: (IN)node to be checked
 * @return   true if existing, else false
 *
-* @pre None
-* @post none
+* @retval true   searched_node is in the list
+* @retval false  Node not found, or head or searched_node is NULL
 *
+* @pre None
+* @post None
+* @isr_safe{no}
+* @blocking{no}
+*
+* \b Example
 * @code
 * bool exist = ezLinkedList_IsNodeInList(list, &checked_node);
 * @endcode
@@ -311,21 +380,29 @@ bool ezLinkedList_IsNodeInList(struct Node *head, struct Node *searched_node);
 * @param    node: (IN)pointer to the node to be unlinked
 *   
 * @return   true if the node was successfully unlinked, false if the node was NULL
-* @pre None
+*
+* @retval true   Node unlinked
+* @retval false  node is NULL
+*
+* @pre The node is part of a list or initialized with ezLinkedList_InitNode.
 * @post The node is unlinked from the list and re-initialized.
-*       
+* @isr_safe{no}
+* @blocking{no}
+*
+* \b Example
 * @code
 * struct Node node;
 * ezLinkedList_InitNode(&node);
 * // Assume the node is part of a list
-* bool success = ezLinkedList_UnlinkNode(&node);
+* if (!ezLinkedList_UnlinkNode(&node))
+* {
+*     HandleError();
+* }
 * @endcode
-*   
+*
 * @see ezLinkedList_InitNode
-*   
-*   
-*   
-* *************************************************************************/
+*
+*****************************************************************************/
 static inline bool ezLinkedList_UnlinkNode(struct Node *node)
 {
     if (node != NULL)
