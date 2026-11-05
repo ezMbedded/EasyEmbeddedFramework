@@ -65,8 +65,10 @@ extern "C" {
 /*****************************************************************************
 * Component Preprocessor Macros
 *****************************************************************************/
+/** @brief Enter a critical section around queue access and the busy flag. Empty by default, define it in ez_target_config.h */
 #ifndef EZ_STATE_MACHINE_ENTER_CRITICAL_SECTION
 #define EZ_STATE_MACHINE_ENTER_CRITICAL_SECTION()
+/** @brief Exit the critical section. Empty by default */
 #define EZ_STATE_MACHINE_EXIT_CRITICAL_SECTION()
 #endif
 
@@ -160,96 +162,196 @@ typedef enum
 *****************************************************************************/
 
 
-/******************************************************************************
-*
+/*****************************************************************************
 * Function : ezSm_Init
 *//**
-* @Description:
+* @brief Initializes the state machine with the provided configuration, context and event buffer
 *
-* Initializes the state machine with the provided configuration, context, and event buffer.
-* The configuration is validated: the initial state, the transition table and
-* the state pointers of every transition must not be NULL.
+* @details The configuration is validated: the configuration pointer, the
+* initial state, the transition table and the current and next state pointers
+* of every transition must not be NULL, and the transition count must not be 0.
+* The event queue is created in event_buff, so the buffer determines how many
+* events can be queued. The state machine stays not initialized if this
+* function fails.
 *
-* @param    sm: (IN)Pointer to the state machine
-* @param    config: (IN)Pointer to the state machine configuration
-* @param    context: (IN)Pointer to the context data
-* @param    event_buff: (IN)Pointer to the event buffer
-* @param    event_buff_size: (IN)Size of the event buffer
-* @return   true if initialization is successful, false otherwise
+* @param[in]    sm: Pointer to the state machine
+* @param[in]    config: Pointer to the state machine configuration. Not copied,
+*               must outlive the state machine
+* @param[in]    context: Pointer to the context data given to every callback. Can be NULL
+* @param[in]    event_buff: Memory buffer given to the event queue. Owned by the
+*               caller, must outlive the state machine
+* @param[in]    event_buff_size: Size of the event buffer in bytes
+* @return       bool
 *
-*******************************************************************************/
+* @retval true      State machine initialized
+* @retval false     A pointer is NULL, event_buff_size is 0, the configuration is
+*                   invalid, or the event queue could not be created
+*
+* @pre None
+* @post The current state is the initial state, but its entry function is not
+* run until ezSm_Start() is called
+* @isr_safe{no}
+* @blocking{no}
+* @see ezSm_Start
+*
+* \b Example
+* @code
+* static uint8_t event_buff[128];
+* ezSm_StateMachine_t sm;
+* if (ezSm_Init(&sm, &config, NULL, event_buff, sizeof(event_buff)) == false)
+* {
+*     HandleError();
+* }
+* @endcode
+*
+*****************************************************************************/
 bool ezSm_Init(ezSm_StateMachine_t *sm,
     const ezSm_Config_t *config,
     void *context,
     uint8_t *event_buff, size_t event_buff_size);
 
 
-/******************************************************************************
-*
+/*****************************************************************************
 * Function : ezSm_Start
 *//**
-* @Description:
+* @brief Enters the initial state and runs its entry function
 *
-* Enters the initial state and runs its entry function. Call it once after
-* ezSm_Init().
+* @details Does nothing if the state machine is NULL or not initialized. The
+* on_transition callback is not called.
 *
-* @param    sm: (IN)Pointer to the state machine
-* @return   None
+* @param[in]    sm: Pointer to the state machine
 *
-*******************************************************************************/
+* @pre ezSm_Init() succeeded
+* @post The current state is the initial state
+* @warning Call it once after ezSm_Init(). The entry function of the initial
+* state runs on every call.
+* @isr_safe{no}
+* @blocking{no}
+* @see ezSm_Init
+*
+* \b Example
+* @code
+* ezSm_Start(&sm);
+* @endcode
+*
+*****************************************************************************/
 void ezSm_Start(ezSm_StateMachine_t *sm);
 
 
-/******************************************************************************
-*
+/*****************************************************************************
 * Function : ezSm_PostEvent
 *//**
-* @Description:
+* @brief Copies the event into the event queue
 *
-* Copies the event into the event queue. The event is processed by ezSm_Run().
-* Safe to call from an interrupt if EZ_STATE_MACHINE_ENTER_CRITICAL_SECTION is
-* defined accordingly.
+* @details The event is processed later by ezSm_Run(). The queue operation is
+* enclosed by EZ_STATE_MACHINE_ENTER_CRITICAL_SECTION() and
+* EZ_STATE_MACHINE_EXIT_CRITICAL_SECTION(), which are empty unless defined by
+* the target configuration.
 *
-* @param    sm: (IN)Pointer to the state machine
-* @param    event: (IN)Pointer to the event, copied into the queue
-* @return   true if the event is queued, false if the queue is full or the
-*           arguments are invalid
+* @param[in]    sm: Pointer to the state machine
+* @param[in]    event: Pointer to the event, copied into the queue. A pointer
+*               stored in the event data is copied, not the data it points to
+* @return       bool
 *
-*******************************************************************************/
+* @retval true      Event queued
+* @retval false     sm is NULL or not initialized, event is NULL, or the queue is full
+*
+* @pre ezSm_Init() succeeded
+* @post The event is appended to the queue
+* @warning With the default (empty) critical section macros this function is
+* not protected against concurrent access, for example from an ISR.
+* @isr_safe{no}
+* @blocking{no}
+* @see ezSm_Run, ezSm_DispatchEvent
+*
+* \b Example
+* @code
+* ezSm_Event_t event = { .id = EVENT_BUTTON };
+* if (ezSm_PostEvent(&sm, &event) == false)
+* {
+*     HandleError();
+* }
+* @endcode
+*
+*****************************************************************************/
 bool ezSm_PostEvent(ezSm_StateMachine_t *sm, const ezSm_Event_t *event);
 
 
-/******************************************************************************
-*
+/*****************************************************************************
 * Function : ezSm_DispatchEvent
 *//**
-* @Description:
+* @brief Processes the event immediately
 *
-* Processes the event immediately. If the state machine is already busy
-* (called from a callback or from another context), the event is queued and
-* EZ_SM_QUEUED is returned.
+* @details The transition table is searched in order. If the state machine is
+* already busy (called from a callback or from another context), the event is
+* queued instead and EZ_SM_QUEUED is returned. The user callbacks (guard,
+* action, entry, exit, on_transition, on_unhandled) run in the caller context.
 *
-* @param    sm: (IN)Pointer to the state machine
-* @param    event: (IN)Pointer to the event
-* @return   see ezSm_Result_t
+* @param[in]    sm: Pointer to the state machine
+* @param[in]    event: Pointer to the event
+* @return       ezSm_Result_t
 *
-*******************************************************************************/
+* @retval EZ_SM_TRANSITIONED    State changed
+* @retval EZ_SM_INTERNAL        A row with next state EZ_SM_STAY matched, its action ran
+* @retval EZ_SM_IGNORED         No row matches the current state and event.
+*                               on_unhandled is called if set
+* @retval EZ_SM_GUARD_BLOCKED   Matching rows exist but every guard returned
+*                               false. on_unhandled is not called
+* @retval EZ_SM_QUEUED          State machine was busy, event was queued
+* @retval EZ_SM_ERROR           sm is NULL or not initialized, event is NULL, or
+*                               the state machine was busy and the queue is full
+*
+* @pre ezSm_Init() and ezSm_Start() were called
+* @post The current state may have changed
+* @warning The busy flag is not reset on EZ_SM_ERROR returned for a busy state machine;
+* the caller that owns the flag keeps it.
+* @isr_safe{no}
+* @blocking{no}
+* @see ezSm_PostEvent, ezSm_Run
+*
+* \b Example
+* @code
+* ezSm_Event_t event = { .id = EVENT_BUTTON };
+* if (ezSm_DispatchEvent(&sm, &event) == EZ_SM_ERROR)
+* {
+*     HandleError();
+* }
+* @endcode
+*
+*****************************************************************************/
 ezSm_Result_t ezSm_DispatchEvent(ezSm_StateMachine_t *sm, const ezSm_Event_t *event);
 
 
-/******************************************************************************
-*
+/*****************************************************************************
 * Function : ezSm_Run
 *//**
-* @Description:
+* @brief Processes all queued events
 *
-* Processes all queued events. Must not be called from a state machine
-* callback; in that case it returns 0 immediately.
+* @details Pops the queued events in order and dispatches each one with
+* ezSm_DispatchEvent() until the queue is empty. Events posted by callbacks
+* during the run are processed in the same call. An entry in the queue with an
+* unexpected size is dropped and not counted. A failed dispatch is logged and
+* still counted.
 *
-* @param    sm: (IN)Pointer to the state machine
-* @return   Number of processed events
+* @param[in]    sm: Pointer to the state machine
+* @return       size_t Number of processed events
 *
-*******************************************************************************/
+* @retval 0     Nothing processed, or sm is NULL or not initialized, or the
+*               state machine is busy (called from a callback)
+*
+* @pre ezSm_Init() and ezSm_Start() were called
+* @post The event queue is empty
+* @warning Must not be called from a state, guard, action or config callback.
+* @isr_safe{no}
+* @blocking{no}
+* @see ezSm_PostEvent
+*
+* \b Example
+* @code
+* size_t num = ezSm_Run(&sm);
+* @endcode
+*
+*****************************************************************************/
 size_t ezSm_Run(ezSm_StateMachine_t *sm);
 
 #ifdef __cplusplus

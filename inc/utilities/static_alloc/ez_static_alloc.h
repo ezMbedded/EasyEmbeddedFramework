@@ -84,9 +84,9 @@ struct MemList
  */
 struct MemBlock
 {
-    struct Node node;   /* Linked list node */
-    void* buff;         /* Pointer to the allocated memory */
-    size_t buff_size;   /* Size of the allocated memory */
+    struct Node node;   /**< Linked list node */
+    void* buff;         /**< Pointer to the data of the chunk */
+    size_t buff_size;   /**< Size of the data of the chunk in byte */
 };
 
 
@@ -124,19 +124,32 @@ typedef struct MemList ezmMemList;
 * multiple of it. Up to (alignment - 1) bytes at each end of the buffer are
 * therefore not used, and initialization fails if nothing is left.
 *
-* @param[in]    *mem_list:      handle to manage memory buffer
-* @param[in]    *buffer:        buffer to be managed
-* @param[in]    buffer_size:    size of the buffer
-* @return       True is initialization is success
+* The caller owns the buffer; it must stay valid while the list is used. Any
+* previous state of the handle is discarded, chunks which were still allocated
+* are forgotten.
+*
+* @param[in]    mem_list:       handle to manage memory buffer
+* @param[in]    buff:           buffer to be managed
+* @param[in]    buff_size:      size of the buffer in bytes
+* @return       true if the initialization is success, false if mem_list or
+*               buff is NULL, or the buffer is too small (see above). The handle
+*               is not ready in that case.
 *
 * @pre None
-* @post None
+* @post On success the handle is ready and holds one free block that spans the
+* managed area
+* @isr_safe{no}
+* @blocking{no}
+* @see ezStaticAlloc_DeinitMemList
 *
 * \b Example
 * @code
 * ezmMemList mem_list;
-* uint8_t buff[32];
-* bool success = ezStaticAlloc_InitMemList(&mem_list, buff, 32);
+* uint8_t buff[128];
+* if (!ezStaticAlloc_InitMemList(&mem_list, buff, sizeof(buff)))
+* {
+*     HandleError();
+* }
 * @endcode
 *
 *****************************************************************************/
@@ -151,15 +164,21 @@ bool ezStaticAlloc_InitMemList(ezmMemList* mem_list, void* buff, size_t buff_siz
 * @details The handle is not ready anymore. Pointers returned by
 * ezStaticAlloc_Malloc() of this list must not be used after this call.
 *
-* @param[in]    *mem_list:  handle to manage memory buffer
-* @return       true if the list was ready and is released, else false
+* @param[in]    mem_list:  handle to manage memory buffer
+* @return       true if the list was ready and is released, false if mem_list
+*               is NULL or not ready
 *
 * @pre mem_list must initialized
 * @post mem_list is not ready
+* @isr_safe{no}
+* @blocking{no}
 *
 * \b Example
 * @code
-* bool success = ezStaticAlloc_DeinitMemList(&mem_list);
+* if (!ezStaticAlloc_DeinitMemList(&mem_list))
+* {
+*     HandleError();
+* }
 * @endcode
 *
 * @see ezStaticAlloc_InitMemList
@@ -176,15 +195,20 @@ bool ezStaticAlloc_DeinitMemList(ezmMemList* mem_list);
 * @details List is ready when it is initialized with the function
 * ezStaticAlloc_InitMemList
 *
-* @param[in]    *mem_list:  handle to manage memory buffer
-* @return       true if ready, else false
+* @param[in]    mem_list:  handle to manage memory buffer
+* @return       true if ready, false if mem_list is NULL or not ready
 *
 * @pre None
 * @post None
+* @isr_safe{no}
+* @blocking{no}
 *
 * \b Example
 * @code
-* bool ready = ezStaticAlloc_IsMemListReady(&mem_list);
+* if (!ezStaticAlloc_IsMemListReady(&mem_list))
+* {
+*     HandleError();
+* }
 * @endcode
 *
 * @see ezStaticAlloc_InitMemList
@@ -200,9 +224,12 @@ bool ezStaticAlloc_IsMemListReady(ezmMemList *mem_list);
 *
 * @details This is the implementation of the malloc() function
 *
-* @param[in]    *mem_list:  handle to manage memory buffer
+* The search is first fit over the free blocks. The memory is not cleared
+* by this function (it is zeroed when it is freed).
+*
+* @param[in]    mem_list:   handle to manage memory buffer
 * @param[in]    alloc_size: number of byte to be allocated
-* @return       address of the allocated memory, NULL if the list is not
+* @return       address of the allocated memory, NULL if the list is NULL or not
 *               ready, the size is 0 or there is no free block that is big
 *               enough
 *
@@ -213,21 +240,27 @@ bool ezStaticAlloc_IsMemListReady(ezmMemList *mem_list);
 * the size is rounded up to a multiple of it. The size is not limited to 16 bit.
 *
 * @pre mem_list must initialized
-* @post None
+* @post The returned block is in the allocated list
+* @isr_safe{no}
+* @blocking{no}
 *
 * \b Example
 * @code
 * ezmMemList mem_list;
-* uint8_t buff[32];
-* bool success = ezStaticAlloc_InitMemList(&mem_list, buff, 32);
-* uint32_t *foo = (uint32_t*)ezStaticAlloc_Malloc(&mem_list, sizeof(uint32_t));
-* if(foo != NULL)
+* uint8_t buff[128];
+* if (!ezStaticAlloc_InitMemList(&mem_list, buff, sizeof(buff)))
 * {
-*     printf("ok");
+*     HandleError();
+* }
+* uint32_t *foo = (uint32_t*)ezStaticAlloc_Malloc(&mem_list, sizeof(uint32_t));
+* if (foo == NULL)
+* {
+*     HandleError();
 * }
 * @endcode
 *
 * @see ezStaticAlloc_InitMemList
+* @see ezStaticAlloc_Free
 *
 *****************************************************************************/
 void *ezStaticAlloc_Malloc(ezmMemList* mem_list, size_t alloc_size);
@@ -240,31 +273,43 @@ void *ezStaticAlloc_Malloc(ezmMemList* mem_list, size_t alloc_size);
 *
 * @details Implementation of the free() function
 *
-* @param[in]    *mem_list:  handle to manage memory buffer
-* @param[in]    *alloc_addr: the address of the allocated memory
-* @return       true if free is success, else false
+* The data of the chunk is set to 0 and the chunk (record and data) is merged
+* with its free neighbours.
+*
+* @param[in]    mem_list:   handle to manage memory buffer
+* @param[in]    alloc_addr: the address returned by ezStaticAlloc_Malloc() of
+*                           the same list
+* @return       true if free is success, false if mem_list is NULL or not
+*               ready, alloc_addr is NULL, or it is not the start of an
+*               allocated block of this list (for example a double free)
 *
 * @pre mem_list must initialized
-* @post None
+* @post The block and its content are released, the pointer must not be used
+* anymore
+* @isr_safe{no}
+* @blocking{no}
 *
 * \b Example
 * @code
 * ezmMemList mem_list;
-* uint8_t buff[32];
-* bool success = ezStaticAlloc_InitMemList(&mem_list, buff, 32);
-* uint32_t *foo = (uint32_t*)ezStaticAlloc_Malloc(&mem_list, sizeof(uint32_t));
-* if(foo == NULL)
+* uint8_t buff[128];
+* if (!ezStaticAlloc_InitMemList(&mem_list, buff, sizeof(buff)))
 * {
-*     printf("error");
+*     HandleError();
+* }
+* uint32_t *foo = (uint32_t*)ezStaticAlloc_Malloc(&mem_list, sizeof(uint32_t));
+* if (foo == NULL)
+* {
+*     HandleError();
 * }
 *
-* if(ezStaticAlloc_Free(&mem_list, foo) == false)
+* if (!ezStaticAlloc_Free(&mem_list, foo))
 * {
-*     printf("error");
+*     HandleError();
 * }
 * @endcode
 *
-* @see ezStaticAlloc_InitMemList
+* @see ezStaticAlloc_Malloc
 *
 *****************************************************************************/
 bool ezStaticAlloc_Free(ezmMemList *mem_list, void *alloc_addr);
@@ -281,12 +326,15 @@ bool ezStaticAlloc_Free(ezmMemList *mem_list, void *alloc_addr);
 * multiple of CONFIG_STATIC_ALLOC_ALIGNMENT. The returned node stays in the
 * free list and must be moved with ezStaticAlloc_MoveBlock() or unlinked.
 *
-* @param[in]    *free_list_head:    head of the free list
+* @param[in]    free_list_head:     head of the free list
 * @param[in]    block_size_byte:    number of byte to be reserved
-* @return       node of the reserved block, NULL if there is none
+* @return       node of the reserved block, NULL if free_list_head is NULL,
+*               the size is 0 or too big, or no free block is big enough
 *
 * @pre free_list_head belongs to an initialized mem list
 * @post None
+* @isr_safe{no}
+* @blocking{no}
 *
 * @see ezStaticAlloc_MoveBlock
 *
@@ -301,14 +349,17 @@ struct Node* ezStaticAlloc_ReserveMemoryBlock(struct Node* free_list_head, size_
 *
 * @details Advanced function, see ezStaticAlloc_ReserveMemoryBlock
 *
-* @param[in]    *move_node:         node of the block
-* @param[in]    *from_list_head:    list that contains the node
-* @param[in]    *to_list_head:      destination list
+* @param[in]    move_node:          node of the block
+* @param[in]    from_list_head:     list that contains the node
+* @param[in]    to_list_head:       destination list
 * @return       true if the block is moved, false if an argument is NULL or
 *               the node is not in from_list_head
 *
 * @pre None
-* @post None
+* @post On success the node is at the tail of to_list_head
+* @isr_safe{no}
+* @blocking{no}
+* @see ezStaticAlloc_ReserveMemoryBlock
 *
 *****************************************************************************/
 bool ezStaticAlloc_MoveBlock(struct Node* move_node, struct Node* from_list_head, struct Node* to_list_head);
@@ -319,17 +370,19 @@ bool ezStaticAlloc_MoveBlock(struct Node* move_node, struct Node* from_list_head
 *//** 
 * @brief Return the number of allocated memory block
 *
-* @details
+* @details The blocks of the allocated list are counted.
 *
-* @param[in]    *mem_list: handle to manage memory buffer
-* @return       Number of allocated block
+* @param[in]    mem_list: handle to manage memory buffer
+* @return       Number of allocated block, 0 if mem_list is NULL
 *
 * @pre mem_list must initialized
 * @post None
+* @isr_safe{no}
+* @blocking{no}
 *
 * \b Example
 * @code
-* ezStaticAlloc_GetNumOfAllocBlock(&mem_list);
+* uint16_t num = ezStaticAlloc_GetNumOfAllocBlock(&mem_list);
 * @endcode
 *
 * @see ezStaticAlloc_InitMemList
@@ -343,17 +396,20 @@ uint16_t ezStaticAlloc_GetNumOfAllocBlock(ezmMemList* mem_list);
 *//** 
 * @brief Return the number of freed memory block
 *
-* @details
+* @details The blocks of the free list are counted. Neighbouring free blocks
+* are merged, so this is the number of separate free areas.
 *
-* @param[in]    *mem_list: handle to manage memory buffer
-* @return       Number of freed block
+* @param[in]    mem_list: handle to manage memory buffer
+* @return       Number of freed block, 0 if mem_list is NULL
 *
 * @pre mem_list must initialized
 * @post None
+* @isr_safe{no}
+* @blocking{no}
 *
 * \b Example
 * @code
-* ezStaticAlloc_GetNumOfFreeBlock(&mem_list);
+* uint16_t num = ezStaticAlloc_GetNumOfFreeBlock(&mem_list);
 * @endcode
 *
 * @see ezStaticAlloc_InitMemList
@@ -367,13 +423,16 @@ uint16_t ezStaticAlloc_GetNumOfFreeBlock(ezmMemList* mem_list);
 *//** 
 * @brief This function prints the content of the memory list.
 *
-* @details For debugging purpose
+* @details For debugging purpose. The function prints only if the source is
+* built with STCMEM_VERBOSE set to 1 and the module debug output enabled,
+* otherwise it does nothing.
 *
-* @param[in]    *mem_list: handle to manage memory buffer
-* @return       None
+* @param[in]    mem_list: handle to manage memory buffer
 *
 * @pre mem_list must initialized
 * @post None
+* @isr_safe{no}
+* @blocking{no}
 *
 * \b Example
 * @code
@@ -391,13 +450,16 @@ void ezStaticAlloc_HexdumpBuffer (ezmMemList* mem_list);
 *//** 
 * @brief This function prints the memory headers of the free list.
 *
-* @details For debugging purpose
+* @details For debugging purpose. The function prints only if the source is
+* built with STCMEM_VERBOSE set to 1 and the module debug output enabled,
+* otherwise it does nothing.
 *
-* @param[in]    *mem_list:  handle to manage memory buffer
-* @return       None
+* @param[in]    mem_list:  handle to manage memory buffer
 *
 * @pre  mem_list must initialized
 * @post None
+* @isr_safe{no}
+* @blocking{no}
 *
 * \b Example
 * @code
@@ -415,13 +477,16 @@ void ezStaticAlloc_PrintFreeList (ezmMemList* mem_list);
 *//** 
 * @brief This function prints the memory headers of the allocated list.
 *
-* @details For debugging purpose
+* @details For debugging purpose. The function prints only if the source is
+* built with STCMEM_VERBOSE set to 1 and the module debug output enabled,
+* otherwise it does nothing.
 *
-* @param[in]    *mem_list:  handle to manage memory buffer
-* @return       None
+* @param[in]    mem_list:  handle to manage memory buffer
 *
 * @pre  mem_list must initialized
 * @post None
+* @isr_safe{no}
+* @blocking{no}
 *
 * \b Example
 * @code

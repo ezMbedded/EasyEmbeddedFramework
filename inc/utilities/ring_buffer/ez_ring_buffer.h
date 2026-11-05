@@ -1,24 +1,12 @@
-/*****************************************************************************
-* Filename:         ez_ring_buffer.h
-* Author:           Hai Nguyen
-* Original Date:    26.02.2024
-*
-* ----------------------------------------------------------------------------
-* Contact:          Hai Nguyen
-*                   hainguyen.eeit@gmail.com
-*
-* ----------------------------------------------------------------------------
-* License: This file is published under the license described in LICENSE.md
-*
-*****************************************************************************/
-
-
 /** @file   ez_ring_buffer.h
  *  @author Hai Nguyen
  *  @date   26.02.2024
  *  @brief  Public API of ring buffer component
  *
- *  @details
+ *  @details Byte-oriented FIFO ring buffer working on a caller-provided
+ *  memory buffer. No dynamic allocation. The implementation is compiled only
+ *  when EZ_RING_BUFFER is 1U. The functions take no lock and do not check
+ *  the ring_buff pointer for NULL.
  */
 
 #ifndef RING_BUFFER_H
@@ -46,20 +34,21 @@ extern "C" {
 /*****************************************************************************
 * Component Typedefs
 *****************************************************************************/
-/** @brief Data structure of a ring buffer
+/** @brief Data structure of a ring buffer. Use the ezRingBuffer_* functions
+ *  to access it; do not modify the members directly.
  */
 typedef struct
 {
     uint8_t *buff;
-    /**< pointer to the data buffer*/
+    /**< pointer to the data buffer (owned by the caller)*/
     uint16_t capacity;
-    /**< size of the buffer*/
+    /**< size of the buffer in bytes*/
     uint16_t head_index;
-    /**< buffer head*/
+    /**< index where the next byte is written*/
     uint16_t tail_index;
-    /**< buffer tail*/
+    /**< index where the next byte is read*/
     uint16_t written_byte_count;
-    /**< number of byte written*/
+    /**< number of bytes currently stored*/
 }RingBuffer;
 
 
@@ -77,23 +66,32 @@ typedef struct
 *//** 
 * @brief This function initializes the ring buffer
 *
-* @details
+* @details The ring buffer stores the pointer to buff and does not copy it.
+* The caller owns buff, which must stay valid while the ring buffer is used.
+* On success the buffer is empty.
 *
 * @param[in]    ring_buff: pointer to the ring buffer
 * @param[in]    buff: pointer of buffer holding data
-* @param[in]    size: size of buff
+* @param[in]    size: size of buff in bytes
 * @return       true if success, else false
 *
-* @pre None
-* @post None
+* @retval true     Ring buffer initialized
+* @retval false    buff is NULL or size is 0; ring_buff is left unchanged
+*
+* @pre ring_buff is not NULL
+* @post The ring buffer is empty and its capacity is size
+* @blocking{no}
+* @see ezRingBuffer_Reset
 *
 * \b Example
 * @code
 * RingBuffer buffer;
-* RingBuffer_Init(&buffer, 30);
+* uint8_t storage[30];
+* if (ezRingBuffer_Init(&buffer, storage, sizeof(storage)) != true)
+* {
+*     HandleError();
+* }
 * @endcode
-*
-* @see
 *
 *****************************************************************************/
 bool ezRingBuffer_Init(RingBuffer *ring_buff, uint8_t *buff, uint16_t size);
@@ -109,18 +107,21 @@ bool ezRingBuffer_Init(RingBuffer *ring_buff, uint8_t *buff, uint16_t size);
 * @param[in]    ring_buff: pointer to the ring buffer
 * @return       true if empty, otherwise false
 *
-* @pre A RingBuffer is exsiting
+* @retval true     No byte is stored
+* @retval false    At least one byte is stored
+*
+* @pre The ring buffer was initialized with ezRingBuffer_Init
 * @post None
+* @blocking{no}
+* @see ezRingBuffer_Init
 *
 * \b Example
 * @code
-* RingBuffer buffer;
-* RingBuffer_Init(&buffer, 30);
-* RingBuff_Status status;
-* status = RingBuffer_IsEmpty(&buffer);
+* if (ezRingBuffer_IsEmpty(&buffer) == false)
+* {
+*     ProcessData();
+* }
 * @endcode
-*
-* @see ezRingBuffer_Init
 *
 *****************************************************************************/
 bool ezRingBuffer_IsEmpty(RingBuffer *ring_buff);
@@ -136,18 +137,21 @@ bool ezRingBuffer_IsEmpty(RingBuffer *ring_buff);
 * @param[in]    ring_buff: pointer to the ring buffer
 * @return       True if full, else false
 *
-* @pre a RingBuffer is exsiting
+* @retval true     Stored byte count equals the capacity
+* @retval false    Free space is left
+*
+* @pre The ring buffer was initialized with ezRingBuffer_Init
 * @post None
+* @blocking{no}
+* @see ezRingBuffer_Init
 *
 * \b Example
 * @code
-* RingBuffer buffer;
-* RingBuffer_Init(&buffer, 30);
-* RingBuff_Status status;
-* status = RingBuffer_IsFull(&buffer);
+* if (ezRingBuffer_IsFull(&buffer) == true)
+* {
+*     HandleOverflow();
+* }
 * @endcode
-*
-* @see ezRingBuffer_Init
 *
 *****************************************************************************/
 bool ezRingBuffer_IsFull(RingBuffer *ring_buff);
@@ -156,27 +160,36 @@ bool ezRingBuffer_IsFull(RingBuffer *ring_buff);
 /*****************************************************************************
 * Function : ezRingBuffer_Push
 *//** 
-* @brief Push data into the ring buffet
+* @brief Push data into the ring buffer
 *
-* @details
+* @details The data is copied into the ring buffer. If the free space is
+* smaller than size, only the bytes that fit are copied and existing data is
+* never overwritten. Wrapping at the end of the buffer is handled.
 *
 * @param[in]    ring_buff: pointer to the ring buffer
 * @param[in]    data: pointer to the pushed data
-* @param[in]    size: size of the data
+* @param[in]    size: size of the data in bytes
 * @return       Number of bytes pushed into the ring buffer
 *
-* @pre a RingBuffer is exsiting
-* @post None
+* @retval 0         Buffer is full or size is 0
+* @retval <size     Only part of the data fitted
+*
+* @pre The ring buffer was initialized with ezRingBuffer_Init; data is not
+* NULL and points to at least size bytes
+* @post written byte count increased by the returned value
+* @warning The caller must compare the return value with size to detect
+* truncated data.
+* @blocking{no}
+* @see ezRingBuffer_Init, ezRingBuffer_Pop
 *
 * \b Example
 * @code
-* RingBuffer buffer;
-* RingBuffer_Init(&buffer, 30);
-* uint8_t u8Data[3U] = {0U,1U,2U}
-* RingBuffer_Push(&buffer, u8Data, 3U);
+* uint8_t data[3U] = {0U, 1U, 2U};
+* if (ezRingBuffer_Push(&buffer, data, sizeof(data)) != sizeof(data))
+* {
+*     HandleOverflow();
+* }
 * @endcode
-*
-* @see ezRingBuffer_Init
 *
 *****************************************************************************/
 uint16_t ezRingBuffer_Push(RingBuffer * ring_buff, uint8_t *data, uint16_t size);
@@ -187,25 +200,35 @@ uint16_t ezRingBuffer_Push(RingBuffer * ring_buff, uint8_t *data, uint16_t size)
 *//** 
 * @brief Pop data out of the ring buffer
 *
-* @details
+* @details Bytes are returned in the order they were pushed (FIFO) and are
+* copied to data. If fewer than size bytes are stored, only the stored bytes
+* are copied.
 *
 * @param[in]    ring_buff: pointer to the ring buffer
-* @param[out]   data: pointer to the popped data
-* @param[in]    size: size of the popped data
+* @param[out]   data: pointer to the memory receiving the popped data
+* @param[in]    size: number of bytes requested
 * @return       Number of bytes popped out of the ring buffer
 *
-* @pre a RingBuffer is exsiting
-* @post Postcondition
+* @retval 0         Buffer is empty or size is 0
+* @retval <size     Fewer bytes than requested were stored
+*
+* @pre The ring buffer was initialized with ezRingBuffer_Init; data is not
+* NULL and can hold at least size bytes
+* @post written byte count decreased by the returned value
+* @warning The caller must check the return value to know how many bytes of
+* data are valid.
+* @blocking{no}
+* @see ezRingBuffer_Init, ezRingBuffer_Push
 *
 * \b Example
 * @code
-* RingBuffer buffer;
-* RingBuffer_Init(&buffer, 30);
-* uint8_t u8Data[3U];
-* RingBuffer_Pop(&buffer, u8Data, 3U);
+* uint8_t data[3U];
+* uint16_t count = ezRingBuffer_Pop(&buffer, data, sizeof(data));
+* if (count == 0U)
+* {
+*     HandleEmpty();
+* }
 * @endcode
-*
-* @see ezRingBuffer_Init
 *
 *****************************************************************************/
 uint16_t ezRingBuffer_Pop(RingBuffer *ring_buff, uint8_t *data, uint16_t size);
@@ -214,22 +237,22 @@ uint16_t ezRingBuffer_Pop(RingBuffer *ring_buff, uint8_t *data, uint16_t size);
 /*****************************************************************************
 * Function : ezRingBuffer_Reset
 *//** 
-* @brief A RingBuffer is exsiting
+* @brief Discard all stored data and clear the buffer
 *
-* @details
+* @details Head, tail and byte count are set to 0 and the whole data buffer
+* is filled with 0. The buffer pointer and capacity are kept.
 *
 * @param[in]    ring_buff: pointer to the ring buffer
-* @return       None
 *
-* @pre a RingBuffer is exsiting
-* @post None
+* @pre The ring buffer was initialized with ezRingBuffer_Init
+* @post The ring buffer is empty
+* @blocking{no}
+* @see ezRingBuffer_Init
 *
 * \b Example
 * @code
-* RingBuffer_Reset(&buffer);
+* ezRingBuffer_Reset(&buffer);
 * @endcode
-*
-* @see ezRingBuffer_Init
 *
 *****************************************************************************/
 void ezRingBuffer_Reset(RingBuffer *ring_buff);
@@ -238,22 +261,22 @@ void ezRingBuffer_Reset(RingBuffer *ring_buff);
 /*****************************************************************************
 * Function : ezRingBuffer_GetAvailableMemory
 *//** 
-* @brief Return number of bytes available
+* @brief Return number of free bytes in the buffer
 *
-* @details
+* @details Capacity minus the number of bytes currently stored.
 *
 * @param[in]    ring_buff: pointer to the ring buffer
-* @return       Number of available bytes
+* @return       Number of free bytes
+*
+* @pre The ring buffer was initialized with ezRingBuffer_Init
+* @post None
+* @blocking{no}
+* @see ezRingBuffer_Init
 *
 * \b Example
 * @code
-* RingBuffer buffer;
-* RingBuffer_Init(&buffer, 30);
-* uint8_t u8AvailMem;
-* RingBuffer_GetAvailableMemory(&buffer, &u8AvailMem);
+* uint16_t free_bytes = ezRingBuffer_GetAvailableMemory(&buffer);
 * @endcode
-*
-* @see RingBuffer_Init
 *
 *****************************************************************************/
 uint16_t ezRingBuffer_GetAvailableMemory( RingBuffer *ring_buff);
