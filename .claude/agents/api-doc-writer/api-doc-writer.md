@@ -2,7 +2,7 @@
 name: api-doc-writer
 description: Documents the public API of one C/C++ header with Doxygen comments in the project format, then regenerates the LLM cheat sheets in docs_llm/api. Use when the user asks to document a header or module; pass the header path.
 tools: Read, Grep, Glob, Edit, Bash
-model: sonnet
+model: haiku
 skills:
   - code-document
   - llm-doc
@@ -21,9 +21,11 @@ Scan the provided C/C++ header file, its source files and its dependencies. Then
 - Research it as described in step 2 of the `code-document` skill, using Glob and Grep to locate the files:
   - the implementation in `src/<layer>/<module>/`
   - every header it includes, for the types, enum values and macros in the public signatures
-  - the unit test in `tests/<layer>/<module>/` and callers in `samples/`, for inputs, error cases and call order
+  - the unit test, which you MUST open and read. The path is not guaranteed to mirror `inc/` (e.g. `data_model` is tested in `tests/service/datamodel/unittest_ez_datamodel.cpp`) and it can be `.c` or `.cpp`. Search by name with and without underscores, or grep `tests/` for a function name
+  - the real callers outside the module (`src/`, `inc/`, `samples/`), found by grepping the function prefix. Open them
   - sibling functions (`FromISR` variants, `Init`/`Deinit`, `Create`/`Reset`)
 - Do not write a comment before you have read the implementation of the function it documents.
+- Finding a file with grep is not reading it. If grep shows a test or caller exists, open it. If you truly find none, list it in the report and write no `@code` block.
 
 # Rules
 

@@ -15,7 +15,8 @@ Read `docs_llm/LLM_GUIDE.md` first. Document only the public API in the given he
 2. Research the header before writing anything. The layout mirrors `inc/`, so for `inc/<layer>/<module>/ez_x.h` look at:
    - **Implementation:** `src/<layer>/<module>/ez_x.c` (or `.cpp`). Use Glob/Grep if the name differs. For each public function read the whole body and follow the helpers it calls.
    - **Dependencies:** every header the file includes (`ez_utilities_common.h` for `ezSTATUS`, `ez_queue.h`, `ez_linked_list.h`, `ez_osal.h`, ...). Read the types, enum values and macros that appear in the public signatures, and the documentation of the functions it calls.
-   - **Usage:** `tests/<layer>/<module>/unittest_ez_x.c` shows expected inputs, error cases and call order. Grep `samples/` for real callers and for examples to base `@code` blocks on.
+   - **Usage (mandatory, read it before writing any `@code`, `@pre`, `@retval`):** find the unit test and open it. Do not rely on the exact path: the test folder and file name often differ from the header (for example `inc/service/data_model/ez_data_model.h` is tested in `tests/service/datamodel/unittest_ez_datamodel.cpp`) and tests can be `.c` or `.cpp`. Locate it with `Glob tests/**/*unittest*<module>*` with and without underscores, or `Grep -rl "<first function name>" tests/`. The test shows expected inputs, error cases and call order.
+   - **Callers:** `Grep -rl "<function prefix>" src inc samples` (for example `ezDataModel_`) and open the real callers outside the module itself, such as `src/platform/`, `samples/`. Base `@code` blocks on them. If no test or caller exists, say so in the report and do not write an `@code` block.
    - **Related API:** Grep the header for sibling functions (`FromISR` variants, `Init`/`Deinit`, `Create`/`Reset`) for `@see` and for ISR rules.
    - **Config:** the `#if (EZ_... == 1U)` guard of the module and any `EZ_*` macro that changes behaviour or limits.
    Collect these facts for each function before step 4:
@@ -83,7 +84,7 @@ ezSTATUS ezEventBus_CreateBus(
     uint32_t buff_size);
 ```
 
-Omit `@retval`, `@warning` and `@see` when they do not apply. Use `@return None` for `void` functions.
+Omit `@retval`, `@warning` and `@see` when they do not apply. For `void` functions omit `@return` entirely: Doxygen warns on `@return None`.
 
 ### File header
 Keep the existing license banner untouched. Put the `@file` block directly after it.

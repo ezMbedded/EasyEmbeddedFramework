@@ -76,12 +76,26 @@ def all_in(el, tag):
     return [] if el is None else list(el.iter(tag))
 
 
+def template_prefix(el):
+    """'template <typename T> ' of a C++ template class or member, else ''."""
+    tpl = el.find("templateparamlist")
+    if tpl is None:
+        return ""
+    params = [" ".join(text(p.find("type")).split()) for p in tpl.findall("param")]
+    return f"template <{', '.join(params)}> "
+
+
 def signature(m):
-    """One-line C signature."""
+    """One-line C/C++ signature."""
     ret = " ".join(text(m.find("type")).split())
     name = text(m.find("name")).strip()
     args = " ".join(text(m.find("argsstring")).split())
-    return f"{ret} {name}{args}".strip()
+    pre = template_prefix(m)
+    if m.get("static") == "yes":
+        pre += "static "
+    if m.get("virt") == "virtual":
+        pre += "virtual "
+    return f"{pre}{ret} {name}{args}".strip()
 
 
 def code_blocks(detail):
@@ -92,11 +106,11 @@ def code_blocks(detail):
     return blocks
 
 
-def render_function(m):
+def render_function(m, scope="", lang="c"):
     brief = " ".join(text(m.find("briefdescription")).split())
     detail = m.find("detaileddescription")
-    out = [f"### `{text(m.find('name')).strip()}`", "",
-           "```c", signature(m) + ";", "```", ""]
+    out = [f"### `{scope}{text(m.find('name')).strip()}`", "",
+           f"```{lang}", signature(m) + ";", "```", ""]
     if brief:
         out += [brief, ""]
     for p in paras(detail):
@@ -144,16 +158,29 @@ def render_function(m):
         out.append("")
 
     for b in code_blocks(detail):
-        out += ["**Example**", "", "```c", b, "```", ""]
+        out += ["**Example**", "", f"```{lang}", b, "```", ""]
     return out
 
 
-def render_other(cd):
-    """Enums, typedefs and macros as signatures only."""
+def member_file(m):
+    loc = m.find("location")
+    return "" if loc is None else (loc.get("declfile") or loc.get("file", ""))
+
+
+def in_file(m, loc):
+    """True if the member is declared in the header `loc` (Doxygen file path)."""
+    f = member_file(m)
+    return not loc or f == loc or f.endswith("/" + loc) or loc.endswith("/" + f)
+
+
+def render_other(cd, loc=None, lang="c", kinds=("enum", "typedef", "define")):
+    """Enums, typedefs, macros (and optionally variables) as signatures only."""
     out = []
     for m in cd.iter("memberdef"):
         kind = m.get("kind")
-        if kind not in ("enum", "typedef", "define"):
+        if kind not in kinds or m.get("prot", "public") != "public":
+            continue
+        if not in_file(m, loc):
             continue
         brief = " ".join(text(m.find("briefdescription")).split())
         name = text(m.find("name")).strip()
@@ -162,18 +189,82 @@ def render_other(cd):
                     + (f"  /* {' '.join(text(v.find('briefdescription')).split())} */"
                        if ' '.join(text(v.find('briefdescription')).split()) else "")
                     for v in m.findall("enumvalue")]
-            sig = f"enum {name} {{\n" + ",\n".join(vals) + "\n}"
+            kw = "enum class" if m.get("strong") == "yes" else "enum"
+            sig = f"{kw} {name} {{\n" + ",\n".join(vals) + "\n}"
+        elif kind == "variable":
+            sig = (" ".join(text(m.find("definition")).split())
+                   + " ".join(text(m.find("argsstring")).split()) + ";")
         elif kind == "typedef":
             sig = " ".join(text(m.find("definition")).split()) + \
                   " ".join(text(m.find("argsstring")).split())
         else:
             params = [text(p.find("defname")).strip() for p in m.findall("param")]
             sig = f"#define {name}" + (f"({', '.join(params)})" if params else "")
-        out += ["```c", sig, "```", brief, ""] if brief else ["```c", sig, "```", ""]
+        out += [f"```{lang}", sig, "```", brief, ""] if brief else [f"```{lang}", sig, "```", ""]
     return out
 
 
-def process_header(xml_path):
+def load_compound(xml_dir, refid):
+    path = xml_dir / f"{refid}.xml"
+    if not path.is_file():
+        return None
+    return ET.parse(path).getroot().find("compounddef")
+
+
+def collect_namespaces(xml_dir, cd, seen=None):
+    """Namespace compounds referenced by cd, recursively."""
+    seen = {} if seen is None else seen
+    for ref in cd.findall("innernamespace"):
+        rid = ref.get("refid")
+        if rid in seen:
+            continue
+        ns = load_compound(xml_dir, rid)
+        if ns is not None:
+            seen[rid] = ns
+            collect_namespaces(xml_dir, ns, seen)
+    return seen
+
+
+def class_title(c):
+    kind = "struct" if c.get("kind") == "struct" else "class"
+    name = text(c.find("compoundname")).strip()
+    return kind, name, template_prefix(c)
+
+
+def render_class(xml_dir, c, loc, done, level=2):
+    """Public API of a C++ class/struct, nested public types included."""
+    out = []
+    kind, name, tpl = class_title(c)
+    done.add(c.get("id"))
+    h = "#" * level
+    out += [f"{h} {kind} `{name}`", "", "```cpp", f"{tpl}{kind} {name};", "```", ""]
+    brief = " ".join(text(c.find("briefdescription")).split())
+    if brief:
+        out += [brief, ""]
+    for p in paras(c.find("detaileddescription")):
+        out += [p, ""]
+    other = render_other(c, None, "cpp", ("enum", "typedef", "variable"))
+    if other:
+        out += [f"{h}# Types and data members of `{name}`", ""] + other
+    funcs = [m for m in c.iter("memberdef") if m.get("kind") == "function"
+             and m.get("prot", "public") == "public"
+             and "delete" not in text(m.find("argsstring")).replace(" ", "").split("=")[-1:]]
+    count = len(funcs)
+    scope = name.split("::")[-1] + "::"
+    for m in funcs:
+        out += render_function(m, scope, "cpp")
+    for ref in c.findall("innerclass"):
+        if ref.get("prot", "public") != "public":
+            continue
+        inner = load_compound(xml_dir, ref.get("refid"))
+        if inner is not None and inner.get("id") not in done:
+            sub, n = render_class(xml_dir, inner, loc, done, level + 1)
+            out += sub
+            count += n
+    return out, count
+
+
+def process_header(xml_path, xml_dir):
     root = ET.parse(xml_path).getroot()
     cd = root.find("compounddef")
     if cd is None or cd.get("kind") != "file":
@@ -199,7 +290,43 @@ def process_header(xml_path):
         lines += ["## Functions", ""]
         for m in funcs:
             lines += render_function(m)
-    return module, loc, brief, "\n".join(lines).rstrip() + "\n", len(funcs)
+    count = len(funcs)
+
+    # C++: namespaces (free functions, enums, typedefs) and classes/structs of this header
+    namespaces = collect_namespaces(xml_dir, cd)
+    for ns in namespaces.values():
+        ns_name = text(ns.find("compoundname")).strip()
+        ns_other = render_other(ns, loc, "cpp")
+        ns_funcs = [m for m in ns.iter("memberdef") if m.get("kind") == "function"
+                    and m.get("prot", "public") == "public" and in_file(m, loc)]
+        if ns_other or ns_funcs:
+            lines += [f"## Namespace `{ns_name}`", ""] + ns_other
+            for m in ns_funcs:
+                lines += render_function(m, "", "cpp")
+            count += len(ns_funcs)
+    refs = list(cd.findall("innerclass"))
+    for ns in namespaces.values():
+        refs += ns.findall("innerclass")
+    classes, ids = [], set()
+    for ref in refs:
+        if ref.get("prot", "public") != "public" or ref.get("refid") in ids:
+            continue
+        ids.add(ref.get("refid"))
+        c = load_compound(xml_dir, ref.get("refid"))
+        # plain C structs (global, not a class) keep their existing output;
+        # Doxygen reports .h files as C++, so test the declaration instead
+        if c is None or not in_file(c, loc):
+            continue
+        if c.get("kind") == "class" or "::" in text(c.find("compoundname")):
+            classes.append(c)
+    done = set()
+    for c in classes:
+        if c.get("id") in done:
+            continue
+        sub, n = render_class(xml_dir, c, loc, done)
+        lines += sub
+        count += n
+    return module, loc, brief, "\n".join(lines).rstrip() + "\n", count
 
 
 def fatal(msg):
@@ -275,7 +402,7 @@ def main():
     results, names, failed = [], {}, []
     for f in selected:
         try:
-            r = process_header(f)
+            r = process_header(f, xml_dir)
         except Exception as e:  # a broken header must not stop the others
             failed.append(f"{f.name}: {type(e).__name__}: {e}")
             continue
