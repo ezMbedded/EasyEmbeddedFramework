@@ -18,36 +18,36 @@ Argument checking: this component only checks the handle. The buffers (NULL, siz
 
 ```c
 enum EZ_SPI_MODE {
-  EZ_SPI_MODE_MASTER,
-  EZ_SPI_MODE_SLAVE
+  EZ_SPI_MODE_MASTER,  /* SPI master mode */
+  EZ_SPI_MODE_SLAVE  /* SPI slave mode */
 }
 ```
 SPI mode.
 
 ```c
 enum EZ_SPI_CLOCK_MODE {
-  EZ_SPI_CPOL0_CPHA0,
-  EZ_SPI_CPOL0_CPHA1,
-  EZ_SPI_CPOL1_CPHA0,
-  EZ_SPI_CPOL1_CPHA1
+  EZ_SPI_CPOL0_CPHA0,  /* CPOL=0, CPHA=0 */
+  EZ_SPI_CPOL0_CPHA1,  /* CPOL=0, CPHA=1 */
+  EZ_SPI_CPOL1_CPHA0,  /* CPOL=1, CPHA=0 */
+  EZ_SPI_CPOL1_CPHA1  /* CPOL=1, CPHA=1 */
 }
 ```
 SPI clock polarity and phase.
 
 ```c
 enum EZ_SPI_BIT_ORDER {
-  EZ_SPI_BIT_ORDER_MSB_FIRST,
-  EZ_SPI_BIT_ORDER_LSB_FIRST
+  EZ_SPI_BIT_ORDER_MSB_FIRST,  /* Most significant bit first */
+  EZ_SPI_BIT_ORDER_LSB_FIRST  /* Least significant bit first */
 }
 ```
 SPI bit order.
 
 ```c
 enum EZ_SPI_EVENT {
-  EZ_SPI_EVENT_CMPLT,
-  EZ_SPI_EVENT_ERR,
-  EZ_SPI_EVENT_TIMEOUT,
-  EZ_SPI_NUM_EVENTS
+  EZ_SPI_EVENT_CMPLT,  /* The async operation is completed */
+  EZ_SPI_EVENT_ERR,  /* The async operation failed */
+  EZ_SPI_EVENT_TIMEOUT,  /* The async operation timed out */
+  EZ_SPI_NUM_EVENTS  /* Number of event codes. Not an event */
 }
 ```
 Event codes passed to the handle callback as event_code.
@@ -91,6 +91,61 @@ Start to receive, return immediately. Called by ezSpi_ReceiveAsync().
 typedef EZ_DRV_STATUS(* ezHwSpi_ChipSelect) (void *driver_h, bool select)
 ```
 Control the chip select line, return when done. Called by ezSpi_ChipSelect().
+
+```c
+typedef struct {
+  EZ_SPI_MODE mode;  /* SPI mode (master/slave) */
+  EZ_SPI_CLOCK_MODE clock_mode;  /* SPI clock mode */
+  EZ_SPI_BIT_ORDER bit_order;  /* SPI bit order (MSB/LSB first) */
+  uint32_t clock_frequency;  /* SPI clock frequency in Hz */
+  uint8_t data_size;  /* Data size in bits (usually 8 or 16) */
+} ezSpiConfig_t;
+```
+SPI configuration.
+
+Passed by pointer to the HW initialize function, unchanged. The SPI component does not check the values or copy the structure. The HW driver decides which values it supports.
+
+```c
+struct ezHwSpiInterface {
+  void* driver_h;  /* Opaque pointer of the HW driver, passed to every function below */
+  ezHwSpi_Initialize initialize;  /* Initialize the SPI peripheral (synchronous) */
+  ezHwSpi_TransferSync transfer_sync;  /* Transmit and receive at the same time (synchronous) */
+  ezHwSpi_TransferAsync transfer_async;  /* Transmit and receive at the same time (asynchronous) */
+  ezHwSpi_TransmitSync transmit_sync;  /* Transmit (synchronous) */
+  ezHwSpi_TransmitAsync transmit_async;  /* Transmit (asynchronous) */
+  ezHwSpi_ReceiveSync receive_sync;  /* Receive (synchronous) */
+  ezHwSpi_ReceiveAsync receive_async;  /* Receive (asynchronous) */
+  ezHwSpi_ChipSelect chip_select;  /* Control the chip select line (synchronous) */
+};
+```
+HW API provided by the HW driver. Unused functions can be NULL.
+
+A NULL function makes the matching ezSpi_xxx() return EZ_DRV_STATUS_ERR_INF_NOT_EXIST. The HW functions are called with driver_h as the first argument.
+
+The buffer pointers and lengths are not checked by the SPI component. Each HW function must validate them and return EZ_DRV_STATUS_ERR_ARG when they are not valid for the peripheral.
+
+An async function returns EZ_DRV_STATUS_OK only if the transfer is started. The HW driver must then call ezDriver_NotifyEvent(&drv->base, EZ_DRV_EVENT_OP_DONE, EZ_SPI_EVENT_xxx, NULL, NULL) exactly once when it ends. If it does not start the transfer, it must return an error and must not call ezDriver_NotifyEvent(). See ezSpi_SystemRegisterHwDriver() for an example.
+
+```c
+struct ezSpiDriver {
+  struct Node ll_node;  /* Node to link to the list of HW drivers */
+  struct ezDrvBase base;  /* Common data of driver: name, state and the handle in use */
+  struct ezHwSpiInterface interface;  /* HW API, see ezHwSpiInterface */
+  bool initialized;  /* true after ezSpi_Initialize() succeeded. Reset to false on register, unregister and when ezSpi_Initialize() fails */
+};
+```
+SPI HW driver. Provided by the HW driver implementation.
+
+base.name must be set before ezSpi_SystemRegisterHwDriver(). The driver is linked into the list of registered drivers, so its memory (static storage, no malloc) must stay valid while it is registered. ezSpi_SystemRegisterHwDriver() resets base.state, base.user and initialized.
+
+```c
+typedef struct {
+  struct ezDrvHandle drv_handle;  /* Common handle, bound to a HW driver. Filled by ezSpi_RegisterInstance() */
+} ezSpiHandle_t;
+```
+SPI handle. Held by the user.
+
+Must be zero-initialized (static storage, or memset) before the first ezSpi_RegisterInstance(). Bind it with ezSpi_RegisterInstance() before use. The driver keeps a pointer to the handle in base.user while an operation is in flight, so the handle must stay valid until ezSpi_UnregisterInstance() returns EZ_DRV_STATUS_OK.
 
 ## Functions
 

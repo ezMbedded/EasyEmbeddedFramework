@@ -53,6 +53,14 @@ Unlink a node from its list. See ezLinkedList_UnlinkNode.
 ```
 Check if a list is empty.
 
+```c
+struct Node {
+  struct Node* next;  /* pointer to the next node in a linked list */
+  struct Node* prev;  /* pointer to the previous node in a linked list */
+};
+```
+Meta data of a node. Containing the pointer to the next node and previous node.
+
 ## Functions
 
 ### `ezLinkedList_InitNode`
@@ -152,7 +160,7 @@ if (!ezLinkedList_AppendNode(&new_node, &appended_node))
 ### `ezLinkedList_InsertHead`
 
 ```c
-bool ezLinkedList_InsertHead(struct Node *list, struct Node *new_node);
+static bool ezLinkedList_InsertHead(struct Node *list, struct Node *new_node);
 ```
 
 Add a new node to first position of the linked list.
@@ -193,7 +201,7 @@ if (!ezLinkedList_InsertHead(&list, &new_node))
 ### `ezLinkedList_InsertTail`
 
 ```c
-bool ezLinkedList_InsertTail(struct Node *list, struct Node *new_node);
+static bool ezLinkedList_InsertTail(struct Node *list, struct Node *new_node);
 ```
 
 Add a new node to last position of the linked list.
@@ -302,7 +310,7 @@ bool exist = ezLinkedList_IsNodeInList(list, &checked_node);
 ### `ezLinkedList_UnlinkNode`
 
 ```c
-bool ezLinkedList_UnlinkNode(struct Node *node);
+static bool ezLinkedList_UnlinkNode(struct Node *node);
 ```
 
 Unlink a node from a list.

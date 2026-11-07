@@ -24,32 +24,32 @@ Completion: this component does not subscribe to the driver, so EZ_DRV_EVENT_ASY
 
 ```c
 enum EZ_UART_EVENT {
-  UART_EVENT_TX_CMPLT,
-  UART_EVENT_TX_ERR,
-  UART_EVENT_RX_CMPLT,
-  UART_EVENT_RX_ERR,
-  UART_EVENT_TIMEOUT,
-  UART_NUM_EVENTS
+  UART_EVENT_TX_CMPLT,  /* The transmit operation is completed */
+  UART_EVENT_TX_ERR,  /* The transmit operation failed */
+  UART_EVENT_RX_CMPLT,  /* The receive operation is completed */
+  UART_EVENT_RX_ERR,  /* The receive operation failed */
+  UART_EVENT_TIMEOUT,  /* The operation timed out */
+  UART_NUM_EVENTS  /* Number of event codes. Not an event */
 }
 ```
 Event codes reported to the handle callback (event_code argument)
 
 ```c
 enum EZ_UART_PARITY_ENUM {
-  PARITY_NONE,
-  PARITY_ODD,
-  PARITY_EVEN,
-  PARITY_MARK,
-  PARITY_SPACE
+  PARITY_NONE,  /* None */
+  PARITY_ODD,  /* Odd */
+  PARITY_EVEN,  /* Even */
+  PARITY_MARK,  /* Mark */
+  PARITY_SPACE  /* Space */
 }
 ```
 UART parity.
 
 ```c
 enum EZ_UART_NUM_STOP_BIT_ENUM {
-  ONE_BIT,
-  ONE_AND_HALF_BIT,
-  TWO_BITS
+  ONE_BIT,  /* 1 stop bit */
+  ONE_AND_HALF_BIT,  /* 1.5 stop bit */
+  TWO_BITS  /* 2 stop bits */
 }
 ```
 UART number of stop bits.
@@ -88,6 +88,59 @@ Receive data, synchronous. Called by ezUart_ReceiveSync().
 typedef EZ_DRV_STATUS(* ezHwUart_UpdateConfig) (void *driver_h)
 ```
 Apply the configuration of the driver. Called by ezUart_UpdateConfig().
+
+```c
+struct ezUartConfiguration {
+  const char* port_name;  /* Name of the serial port */
+  uint32_t baudrate;  /* Baudrate */
+  EZ_UART_PARITY_ENUM parity;  /* Parity */
+  EZ_UART_NUM_STOP_BIT_ENUM stop_bit;  /* Number of stop bits */
+  uint8_t byte_size;  /* Size of data in bits */
+};
+```
+UART configuration.
+
+Member of ezUartDriver (config). ezUart_GetConfig() returns a pointer to it. The UART component does not check or copy the values. The HW driver decides which values it supports.
+
+```c
+typedef struct {
+  struct ezDrvHandle drv_handle;  /* Common handle, bound to a HW driver. Filled by ezUart_RegisterInstance() */
+} ezUartHandle_t;
+```
+UART handle. Held by the user and bound to a HW driver.
+
+Must be zero-initialized (static storage, or memset) before the first ezUart_RegisterInstance(), because that call checks drv_handle.hw to see whether the handle is already bound. Bind it with ezUart_RegisterInstance() before use. The driver keeps a pointer to the handle in base.user while an operation is in flight, so the handle must stay valid until ezUart_UnregisterInstance() returns EZ_DRV_STATUS_OK.
+
+```c
+struct ezHwUartInterface {
+  void* driver_h;  /* Opaque pointer of the HW driver, passed to every function below */
+  ezHwUart_Initialize initialize;  /* Initialize the UART peripheral (synchronous) */
+  ezHwUart_Deinitialize deinitialize;  /* Deinitialize the UART peripheral (synchronous) */
+  ezHwUart_TransmitAsync transmit_async;  /* Transmit data (asynchronous) */
+  ezHwUart_ReceiveAsync receive_async;  /* Receive data (asynchronous) */
+  ezHwUart_TransmitSync transmit_sync;  /* Transmit data (synchronous) */
+  ezHwUart_ReceiveSync receive_sync;  /* Receive data (synchronous) */
+  ezHwUart_UpdateConfig update_conf;  /* Apply the configuration (synchronous) */
+};
+```
+HW API provided by the HW driver. Every function is optional.
+
+A NULL function makes the matching ezUart_xxx() return EZ_DRV_STATUS_ERR_INF_NOT_EXIST. Each function is called with driver_h as its first argument. The buffer pointers and sizes are not checked by the UART component: each HW function validates them and returns an error status, which the component forwards unchanged.
+
+An async function returns EZ_DRV_STATUS_OK only if the transfer is started. The HW driver must then call ezDriver_NotifyEvent() with EZ_DRV_EVENT_OP_DONE exactly once when it ends.
+
+```c
+struct ezUartDriver {
+  struct Node ll_node;  /* Node to link to the list of HW drivers */
+  struct ezDrvBase base;  /* Common data of driver: name, state and the handle in use */
+  struct ezUartConfiguration config;  /* Uart related configuration */
+  struct ezHwUartInterface interface;  /* HW API, see ezHwUartInterface */
+  bool initialized;  /* true after ezUart_Initialize() succeeded. Reset to false on register, unregister, when the HW initialize function fails or is missing in ezUart_Initialize(), and when ezUart_Deinitialize() succeeds. Unchanged when a call is refused before the HW call (handle not bound, driver busy) */
+};
+```
+HW UART driver. Provided by the HW driver implementation.
+
+base.name must be set before ezUart_SystemRegisterHwDriver(). The driver is linked into the list of registered drivers, so its memory (static storage, no malloc) must stay valid while it is registered. ezUart_SystemRegisterHwDriver() resets base.state, base.user and initialized.
 
 ## Functions
 

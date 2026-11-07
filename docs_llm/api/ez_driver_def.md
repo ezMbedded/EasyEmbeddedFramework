@@ -46,23 +46,23 @@ Clear the state bit(s). Read-modify-write, not atomic. ISR-safe: yes.
 
 ```c
 enum EZ_DRV_STATUS {
-  EZ_DRV_STATUS_OK,
-  EZ_DRV_STATUS_BUSY,
-  EZ_DRV_STATUS_TIMEOUT,
-  EZ_DRV_STATUS_ERR_GENERIC,
-  EZ_DRV_STATUS_ERR_ARG,
-  EZ_DRV_STATUS_ERR_DRV_NOT_FOUND,
-  EZ_DRV_STATUS_ERR_INF_NOT_EXIST,
-  EZ_DRV_STATUS_ERR_NOT_INITIALIZED
+  EZ_DRV_STATUS_OK,  /* OK, working as expected */
+  EZ_DRV_STATUS_BUSY,  /* Driver is busy: an operation is in flight, or another handle is subscribed */
+  EZ_DRV_STATUS_TIMEOUT,  /* Operation timeout */
+  EZ_DRV_STATUS_ERR_GENERIC,  /* Generic error */
+  EZ_DRV_STATUS_ERR_ARG,  /* Invalid function argument */
+  EZ_DRV_STATUS_ERR_DRV_NOT_FOUND,  /* HW driver implementation not found */
+  EZ_DRV_STATUS_ERR_INF_NOT_EXIST,  /* Implementation of an interface not found */
+  EZ_DRV_STATUS_ERR_NOT_INITIALIZED  /* The driver is not initialized */
 }
 ```
 Return status of the Driver API.
 
 ```c
 enum ezDrvEventKind_t {
-  EZ_DRV_EVENT_OP_PROGRESS,
-  EZ_DRV_EVENT_OP_DONE,
-  EZ_DRV_EVENT_ASYNC
+  EZ_DRV_EVENT_OP_PROGRESS,  /* Event of the async operation in flight, state is kept (e.g. half transfer). Delivered only while BUSY and ASYNC are set */
+  EZ_DRV_EVENT_OP_DONE,  /* Final event of the operation in flight (done, error, timeout). BUSY and ASYNC are cleared before the callback. Delivered only while BUSY and ASYNC are set */
+  EZ_DRV_EVENT_ASYNC  /* Event not tied to an operation (edge, RX data, bus fault). Delivered only while LISTENING is set */
 }
 ```
 Kind of an event reported by the HW driver. It decides how the event is routed.
@@ -81,6 +81,29 @@ Define a driver handle. It is held by the user and bound to a HW driver.
 typedef struct ezDrvBase ezDrvBase_t
 ```
 Define structure holding the base data shared by all HW drivers.
+
+```c
+struct ezDrvHandle {
+  ezDrvCallback on_event;  /* Callback function to handle the event from the HW driver. Can be NULL */
+  void* ctx;  /* User context, passed back as the first argument of on_event. Can be NULL */
+  void* hw;  /* Pointer to the bound HW driver, depending on the implementation. NULL when not bound */
+};
+```
+Define a driver handle. It is held by the user and bound to a HW driver.
+
+The module fills the fields when the handle is bound to a HW driver. The caller owns the memory of the handle.
+
+```c
+struct ezDrvBase {
+  const char* name;  /* Name of the HW driver, used by the module to find it */
+  uint8_t version[3];  /* Version number including major, minor, patch */
+  volatile uint8_t state;  /* EZ_DRV_STATE_* bits. Written from ISR by ezDriver_NotifyEvent(), hence volatile */
+  ezDrvHandle_t* volatile user;  /* Handle which receives the events. Written only by task code: ezDriver_Acquire(), ezDriver_Subscribe(), and reset to NULL when the HW driver is registered. Not cleared by ezDriver_Release() or ezDriver_Unsubscribe(). Valid only while BUSY or LISTENING is set */
+};
+```
+Define structure holding the base data shared by all HW drivers.
+
+The field order is intended: state fills the padding after version on 32-bit targets.
 
 ## Functions
 

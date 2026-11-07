@@ -22,44 +22,44 @@ Initialization: ezGpio_ReadPin(), ezGpio_WritePin() and ezGpio_TogglePin() requi
 
 ```c
 enum EZ_GPIO_EVENT {
-  EZ_GPIO_EVENT_PIN_INTERRUPT,
-  EZ_GPIO_NUM_EVENTS
+  EZ_GPIO_EVENT_PIN_INTERRUPT,  /* A pin interrupt fired. param1 is a pointer to the uint16_t pin index, valid during the callback. param2 is passed as given by the HW driver */
+  EZ_GPIO_NUM_EVENTS  /* Number of event codes. Not an event */
 }
 ```
 Event codes reported to the handle callback (event_code argument)
 
 ```c
 enum EZ_GPIO_MODE {
-  EZ_GPIO_MODE_INPUT,
-  EZ_GPIO_MODE_OUTPUT
+  EZ_GPIO_MODE_INPUT,  /* input */
+  EZ_GPIO_MODE_OUTPUT  /* output */
 }
 ```
 GPIO mode.
 
 ```c
 enum EZ_GPIO_PIN_STATE {
-  EZ_GPIO_PIN_LOW,
-  EZ_GPIO_PIN_HIGH,
-  EZ_GPIO_PIN_ERROR
+  EZ_GPIO_PIN_LOW,  /* low */
+  EZ_GPIO_PIN_HIGH,  /* high */
+  EZ_GPIO_PIN_ERROR  /* error */
 }
 ```
 GPIO state.
 
 ```c
 enum EZ_GPIO_PULL {
-  EZ_GPIO_PULL_UP,
-  EZ_GPIO_PULL_DOWN,
-  EZ_GPIO_NO_PULL
+  EZ_GPIO_PULL_UP,  /* pull up */
+  EZ_GPIO_PULL_DOWN,  /* pull down */
+  EZ_GPIO_NO_PULL  /* no pull */
 }
 ```
 GPIO pull mode.
 
 ```c
 enum EZ_INTERRUPT_MODE {
-  EZ_INTERRUPT_RISING,
-  EZ_INTERRUPT_FALLING,
-  EZ_INTERRUPT_BOTH,
-  EZ_INTERRUPT_NONE
+  EZ_INTERRUPT_RISING,  /* rising edge */
+  EZ_INTERRUPT_FALLING,  /* falling edge */
+  EZ_INTERRUPT_BOTH,  /* both edges */
+  EZ_INTERRUPT_NONE  /* no interrupt */
 }
 ```
 GPIO interrupt mode.
@@ -88,6 +88,55 @@ Write the state of a pin. Called by ezGpio_WritePin().
 typedef EZ_DRV_STATUS(* ezHwGpio_TogglePin) (void *driver_h, uint16_t pin_index)
 ```
 Toggle the state of a pin. Called by ezGpio_TogglePin().
+
+```c
+typedef struct {
+  struct ezDrvHandle drv_handle;  /* Common handle, bound to a HW driver. Filled by ezGpio_RegisterInstance() */
+} ezGpioHandle_t;
+```
+GPIO handle. Held by the user, bound to a HW driver.
+
+Must be zero-initialized (static storage, or memset) before the first ezGpio_RegisterInstance(), which refuses a handle whose hw field is not NULL. Bind it with ezGpio_RegisterInstance() before use. The HW driver keeps a pointer to the handle while the handle listens to pin events or an operation is in flight, so the handle must stay valid until ezGpio_UnregisterInstance() returns EZ_DRV_STATUS_OK.
+
+```c
+struct ezHwGpioConfig {
+  EZ_GPIO_MODE mode;  /* mode of the GPIO pin */
+  EZ_GPIO_PULL pull;  /* pull mode of the GPIO pin */
+  EZ_INTERRUPT_MODE intr_mode;  /* interrupt mode of the GPIO pin */
+};
+```
+Configuration to initialize a pin.
+
+Passed by pointer to the HW initialize function, unchanged. The GPIO component does not copy the structure and does not check the values. It reads intr_mode after the HW call returns, so the HW driver must not change it.
+
+```c
+struct ezHwGpioInterface {
+  void* driver_h;  /* Opaque pointer of the HW driver, passed to every function below */
+  ezHwGpio_Initialize init_pin;  /* Initialize pin (synchronous) */
+  ezHwGpio_ReadPin read_pin;  /* Read pin (synchronous) */
+  ezHwGpio_WritePin write_pin;  /* Write pin (synchronous) */
+  ezHwGpio_TogglePin toggle_pin;  /* Toggle pin (synchronous) */
+};
+```
+HW API provided by the HW driver. Unused functions can be NULL.
+
+A NULL function makes the matching ezGpio_xxx() fail: ezGpio_Initialize(), ezGpio_WritePin() and ezGpio_TogglePin() return EZ_DRV_STATUS_ERR_INF_NOT_EXIST, and ezGpio_ReadPin() returns EZ_GPIO_PIN_ERROR. The HW functions are called with driver_h as the first argument.
+
+The pin indexes and pin states are not checked by the GPIO component. Each HW function must validate them and return an error status when they are not valid. The component forwards that status unchanged (ezGpio_ReadPin() forwards its state unchanged too).
+
+All the HW functions are synchronous. The HW driver must not call ezDriver_NotifyEvent() with an EZ_DRV_EVENT_OP_* kind from them: such events are dropped. The only event of the HW driver is the pin interrupt, reported from its ISR with EZ_DRV_EVENT_ASYNC and EZ_GPIO_EVENT_PIN_INTERRUPT. See the file description.
+
+```c
+struct ezGpioDriver {
+  struct Node ll_node;  /* Node to link to the list of HW drivers */
+  struct ezDrvBase base;  /* Common data of driver: name, state and the handle in use */
+  struct ezHwGpioInterface interface;  /* HW API, see ezHwGpioInterface */
+  bool initialized;  /* true after ezGpio_Initialize() succeeded for at least one pin. Reset to false on register and unregister. Set by ezGpio_Initialize() to the result of its init call: a failure (HW error, or no init_pin function) clears it for all pins. A call refused before the driver is taken (ERR_ARG, DRV_NOT_FOUND, BUSY) leaves it unchanged */
+};
+```
+GPIO HW driver. Provided by the HW driver implementation.
+
+base.name and interface must be set before ezGpio_SystemRegisterHwDriver(). The driver is linked into the list of registered drivers, so its memory (static storage, no malloc) must stay valid while it is registered. ezGpio_SystemRegisterHwDriver() resets base.state, base.user and initialized.
 
 ## Functions
 

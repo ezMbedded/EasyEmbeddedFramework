@@ -18,6 +18,15 @@ typedef void* ezReservedElement
 ```
 Handle of an element reserved by ezQueue_ReserveElement.
 
+```c
+struct ezQueue {
+  struct Node q_item_list;  /* list of queue element */
+  struct MemList mem_list;  /* memory list, needed for static memory allocation */
+  uint32_t num_of_element;  /* number of element in the queue */
+};
+```
+Construction of the queue. Use ezQueue_CreateQueue to initialize it.
+
 ## Functions
 
 ### `ezQueue_CreateQueue`
