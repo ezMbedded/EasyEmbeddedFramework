@@ -44,17 +44,27 @@
 /*****************************************************************************
 * Component Typedefs
 *****************************************************************************/
-static struct Node hw_driver_list = EZ_LINKEDLIST_INIT_NODE(hw_driver_list);
+/* None */
 
 /*****************************************************************************
 * Component Variable Definitions
 *****************************************************************************/
-/* None */
+static struct Node hw_driver_list = EZ_LINKEDLIST_INIT_NODE(hw_driver_list);
 
 /*****************************************************************************
 * Function Definitions
 *****************************************************************************/
-/* None */
+static struct ezSpiDriver *ezSpi_FindDriver(const char *name);
+
+static EZ_DRV_STATUS ezSpi_Begin(ezSpiHandle_t *inst,
+                                 bool require_initialized,
+                                 bool is_async,
+                                 struct ezSpiDriver **drv_out);
+
+static void ezSpi_End(ezSpiHandle_t *inst,
+                      struct ezSpiDriver *drv,
+                      EZ_DRV_STATUS status,
+                      bool is_async);
 
 /*****************************************************************************
 * Public functions
@@ -62,16 +72,24 @@ static struct Node hw_driver_list = EZ_LINKEDLIST_INIT_NODE(hw_driver_list);
 EZ_DRV_STATUS ezSpi_SystemRegisterHwDriver(struct ezSpiDriver *hw_driver)
 {
     EZTRACE("ezSpi_SystemRegisterHwDriver()");
-    if(hw_driver == NULL)
+    if((hw_driver == NULL) || (hw_driver->base.name == NULL))
     {
-        EZERROR("hw_driver == NULL");
-        return STATUS_ERR_ARG;
+        EZERROR("hw_driver or its name == NULL");
+        return EZ_DRV_STATUS_ERR_ARG;
+    }
+
+    if(ezSpi_FindDriver(hw_driver->base.name) != NULL)
+    {
+        EZERROR("driver %s is already registered", hw_driver->base.name);
+        return EZ_DRV_STATUS_ERR_ARG;
     }
 
     hw_driver->initialized = false;
+    hw_driver->base.state = 0U;
+    hw_driver->base.user = NULL;
     EZ_LINKEDLIST_ADD_TAIL(&hw_driver_list, &hw_driver->ll_node);
     EZDEBUG("Register OK");
-    return STATUS_OK;
+    return EZ_DRV_STATUS_OK;
 }
 
 EZ_DRV_STATUS ezSpi_SystemUnregisterHwDriver(struct ezSpiDriver *hw_driver)
@@ -80,289 +98,377 @@ EZ_DRV_STATUS ezSpi_SystemUnregisterHwDriver(struct ezSpiDriver *hw_driver)
     if(hw_driver == NULL)
     {
         EZERROR("hw_driver == NULL");
-        return STATUS_ERR_ARG;
+        return EZ_DRV_STATUS_ERR_ARG;
     }
+
+    if(EZ_DRV_STATE_IS_SET(&hw_driver->base, EZ_DRV_STATE_BUSY))
+    {
+        EZERROR("Driver is busy");
+        return EZ_DRV_STATUS_BUSY;
+    }
+
     hw_driver->initialized = false;
     EZ_LINKEDLIST_UNLINK_NODE(&hw_driver->ll_node);
-    return STATUS_OK;
+    return EZ_DRV_STATUS_OK;
 }
 
-EZ_DRV_STATUS ezSpi_RegisterInstance(ezSpiDrvInstance_t *inst,
+EZ_DRV_STATUS ezSpi_RegisterInstance(ezSpiHandle_t *inst,
                                      const char *driver_name,
-                                     ezDrvCallback callback)
+                                     ezDrvCallback callback,
+                                     void *ctx)
 {
-    struct Node* it_node = NULL;
     struct ezSpiDriver *spi_drv = NULL;
 
-    EZTRACE("ezSpi_RegisterInstance(name = %s)", driver_name);
+    EZTRACE("ezSpi_RegisterInstance()");
     if((inst == NULL) || (driver_name == NULL))
     {
-        return STATUS_ERR_ARG;
+        return EZ_DRV_STATUS_ERR_ARG;
     }
 
-    EZ_LINKEDLIST_FOR_EACH(it_node, &hw_driver_list)
+    if(inst->drv_handle.hw != NULL)
     {
-        spi_drv = EZ_LINKEDLIST_GET_PARENT_OF(it_node, ll_node, struct ezSpiDriver);
-        if(strcmp(spi_drv->common.name, driver_name) == 0)
-        {
-            EZDEBUG("Found driver!");
-            inst->drv_instance.driver = (void*)spi_drv;
-            inst->drv_instance.callback = callback;
-            return STATUS_OK;
-        }
+        EZERROR("The handle is already bound, unregister it first");
+        return EZ_DRV_STATUS_ERR_ARG;
     }
 
-    return STATUS_ERR_DRV_NOT_FOUND;
+    spi_drv = ezSpi_FindDriver(driver_name);
+    if(spi_drv == NULL)
+    {
+        return EZ_DRV_STATUS_ERR_DRV_NOT_FOUND;
+    }
+
+    EZDEBUG("Found driver!");
+    inst->drv_handle.hw = spi_drv;
+    inst->drv_handle.on_event = callback;
+    inst->drv_handle.ctx = ctx;
+    return EZ_DRV_STATUS_OK;
 }
 
-EZ_DRV_STATUS ezSpi_UnregisterInstance(ezSpiDrvInstance_t *inst)
+EZ_DRV_STATUS ezSpi_UnregisterInstance(ezSpiHandle_t *inst)
 {
+    struct ezSpiDriver *drv = NULL;
+
     EZTRACE("ezSpi_UnregisterInstance()");
     if(inst == NULL)
     {
-        return STATUS_ERR_ARG;
+        return EZ_DRV_STATUS_ERR_ARG;
     }
-    inst->drv_instance.driver = NULL;
+
+    drv = (struct ezSpiDriver*)ezDriver_GetHw(&inst->drv_handle);
+    if((drv != NULL) &&
+       EZ_DRV_STATE_IS_SET(&drv->base, EZ_DRV_STATE_BUSY) &&
+       (drv->base.user == &inst->drv_handle))
+    {
+        EZERROR("The handle has an operation in flight");
+        return EZ_DRV_STATUS_BUSY;
+    }
+
+    inst->drv_handle.hw = NULL;
+    inst->drv_handle.on_event = NULL;
+    inst->drv_handle.ctx = NULL;
     EZDEBUG("unregister success");
-    return STATUS_OK;
+    return EZ_DRV_STATUS_OK;
 }
 
-EZ_DRV_STATUS ezSpi_Initialize(ezSpiDrvInstance_t *inst, ezSpiConfig_t *config)
+EZ_DRV_STATUS ezSpi_Initialize(ezSpiHandle_t *inst, ezSpiConfig_t *config)
 {
+    EZ_DRV_STATUS status = EZ_DRV_STATUS_ERR_INF_NOT_EXIST;
+    struct ezSpiDriver *drv = NULL;
+
     EZTRACE("ezSpi_Initialize()");
-    EZ_DRV_STATUS status = STATUS_ERR_GENERIC;
-    struct ezSpiDriver *drv = (struct ezSpiDriver*)ezDriver_GetDriverFromInstance((struct ezDrvInstance*)inst);
-
-    if(drv == NULL)
+    if(config == NULL)
     {
-        EZERROR("Driver not found");
-        return STATUS_ERR_DRV_NOT_FOUND;
+        return EZ_DRV_STATUS_ERR_ARG;
     }
 
-    if(ezDriver_LockDriver((struct ezDrvInstance*)inst, &drv->common) == false)
+    status = ezSpi_Begin(inst, false, false, &drv);
+    if(status != EZ_DRV_STATUS_OK)
     {
-        EZERROR("Driver is busy");
-        return STATUS_BUSY;
+        return status;
     }
 
+    status = EZ_DRV_STATUS_ERR_INF_NOT_EXIST;
     if(drv->interface.initialize != NULL)
     {
         status = drv->interface.initialize(drv->interface.driver_h, config);
     }
-    ezDriver_UnlockDriver(&drv->common);
+    ezSpi_End(inst, drv, status, false);
 
-    if(status == STATUS_OK)
+    drv->initialized = (status == EZ_DRV_STATUS_OK);
+    if(drv->initialized)
     {
-        drv->initialized = true;
-        EZDEBUG("Driver %s initialized", drv->common.name);
+        EZDEBUG("Driver %s initialized", drv->base.name);
     }
 
     return status;
 }
 
-EZ_DRV_STATUS ezSpi_TransferSync(ezSpiDrvInstance_t *inst,
-                                const uint8_t *tx_data,
-                                size_t tx_length,
-                                uint8_t *rx_data,
-                                size_t rx_length,
-                                uint32_t timeout_millis)
-{
-    EZTRACE("ezSpi_TransferSync()");
-    EZ_DRV_STATUS status = STATUS_ERR_DRV_NOT_FOUND;
-    struct ezSpiDriver *drv = (struct ezSpiDriver*)ezDriver_GetDriverFromInstance((struct ezDrvInstance*)inst);
-
-    if(drv != NULL)
-    {
-        if(ezDriver_LockDriver((struct ezDrvInstance*)inst, &drv->common) == false)
-        {
-            EZERROR("Driver is busy");
-            return STATUS_BUSY;
-        }
-        
-        if(drv->interface.transfer_sync)
-        {
-            status = drv->interface.transfer_sync(drv->interface.driver_h,
-                tx_data,
-                tx_length,
-                rx_data,
-                rx_length,
-                timeout_millis);
-        }
-        ezDriver_UnlockDriver(&drv->common);
-    }
-    return status;
-}
-
-EZ_DRV_STATUS ezSpi_TransferAsync(ezSpiDrvInstance_t *inst,
+EZ_DRV_STATUS ezSpi_TransferSync(ezSpiHandle_t *inst,
                                  const uint8_t *tx_data,
                                  size_t tx_length,
                                  uint8_t *rx_data,
-                                 size_t rx_length)
+                                 size_t rx_length,
+                                 uint32_t timeout_millis)
 {
-    EZTRACE("ezSpi_TransferAsync()");
-    EZ_DRV_STATUS status = STATUS_ERR_DRV_NOT_FOUND;
-    struct ezSpiDriver *drv = (struct ezSpiDriver*)ezDriver_GetDriverFromInstance((struct ezDrvInstance*)inst);
+    EZ_DRV_STATUS status = EZ_DRV_STATUS_ERR_INF_NOT_EXIST;
+    struct ezSpiDriver *drv = NULL;
 
-    if(drv != NULL)
+    EZTRACE("ezSpi_TransferSync()");
+    status = ezSpi_Begin(inst, true, false, &drv);
+    if(status != EZ_DRV_STATUS_OK)
     {
-        if(ezDriver_LockDriver((struct ezDrvInstance*)inst, &drv->common) == false)
-        {
-            EZERROR("Driver is busy");
-            return STATUS_BUSY;
-        }
-
-        if(drv->interface.transfer_async)
-        {
-            status = drv->interface.transfer_async(drv->interface.driver_h,
-                tx_data,
-                tx_length,
-                rx_data,
-                rx_length);
-        }
-        ezDriver_UnlockDriver(&drv->common);
+        return status;
     }
+
+    status = EZ_DRV_STATUS_ERR_INF_NOT_EXIST;
+    if(drv->interface.transfer_sync != NULL)
+    {
+        status = drv->interface.transfer_sync(drv->interface.driver_h,
+                                              tx_data,
+                                              tx_length,
+                                              rx_data,
+                                              rx_length,
+                                              timeout_millis);
+    }
+    ezSpi_End(inst, drv, status, false);
     return status;
 }
 
-EZ_DRV_STATUS ezSpi_TransmitSync(ezSpiDrvInstance_t *inst,
-                                const uint8_t *tx_data,
+EZ_DRV_STATUS ezSpi_TransferAsync(ezSpiHandle_t *inst,
+                                  const uint8_t *tx_data,
+                                  size_t tx_length,
+                                  uint8_t *rx_data,
+                                  size_t rx_length)
+{
+    EZ_DRV_STATUS status = EZ_DRV_STATUS_ERR_INF_NOT_EXIST;
+    struct ezSpiDriver *drv = NULL;
+
+    EZTRACE("ezSpi_TransferAsync()");
+    status = ezSpi_Begin(inst, true, true, &drv);
+    if(status != EZ_DRV_STATUS_OK)
+    {
+        return status;
+    }
+
+    status = EZ_DRV_STATUS_ERR_INF_NOT_EXIST;
+    if(drv->interface.transfer_async != NULL)
+    {
+        status = drv->interface.transfer_async(drv->interface.driver_h,
+                                               tx_data,
+                                               tx_length,
+                                               rx_data,
+                                               rx_length);
+    }
+    ezSpi_End(inst, drv, status, true);
+    return status;
+}
+
+EZ_DRV_STATUS ezSpi_TransmitSync(ezSpiHandle_t *inst,
+                                 const uint8_t *tx_data,
+                                 size_t length,
+                                 uint32_t timeout_millis)
+{
+    EZ_DRV_STATUS status = EZ_DRV_STATUS_ERR_INF_NOT_EXIST;
+    struct ezSpiDriver *drv = NULL;
+
+    EZTRACE("ezSpi_TransmitSync()");
+    status = ezSpi_Begin(inst, true, false, &drv);
+    if(status != EZ_DRV_STATUS_OK)
+    {
+        return status;
+    }
+
+    status = EZ_DRV_STATUS_ERR_INF_NOT_EXIST;
+    if(drv->interface.transmit_sync != NULL)
+    {
+        status = drv->interface.transmit_sync(drv->interface.driver_h,
+                                              tx_data,
+                                              length,
+                                              timeout_millis);
+    }
+    ezSpi_End(inst, drv, status, false);
+    return status;
+}
+
+EZ_DRV_STATUS ezSpi_TransmitAsync(ezSpiHandle_t *inst,
+                                  const uint8_t *tx_data,
+                                  size_t length)
+{
+    EZ_DRV_STATUS status = EZ_DRV_STATUS_ERR_INF_NOT_EXIST;
+    struct ezSpiDriver *drv = NULL;
+
+    EZTRACE("ezSpi_TransmitAsync()");
+    status = ezSpi_Begin(inst, true, true, &drv);
+    if(status != EZ_DRV_STATUS_OK)
+    {
+        return status;
+    }
+
+    status = EZ_DRV_STATUS_ERR_INF_NOT_EXIST;
+    if(drv->interface.transmit_async != NULL)
+    {
+        status = drv->interface.transmit_async(drv->interface.driver_h,
+                                               tx_data,
+                                               length);
+    }
+    ezSpi_End(inst, drv, status, true);
+    return status;
+}
+
+EZ_DRV_STATUS ezSpi_ReceiveSync(ezSpiHandle_t *inst,
+                                uint8_t *rx_data,
                                 size_t length,
                                 uint32_t timeout_millis)
 {
-    EZTRACE("ezSpi_TransmitSync()");
-    EZ_DRV_STATUS status = STATUS_ERR_DRV_NOT_FOUND;
-    struct ezSpiDriver *drv = (struct ezSpiDriver*)ezDriver_GetDriverFromInstance((struct ezDrvInstance*)inst);
+    EZ_DRV_STATUS status = EZ_DRV_STATUS_ERR_INF_NOT_EXIST;
+    struct ezSpiDriver *drv = NULL;
 
-    if(drv != NULL)
+    EZTRACE("ezSpi_ReceiveSync()");
+    status = ezSpi_Begin(inst, true, false, &drv);
+    if(status != EZ_DRV_STATUS_OK)
     {
-        if(ezDriver_LockDriver((struct ezDrvInstance*)inst, &drv->common) == false)
-        {
-            EZERROR("Driver is busy");
-            return STATUS_BUSY;
-        }
-
-        if(drv->interface.transmit_sync)
-        {
-            status = drv->interface.transmit_sync(drv->interface.driver_h,
-                tx_data,
-                length,
-                timeout_millis);
-        }
-        ezDriver_UnlockDriver(&drv->common);
+        return status;
     }
+
+    status = EZ_DRV_STATUS_ERR_INF_NOT_EXIST;
+    if(drv->interface.receive_sync != NULL)
+    {
+        status = drv->interface.receive_sync(drv->interface.driver_h,
+                                             rx_data,
+                                             length,
+                                             timeout_millis);
+    }
+    ezSpi_End(inst, drv, status, false);
     return status;
 }
 
-EZ_DRV_STATUS ezSpi_TransmitAsync(ezSpiDrvInstance_t *inst,
-                                 const uint8_t *tx_data,
+EZ_DRV_STATUS ezSpi_ReceiveAsync(ezSpiHandle_t *inst,
+                                 uint8_t *rx_data,
                                  size_t length)
 {
-    EZTRACE("ezSpi_TransmitAsync()");
-    EZ_DRV_STATUS status = STATUS_ERR_DRV_NOT_FOUND;
-    struct ezSpiDriver *drv = (struct ezSpiDriver*)ezDriver_GetDriverFromInstance((struct ezDrvInstance*)inst);
+    EZ_DRV_STATUS status = EZ_DRV_STATUS_ERR_INF_NOT_EXIST;
+    struct ezSpiDriver *drv = NULL;
 
-    if(drv != NULL)
-    {
-        if(ezDriver_LockDriver((struct ezDrvInstance*)inst, &drv->common) == false)
-        {
-            EZERROR("Driver is busy");
-            return STATUS_BUSY;
-        }
-
-        if(drv->interface.transmit_async)
-        {
-            status = drv->interface.transmit_async(drv->interface.driver_h,
-                tx_data,
-                length);
-        }
-        ezDriver_UnlockDriver(&drv->common);
-    }
-    return status;
-}
-
-EZ_DRV_STATUS ezSpi_ReceiveSync(ezSpiDrvInstance_t *inst,
-                               uint8_t *rx_data,
-                               size_t length,
-                               uint32_t timeout_millis)
-{
-    EZTRACE("ezSpi_ReceiveSync()");
-    EZ_DRV_STATUS status = STATUS_ERR_DRV_NOT_FOUND;
-    struct ezSpiDriver *drv = (struct ezSpiDriver*)ezDriver_GetDriverFromInstance((struct ezDrvInstance*)inst);
-
-    if(drv != NULL)
-    {
-        if(ezDriver_LockDriver((struct ezDrvInstance*)inst, &drv->common) == false)
-        {
-            EZERROR("Driver is busy");
-            return STATUS_BUSY;
-        }
-
-        if(drv->interface.receive_sync)
-        {
-            status = drv->interface.receive_sync(drv->interface.driver_h,
-                rx_data,
-                length,
-                timeout_millis);
-        }
-        ezDriver_UnlockDriver(&drv->common);
-    }
-    return status;
-}
-
-EZ_DRV_STATUS ezSpi_ReceiveAsync(ezSpiDrvInstance_t *inst,
-                                uint8_t *rx_data,
-                                size_t length)
-{
     EZTRACE("ezSpi_ReceiveAsync()");
-    EZ_DRV_STATUS status = STATUS_ERR_DRV_NOT_FOUND;
-    struct ezSpiDriver *drv = (struct ezSpiDriver*)ezDriver_GetDriverFromInstance((struct ezDrvInstance*)inst);
-
-    if(drv != NULL)
+    status = ezSpi_Begin(inst, true, true, &drv);
+    if(status != EZ_DRV_STATUS_OK)
     {
-
-        if(ezDriver_LockDriver((struct ezDrvInstance*)inst, &drv->common) == false)
-        {
-            EZERROR("Driver is busy");
-            return STATUS_BUSY;
-        }
-
-        if(drv->interface.receive_async)
-        {
-            status = drv->interface.receive_async(drv->interface.driver_h,
-                rx_data,
-                length);
-        }
-        ezDriver_UnlockDriver(&drv->common);
+        return status;
     }
+
+    status = EZ_DRV_STATUS_ERR_INF_NOT_EXIST;
+    if(drv->interface.receive_async != NULL)
+    {
+        status = drv->interface.receive_async(drv->interface.driver_h,
+                                              rx_data,
+                                              length);
+    }
+    ezSpi_End(inst, drv, status, true);
     return status;
 }
 
-EZ_DRV_STATUS ezSpi_ChipSelect(ezSpiDrvInstance_t *inst, bool select)
+EZ_DRV_STATUS ezSpi_ChipSelect(ezSpiHandle_t *inst, bool select)
 {
-    EZTRACE("ezSpi_ChipSelect()");
-    EZ_DRV_STATUS status = STATUS_ERR_DRV_NOT_FOUND;
-    struct ezSpiDriver *drv = (struct ezSpiDriver*)ezDriver_GetDriverFromInstance((struct ezDrvInstance*)inst);
+    EZ_DRV_STATUS status = EZ_DRV_STATUS_ERR_INF_NOT_EXIST;
+    struct ezSpiDriver *drv = NULL;
 
-    if(drv != NULL)
+    EZTRACE("ezSpi_ChipSelect()");
+    status = ezSpi_Begin(inst, true, false, &drv);
+    if(status != EZ_DRV_STATUS_OK)
     {
-        if(ezDriver_LockDriver((struct ezDrvInstance*)inst, &drv->common) == false)
-        {
-            EZERROR("Driver is busy");
-            return STATUS_BUSY;
-        }
-        
-        if(drv->interface.chip_select)
-        {
-            status = drv->interface.chip_select(drv->interface.driver_h, select);
-        }
-        ezDriver_UnlockDriver(&drv->common);
+        return status;
     }
+
+    status = EZ_DRV_STATUS_ERR_INF_NOT_EXIST;
+    if(drv->interface.chip_select != NULL)
+    {
+        status = drv->interface.chip_select(drv->interface.driver_h, select);
+    }
+    ezSpi_End(inst, drv, status, false);
     return status;
 }
 
 /*****************************************************************************
 * Local functions
 *****************************************************************************/
+
+/* Find a registered HW driver by its name. Return NULL if not found. */
+static struct ezSpiDriver *ezSpi_FindDriver(const char *name)
+{
+    struct Node *it_node = NULL;
+    struct ezSpiDriver *spi_drv = NULL;
+
+    EZ_LINKEDLIST_FOR_EACH(it_node, &hw_driver_list)
+    {
+        spi_drv = EZ_LINKEDLIST_GET_PARENT_OF(it_node, ll_node, struct ezSpiDriver);
+        if(strcmp(spi_drv->base.name, name) == 0)
+        {
+            return spi_drv;
+        }
+    }
+
+    return NULL;
+}
+
+
+/* Find the HW driver of the handle, check it and take it for an operation.
+ * On EZ_DRV_STATUS_OK the caller must call ezSpi_End(). */
+static EZ_DRV_STATUS ezSpi_Begin(ezSpiHandle_t *inst,
+                                 bool require_initialized,
+                                 bool is_async,
+                                 struct ezSpiDriver **drv_out)
+{
+    struct ezSpiDriver *drv = NULL;
+
+    if(inst == NULL)
+    {
+        EZERROR("Driver not found");
+        return EZ_DRV_STATUS_ERR_DRV_NOT_FOUND;
+    }
+
+    drv = (struct ezSpiDriver*)ezDriver_GetHw(&inst->drv_handle);
+    if(drv == NULL)
+    {
+        EZERROR("Driver not found");
+        return EZ_DRV_STATUS_ERR_DRV_NOT_FOUND;
+    }
+
+    if(require_initialized && !drv->initialized)
+    {
+        EZERROR("Driver is not initialized");
+        return EZ_DRV_STATUS_ERR_NOT_INITIALIZED;
+    }
+
+    if(!ezDriver_Acquire(&inst->drv_handle, &drv->base, is_async))
+    {
+        EZERROR("Driver is busy");
+        return EZ_DRV_STATUS_BUSY;
+    }
+
+    *drv_out = drv;
+    return EZ_DRV_STATUS_OK;
+}
+
+
+/* Give the driver back after the HW call.
+ * - sync: always.
+ * - async: only if the transfer did not start. A started transfer is released
+ *   by the HW driver with ezDriver_NotifyEvent(EZ_DRV_EVENT_OP_DONE). */
+static void ezSpi_End(ezSpiHandle_t *inst,
+                      struct ezSpiDriver *drv,
+                      EZ_DRV_STATUS status,
+                      bool is_async)
+{
+    if(is_async && (status == EZ_DRV_STATUS_OK))
+    {
+        return;
+    }
+
+    if(!ezDriver_Release(&inst->drv_handle, &drv->base))
+    {
+        EZDEBUG("Driver was already released by the HW driver");
+    }
+}
 
 #endif /* EZ_SPI == 1 */
 /* End of file*/

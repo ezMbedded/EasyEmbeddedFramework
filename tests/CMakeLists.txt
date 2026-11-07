@@ -62,6 +62,10 @@ if(ENABLE_EZ_I2C)
     add_subdirectory(hal/i2c)
 endif()
 
+if(ENABLE_EZ_SPI)
+    add_subdirectory(hal/spi)
+endif()
+
 if(ENABLE_EZ_RPC)
     add_subdirectory(service/rpc)
 endif()

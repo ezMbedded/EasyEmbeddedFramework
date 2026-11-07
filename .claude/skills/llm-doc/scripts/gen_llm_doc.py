@@ -185,22 +185,63 @@ def render_other(cd, loc=None, lang="c", kinds=("enum", "typedef", "define")):
         brief = " ".join(text(m.find("briefdescription")).split())
         name = text(m.find("name")).strip()
         if kind == "enum":
-            vals = [f"  {text(v.find('name')).strip()}"
-                    + (f"  /* {' '.join(text(v.find('briefdescription')).split())} */"
-                       if ' '.join(text(v.find('briefdescription')).split()) else "")
-                    for v in m.findall("enumvalue")]
+            vals = []
+            for v in m.findall("enumvalue"):
+                doc = " ".join(text(v.find("briefdescription")).split())
+                if not doc:    # a /**< ... */ member comment is a detailed description
+                    doc = " ".join(" ".join(paras(v.find("detaileddescription"))).split())
+                vals.append((text(v.find("name")).strip(), doc))
             kw = "enum class" if m.get("strong") == "yes" else "enum"
-            sig = f"{kw} {name} {{\n" + ",\n".join(vals) + "\n}"
+            lines_ = [f"  {n}{',' if i < len(vals) - 1 else ''}" + (f"  /* {d} */" if d else "")
+                      for i, (n, d) in enumerate(vals)]
+            sig = f"{kw} {name} {{\n" + "\n".join(lines_) + "\n}"
         elif kind == "variable":
             sig = (" ".join(text(m.find("definition")).split())
                    + " ".join(text(m.find("argsstring")).split()) + ";")
         elif kind == "typedef":
-            sig = " ".join(text(m.find("definition")).split()) + \
-                  " ".join(text(m.find("argsstring")).split())
+            # A function-pointer typedef already has its parameters in the
+            # definition, e.g. "void(* cb) (int x)". Appending argsstring
+            # would print the parameter list twice.
+            definition = " ".join(text(m.find("definition")).split())
+            sig = definition if "(*" in definition else \
+                  definition + " ".join(text(m.find("argsstring")).split())
         else:
             params = [text(p.find("defname")).strip() for p in m.findall("param")]
             sig = f"#define {name}" + (f"({', '.join(params)})" if params else "")
         out += [f"```{lang}", sig, "```", brief, ""] if brief else [f"```{lang}", sig, "```", ""]
+    return out
+
+
+def render_c_struct(c, listing=""):
+    """A plain C struct/union with its data members and their comments."""
+    kind = c.get("kind")
+    name = text(c.find("compoundname")).strip()
+    brief = " ".join(text(c.find("briefdescription")).split())
+    fields = []
+    for m in c.iter("memberdef"):
+        if m.get("kind") != "variable" or m.get("prot", "public") != "public":
+            continue
+        definition = " ".join(text(m.find("definition")).split())
+        args = " ".join(text(m.find("argsstring")).split())
+        # an array field already has its [N] in the definition in some Doxygen versions
+        decl = definition if (args and definition.endswith(args)) else definition + args
+        # "struct ezDrvHandle ezI2cHandle_t::drv_handle" -> "struct ezDrvHandle drv_handle"
+        decl = decl.replace(name + "::", "")
+        doc = " ".join(text(m.find("briefdescription")).split())
+        if not doc:    # a /**< ... */ member comment is a detailed description
+            doc = " ".join(" ".join(paras(m.find("detaileddescription"))).split())
+        fields.append(f"  {decl};" + (f"  /* {doc} */" if doc else ""))
+    # "typedef struct { ... } name;" when the header declares it that way
+    is_typedef = re.search(r"\}\s*" + re.escape(name) + r"\s*;", listing) is not None
+    head = f"typedef {kind}" if is_typedef else f"{kind} {name}"
+    tail = f"}} {name};" if is_typedef else "};"
+    sig = f"{head} {{\n" + "\n".join(fields) + f"\n{tail}" if fields else f"{head} {{}} {name};"
+    out = ["```c", sig, "```"]
+    if brief:
+        out.append(brief)
+    out.append("")
+    for p in paras(c.find("detaileddescription")):
+        out += [p, ""]
     return out
 
 
@@ -282,6 +323,17 @@ def process_header(xml_path, xml_dir):
         lines += [p, ""]
 
     other = render_other(cd)
+    listing = text(cd.find("programlisting"))
+    # plain C structs/unions declared in this header: fields with their comments
+    c_structs = []
+    for ref in cd.findall("innerclass"):
+        c = load_compound(xml_dir, ref.get("refid"))
+        if (c is not None and ref.get("prot", "public") == "public"
+                and in_file(c, loc) and c.get("kind") in ("struct", "union")
+                and "::" not in text(c.find("compoundname"))):
+            c_structs.append(c)
+    for c in c_structs:
+        other += render_c_struct(c, listing)
     if other:
         lines += ["## Types and macros", ""] + other
     funcs = [m for m in cd.iter("memberdef") if m.get("kind") == "function"

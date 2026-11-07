@@ -25,10 +25,6 @@
 #ifndef EZ_LINKED_LIST_H 
 #define EZ_LINKED_LIST_H 
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 /*****************************************************************************
 * Includes
 *****************************************************************************/
@@ -41,6 +37,10 @@ extern "C" {
 #include <stdbool.h>
 #include <stddef.h>
 #include "ez_utilities_common.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 
 /*****************************************************************************

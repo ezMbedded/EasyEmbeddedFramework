@@ -15,6 +15,18 @@ message(STATUS "**********************************************************")
 set(FRAMEWORK_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 
 
+# Dependency -----------------------------------------------------------------
+# All the HAL modules (uart, gpio, i2c, spi) include ez_driver_def.h, which is
+# only provided when EZ_DRIVER is 1. Enable the driver module automatically
+# when any of them is enabled. This is a local override and does not change
+# the user's cache value.
+if((ENABLE_EZ_UART OR ENABLE_EZ_GPIO OR ENABLE_EZ_I2C OR ENABLE_EZ_SPI)
+   AND NOT ENABLE_EZ_HAL_DRIVER)
+    message(STATUS "* HAL modules need the driver module: ENABLE_EZ_HAL_DRIVER forced to ON")
+    set(ENABLE_EZ_HAL_DRIVER ON)
+endif()
+
+
 # Source files ---------------------------------------------------------------
 target_sources(ez_hal_lib
     PRIVATE
