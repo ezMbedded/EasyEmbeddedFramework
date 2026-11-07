@@ -395,8 +395,6 @@ EZ_DRV_STATUS ezI2c_SystemRegisterHwDriver(struct ezI2cDriver *hw_driver);
 *****************************************************************************/
 EZ_DRV_STATUS ezI2c_SystemUnregisterHwDriver(struct ezI2cDriver *hw_driver);
 
-EZ_DRV_STATUS ezI2c_SystemUnregisterHwDriver(struct ezI2cDriver *hw_driver);
-
 /*****************************************************************************
 * Function: ezI2c_RegisterInstance
 *//**

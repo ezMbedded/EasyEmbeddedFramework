@@ -4,6 +4,7 @@
 |--------|--------|---------|-----------|
 | ez_data_model | data_model/ez_data_model.h | Public API of data model component. | 6 |
 | ez_driver_def | hal/ez_driver_def.h | Common definitions shared by all HAL driver modules. | 6 |
+| ez_gpio | gpio/ez_gpio.h | Hardware Abstraction Layer for GPIO pins. | 8 |
 | ez_hexdump | hexdump/ez_hexdump.h | Public functions of hexdump component. | 1 |
 | ez_i2c | i2c/ez_i2c.h | Hardware Abstraction Layer for I2C communication. | 10 |
 | ez_linked_list | linked_list/ez_linked_list.h | Public functions of the linked list component. | 8 |
@@ -16,3 +17,4 @@
 | ez_static_alloc | static_alloc/ez_static_alloc.h | Public API of the static allocation component. | 12 |
 | ez_sync | sync/ez_sync.hpp | Synchronization interfaces the application provides to the platform. | 9 |
 | ez_task | task/ez_task.hpp | Common interface for the tasks of the platform layer. | 4 |
+| ez_uart | uart/ez_uart.h | Hardware Abstraction Layer for UART communication. | 12 |
