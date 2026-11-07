@@ -195,8 +195,12 @@ def render_other(cd, loc=None, lang="c", kinds=("enum", "typedef", "define")):
             sig = (" ".join(text(m.find("definition")).split())
                    + " ".join(text(m.find("argsstring")).split()) + ";")
         elif kind == "typedef":
-            sig = " ".join(text(m.find("definition")).split()) + \
-                  " ".join(text(m.find("argsstring")).split())
+            # A function-pointer typedef already has its parameters in the
+            # definition, e.g. "void(* cb) (int x)". Appending argsstring
+            # would print the parameter list twice.
+            definition = " ".join(text(m.find("definition")).split())
+            sig = definition if "(*" in definition else \
+                  definition + " ".join(text(m.find("argsstring")).split())
         else:
             params = [text(p.find("defname")).strip() for p in m.findall("param")]
             sig = f"#define {name}" + (f"({', '.join(params)})" if params else "")

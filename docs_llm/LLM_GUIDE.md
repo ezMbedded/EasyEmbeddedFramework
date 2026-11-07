@@ -37,6 +37,8 @@ Headers live in `inc/<layer>/<module>/`. A layer may only include headers from l
 - **Ownership:** containers copy items in and out unless the doc says "by reference".
   Caller owns all memory passed to `Init*` or `Initialize*` .
 - **Context suffix:** `FromISR` = callable from interrupt context only.
+- Blocking API shall have the suffix `Sync`, or `ez<Module>_<Verb><Noun><Sync>`. e.g. `ezSpi_ReceiveSync`
+- Non-Blocking API shall have the suffix `Async`, or `ez<Module>_<Verb><Noun><Async>`. e.g. `ezSpi_ReceiveAsync`
 
 ## 5. API quick reference
 
