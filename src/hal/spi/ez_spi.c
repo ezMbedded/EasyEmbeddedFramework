@@ -58,6 +58,7 @@ static struct ezSpiDriver *ezSpi_FindDriver(const char *name);
 
 static EZ_DRV_STATUS ezSpi_Begin(ezSpiHandle_t *inst,
                                  bool require_initialized,
+                                 bool is_async,
                                  struct ezSpiDriver **drv_out);
 
 static void ezSpi_End(ezSpiHandle_t *inst,
@@ -180,7 +181,7 @@ EZ_DRV_STATUS ezSpi_Initialize(ezSpiHandle_t *inst, ezSpiConfig_t *config)
         return EZ_DRV_STATUS_ERR_ARG;
     }
 
-    status = ezSpi_Begin(inst, false, &drv);
+    status = ezSpi_Begin(inst, false, false, &drv);
     if(status != EZ_DRV_STATUS_OK)
     {
         return status;
@@ -193,9 +194,9 @@ EZ_DRV_STATUS ezSpi_Initialize(ezSpiHandle_t *inst, ezSpiConfig_t *config)
     }
     ezSpi_End(inst, drv, status, false);
 
-    if(status == EZ_DRV_STATUS_OK)
+    drv->initialized = (status == EZ_DRV_STATUS_OK);
+    if(drv->initialized)
     {
-        drv->initialized = true;
         EZDEBUG("Driver %s initialized", drv->base.name);
     }
 
@@ -213,7 +214,7 @@ EZ_DRV_STATUS ezSpi_TransferSync(ezSpiHandle_t *inst,
     struct ezSpiDriver *drv = NULL;
 
     EZTRACE("ezSpi_TransferSync()");
-    status = ezSpi_Begin(inst, true, &drv);
+    status = ezSpi_Begin(inst, true, false, &drv);
     if(status != EZ_DRV_STATUS_OK)
     {
         return status;
@@ -243,7 +244,7 @@ EZ_DRV_STATUS ezSpi_TransferAsync(ezSpiHandle_t *inst,
     struct ezSpiDriver *drv = NULL;
 
     EZTRACE("ezSpi_TransferAsync()");
-    status = ezSpi_Begin(inst, true, &drv);
+    status = ezSpi_Begin(inst, true, true, &drv);
     if(status != EZ_DRV_STATUS_OK)
     {
         return status;
@@ -271,7 +272,7 @@ EZ_DRV_STATUS ezSpi_TransmitSync(ezSpiHandle_t *inst,
     struct ezSpiDriver *drv = NULL;
 
     EZTRACE("ezSpi_TransmitSync()");
-    status = ezSpi_Begin(inst, true, &drv);
+    status = ezSpi_Begin(inst, true, false, &drv);
     if(status != EZ_DRV_STATUS_OK)
     {
         return status;
@@ -297,7 +298,7 @@ EZ_DRV_STATUS ezSpi_TransmitAsync(ezSpiHandle_t *inst,
     struct ezSpiDriver *drv = NULL;
 
     EZTRACE("ezSpi_TransmitAsync()");
-    status = ezSpi_Begin(inst, true, &drv);
+    status = ezSpi_Begin(inst, true, true, &drv);
     if(status != EZ_DRV_STATUS_OK)
     {
         return status;
@@ -323,7 +324,7 @@ EZ_DRV_STATUS ezSpi_ReceiveSync(ezSpiHandle_t *inst,
     struct ezSpiDriver *drv = NULL;
 
     EZTRACE("ezSpi_ReceiveSync()");
-    status = ezSpi_Begin(inst, true, &drv);
+    status = ezSpi_Begin(inst, true, false, &drv);
     if(status != EZ_DRV_STATUS_OK)
     {
         return status;
@@ -349,7 +350,7 @@ EZ_DRV_STATUS ezSpi_ReceiveAsync(ezSpiHandle_t *inst,
     struct ezSpiDriver *drv = NULL;
 
     EZTRACE("ezSpi_ReceiveAsync()");
-    status = ezSpi_Begin(inst, true, &drv);
+    status = ezSpi_Begin(inst, true, true, &drv);
     if(status != EZ_DRV_STATUS_OK)
     {
         return status;
@@ -372,7 +373,7 @@ EZ_DRV_STATUS ezSpi_ChipSelect(ezSpiHandle_t *inst, bool select)
     struct ezSpiDriver *drv = NULL;
 
     EZTRACE("ezSpi_ChipSelect()");
-    status = ezSpi_Begin(inst, true, &drv);
+    status = ezSpi_Begin(inst, true, false, &drv);
     if(status != EZ_DRV_STATUS_OK)
     {
         return status;
@@ -414,6 +415,7 @@ static struct ezSpiDriver *ezSpi_FindDriver(const char *name)
  * On EZ_DRV_STATUS_OK the caller must call ezSpi_End(). */
 static EZ_DRV_STATUS ezSpi_Begin(ezSpiHandle_t *inst,
                                  bool require_initialized,
+                                 bool is_async,
                                  struct ezSpiDriver **drv_out)
 {
     struct ezSpiDriver *drv = NULL;
@@ -437,7 +439,7 @@ static EZ_DRV_STATUS ezSpi_Begin(ezSpiHandle_t *inst,
         return EZ_DRV_STATUS_ERR_NOT_INITIALIZED;
     }
 
-    if(!ezDriver_Acquire(&inst->drv_handle, &drv->base))
+    if(!ezDriver_Acquire(&inst->drv_handle, &drv->base, is_async))
     {
         EZERROR("Driver is busy");
         return EZ_DRV_STATUS_BUSY;

@@ -65,6 +65,7 @@ static bool g_busy_in_callback = false; /* BUSY bit seen inside the callback */
 static EZ_DRV_STATUS g_chained_status = EZ_DRV_STATUS_OK;
 static ezSpiHandle_t *g_chain_handle = NULL;
 static uint8_t g_buf[4] = {1, 2, 3, 4};
+static uint8_t g_state_in_hw = 0U;      /* state byte seen inside a HW function */
 
 
 /******************************************************************************
@@ -98,6 +99,44 @@ static void SimulateIsrDone(uint8_t event_code)
     ezDriver_NotifyEvent(&g_drv.base, EZ_DRV_EVENT_OP_DONE, event_code, NULL, NULL);
 }
 
+static void SimulateIsrProgress(uint8_t event_code)
+{
+    ezDriver_NotifyEvent(&g_drv.base, EZ_DRV_EVENT_OP_PROGRESS, event_code, NULL, NULL);
+}
+
+/* A sync HW function which breaks the rule and reports events. */
+static EZ_DRV_STATUS HwTransmitSyncNotifies(void *driver_h, const uint8_t *tx_data, size_t length, uint32_t timeout_millis)
+{
+    (void)driver_h;
+    (void)tx_data;
+    (void)length;
+    (void)timeout_millis;
+    g_state_in_hw = g_drv.base.state;
+    SimulateIsrProgress(EZ_SPI_EVENT_CMPLT);
+    SimulateIsrDone(EZ_SPI_EVENT_CMPLT);
+    return EZ_DRV_STATUS_OK;
+}
+
+/* Record the state bits seen by the HW function. */
+static EZ_DRV_STATUS HwTransmitSyncRecordState(void *driver_h, const uint8_t *tx_data, size_t length, uint32_t timeout_millis)
+{
+    (void)driver_h;
+    (void)tx_data;
+    (void)length;
+    (void)timeout_millis;
+    g_state_in_hw = g_drv.base.state;
+    return EZ_DRV_STATUS_OK;
+}
+
+static EZ_DRV_STATUS HwTransmitAsyncRecordState(void *driver_h, const uint8_t *tx_data, size_t length)
+{
+    (void)driver_h;
+    (void)tx_data;
+    (void)length;
+    g_state_in_hw = g_drv.base.state;
+    return EZ_DRV_STATUS_OK;
+}
+
 
 /******************************************************************************
 * Fixture
@@ -118,6 +157,7 @@ struct SpiTestFixture
         FFF_RESET_HISTORY();
 
         g_busy_in_callback = false;
+        g_state_in_hw = 0U;
         g_chained_status = EZ_DRV_STATUS_OK;
         g_chain_handle = NULL;
 
@@ -244,6 +284,17 @@ TEST_CASE_METHOD(SpiTestFixture, "Test instance registration lifecycle", "[hal][
             CHECK(ezSpi_RegisterInstance(NULL, "spi_mock", NULL, NULL) == EZ_DRV_STATUS_ERR_ARG);
             CHECK(ezSpi_RegisterInstance(&first, NULL, NULL, NULL) == EZ_DRV_STATUS_ERR_ARG);
             CHECK(ezSpi_UnregisterInstance(NULL) == EZ_DRV_STATUS_ERR_ARG);
+        }
+    }
+
+    WHEN("A handle which was never bound is unregistered")
+    {
+        THEN("The call succeeds and the handle stays unbound")
+        {
+            CHECK(ezSpi_UnregisterInstance(&first) == EZ_DRV_STATUS_OK);
+            CHECK(first.drv_handle.hw == NULL);
+            CHECK(first.drv_handle.on_event == NULL);
+            CHECK(first.drv_handle.ctx == NULL);
         }
     }
 
@@ -406,6 +457,32 @@ TEST_CASE_METHOD(SpiTestFixture, "Test initialization", "[hal][spi]")
             CHECK(HwInitialize_fake.arg1_val == &config);
             CHECK(g_drv.initialized == true);
             CHECK(IsBusy() == false);
+        }
+    }
+
+    WHEN("The driver is initialized and a second initialization fails")
+    {
+        BindAndInit(&first);
+        HwInitialize_fake.return_val = EZ_DRV_STATUS_ERR_GENERIC;
+
+        THEN("The failure is returned and the driver is not initialized anymore")
+        {
+            CHECK(ezSpi_Initialize(&first, &config) == EZ_DRV_STATUS_ERR_GENERIC);
+            CHECK(g_drv.initialized == false);
+            CHECK(IsBusy() == false);
+            CHECK(ezSpi_ChipSelect(&first, true) == EZ_DRV_STATUS_ERR_NOT_INITIALIZED);
+        }
+    }
+
+    WHEN("The driver is initialized and the HW initialize function is removed")
+    {
+        BindAndInit(&first);
+        g_drv.interface.initialize = NULL;
+
+        THEN("The initialization reports interface-not-exist and the driver is not initialized anymore")
+        {
+            CHECK(ezSpi_Initialize(&first, &config) == EZ_DRV_STATUS_ERR_INF_NOT_EXIST);
+            CHECK(g_drv.initialized == false);
         }
     }
 }
@@ -642,6 +719,116 @@ TEST_CASE_METHOD(SpiTestFixture, "Test async operations", "[hal][spi]")
         {
             CHECK(OnEvent_fake.call_count == 0U);
             CHECK(IsBusy() == false);
+        }
+    }
+}
+
+TEST_CASE_METHOD(SpiTestFixture, "Test events only belong to async operations", "[hal][spi]")
+{
+    int user_ctx = 0;
+    REQUIRE(ezSpi_RegisterInstance(&first, "spi_mock", OnEvent, &user_ctx) == EZ_DRV_STATUS_OK);
+    HwInitialize_fake.return_val = EZ_DRV_STATUS_OK;
+    REQUIRE(ezSpi_Initialize(&first, &config) == EZ_DRV_STATUS_OK);
+
+    WHEN("A sync HW function reports PROGRESS and DONE events")
+    {
+        HwTransmitSync_fake.custom_fake = HwTransmitSyncNotifies;
+
+        THEN("The events are dropped and the status is the return value")
+        {
+            CHECK(ezSpi_TransmitSync(&first, g_buf, 4, 10) == EZ_DRV_STATUS_OK);
+            CHECK(OnEvent_fake.call_count == 0U);
+            CHECK(IsBusy() == false);
+            CHECK(g_drv.base.state == 0U);
+        }
+    }
+
+    WHEN("A sync HW function reports DONE and the callback would start an async operation")
+    {
+        HwTransmitSync_fake.custom_fake = HwTransmitSyncNotifies;
+        HwTransmitAsync_fake.return_val = EZ_DRV_STATUS_OK;
+        OnEvent_fake.custom_fake = OnEventChain;
+        g_chain_handle = &first;
+
+        THEN("The callback is not called, so no operation is started and the driver ends idle")
+        {
+            CHECK(ezSpi_TransmitSync(&first, g_buf, 4, 10) == EZ_DRV_STATUS_OK);
+            CHECK(OnEvent_fake.call_count == 0U);
+            CHECK(HwTransmitAsync_fake.call_count == 0U);
+            CHECK(g_drv.base.state == 0U);
+        }
+    }
+
+    WHEN("A sync operation runs")
+    {
+        HwTransmitSync_fake.custom_fake = HwTransmitSyncRecordState;
+
+        THEN("The HW function sees BUSY without ASYNC, and the driver is idle afterwards")
+        {
+            CHECK(ezSpi_TransmitSync(&first, g_buf, 4, 10) == EZ_DRV_STATUS_OK);
+            CHECK(g_state_in_hw == EZ_DRV_STATE_BUSY);
+            CHECK(g_drv.base.state == 0U);
+        }
+    }
+
+    WHEN("An async operation runs")
+    {
+        HwTransmitAsync_fake.custom_fake = HwTransmitAsyncRecordState;
+        REQUIRE(ezSpi_TransmitAsync(&first, g_buf, 4) == EZ_DRV_STATUS_OK);
+
+        THEN("The HW function sees BUSY and ASYNC, and both stay set")
+        {
+            CHECK(g_state_in_hw == (EZ_DRV_STATE_BUSY | EZ_DRV_STATE_ASYNC));
+            CHECK(g_drv.base.state == (EZ_DRV_STATE_BUSY | EZ_DRV_STATE_ASYNC));
+        }
+
+        AND_WHEN("The HW driver reports a PROGRESS event")
+        {
+            SimulateIsrProgress(EZ_SPI_EVENT_CMPLT);
+
+            THEN("The callback is called and the operation is still in flight")
+            {
+                CHECK(OnEvent_fake.call_count == 1U);
+                CHECK(OnEvent_fake.arg0_val == &user_ctx);
+                CHECK(g_drv.base.state == (EZ_DRV_STATE_BUSY | EZ_DRV_STATE_ASYNC));
+            }
+        }
+
+        AND_WHEN("The HW driver reports the DONE event")
+        {
+            SimulateIsrDone(EZ_SPI_EVENT_CMPLT);
+
+            THEN("BUSY and ASYNC are both cleared")
+            {
+                CHECK(OnEvent_fake.call_count == 1U);
+                CHECK(g_drv.base.state == 0U);
+            }
+        }
+    }
+
+    WHEN("An async operation fails to start")
+    {
+        HwTransmitAsync_fake.return_val = EZ_DRV_STATUS_ERR_GENERIC;
+
+        THEN("BUSY and ASYNC are both cleared")
+        {
+            CHECK(ezSpi_TransmitAsync(&first, g_buf, 4) == EZ_DRV_STATUS_ERR_GENERIC);
+            CHECK(g_drv.base.state == 0U);
+        }
+    }
+
+    WHEN("A sync operation follows an async operation")
+    {
+        HwTransmitAsync_fake.return_val = EZ_DRV_STATUS_OK;
+        HwTransmitSync_fake.custom_fake = HwTransmitSyncRecordState;
+        REQUIRE(ezSpi_TransmitAsync(&first, g_buf, 4) == EZ_DRV_STATUS_OK);
+        SimulateIsrDone(EZ_SPI_EVENT_CMPLT);
+
+        THEN("The sync operation does not inherit the ASYNC bit")
+        {
+            CHECK(ezSpi_TransmitSync(&first, g_buf, 4, 10) == EZ_DRV_STATUS_OK);
+            CHECK(g_state_in_hw == EZ_DRV_STATE_BUSY);
+            CHECK(OnEvent_fake.call_count == 1U);
         }
     }
 }

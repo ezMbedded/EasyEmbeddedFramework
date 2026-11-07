@@ -15,9 +15,43 @@
 /** @file   ez_i2c.h
  *  @author Hai Nguyen
  *  @date   25.05.2025
- *  @brief  One line description of the component
+ *  @brief  Hardware Abstraction Layer for I2C communication
  *
- *  @details Detail description of the component
+ *  @details The user binds an ezI2cHandle_t to a HW driver by name. All the
+ *           operations of a handle go through the HW driver registered with
+ *           ezI2c_SystemRegisterHwDriver().
+ *
+ *           Concurrency: this component does not provide mutual exclusion.
+ *           The caller must serialize the calls on the same HW driver (mutex
+ *           or semaphore of the upper layer). A call made while another
+ *           operation is in flight returns EZ_DRV_STATUS_BUSY.
+ *
+ *           Sync operations return when the transfer is done. Async
+ *           operations return as soon as the transfer is started. The HW
+ *           driver reports the end of an async operation by calling
+ *           ezDriver_NotifyEvent(&hw_driver->base, EZ_DRV_EVENT_OP_DONE,
+ *           EZ_I2C_EVENT_xxx, NULL, NULL), usually from its ISR. The driver
+ *           is busy until then, and the handle callback is invoked after the
+ *           driver is released, so it may start the next operation.
+ *           A sync operation reports its result only through the return
+ *           value. The HW function of a sync operation must NOT call
+ *           ezDriver_NotifyEvent(): such events are dropped and the handle
+ *           callback is not invoked. A HW driver which waits for an interrupt
+ *           uses its own semaphore or flag for that.
+ *
+ *           No function of this component is ISR-safe. From an ISR, the HW
+ *           driver only calls ezDriver_NotifyEvent().
+ *
+ *           Argument checking: this component checks the handle, the config
+ *           pointer of ezI2c_Initialize() and the driver name. The buffers,
+ *           lengths and addresses are passed as they are to the HW driver,
+ *           which is responsible for validating them.
+ *
+ *           Completion: there is no subscription. The end of an async
+ *           operation is delivered through the callback given to
+ *           ezI2c_RegisterInstance(). Users never call ezDriver_Subscribe().
+ *           Every operation except ezI2c_Initialize() requires that
+ *           ezI2c_Initialize() has succeeded first.
  */
 
 #ifndef _EZ_I2C_H
@@ -35,26 +69,26 @@ extern "C" {
 #endif
 
 #if (EZ_I2C == 1)
+#include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
 
+#include "ez_linked_list.h"
 #include "ez_driver_def.h"
 
 /*****************************************************************************
 * Component Preprocessor Macros
 *****************************************************************************/
-#define A_MACRO     1   /**< a macro*/
+/* None */
 
 /*****************************************************************************
 * Component Typedefs
 *****************************************************************************/
 
-/**
- * @enum
- * @brief Enumeration for I2C related constants or states.
+/** @brief I2C mode
  *
- * This enum is used to define various constants or states relevant to the I2C hardware abstraction layer.
- * The specific values and their descriptions should be provided below each enumerator.
+ *  @details Member of ezI2cConfig_t. The I2C component does not check it. The
+ *           HW driver decides which modes it supports.
  */
 typedef enum
 {
@@ -63,6 +97,11 @@ typedef enum
 } EZ_I2C_MODE;
 
 
+/** @brief I2C bus speed
+ *
+ *  @details Member of ezI2cConfig_t. The I2C component does not use it. The
+ *           HW driver applies it.
+ */
 typedef enum
 {
     EZ_I2C_SPEED_STANDARD,  /**< Standard speed (100 kHz) */
@@ -71,12 +110,41 @@ typedef enum
 } EZ_I2C_SPEED;
 
 
+/** @brief I2C addressing mode
+ *
+ *  @details Member of ezI2cConfig_t. The I2C component does not use it. The
+ *           HW driver interprets the address of each transfer according to it.
+ */
 typedef enum
 {
     EZ_I2C_ADDRESSING_MODE_7BIT,  /**< 7-bit addressing mode */
     EZ_I2C_ADDRESSING_MODE_10BIT, /**< 10-bit addressing mode */
 } EZ_I2C_ADDRESSING_MODE;
 
+
+/** @brief Event codes reported to the handle callback (event_code argument)
+ *
+ *  @details The HW driver chooses the code and reports it with
+ *           ezDriver_NotifyEvent(&drv->base, EZ_DRV_EVENT_OP_DONE, event_code,
+ *           NULL, NULL) when an async operation ends. The I2C component defines
+ *           no parameters: ezDriver_NotifyEvent() forwards param1 and param2 as
+ *           the HW driver passes them.
+ */
+typedef enum
+{
+    EZ_I2C_EVENT_CMPLT,     /**< The async operation is completed */
+    EZ_I2C_EVENT_ERR,       /**< The async operation failed (e.g. NACK, bus error) */
+    EZ_I2C_EVENT_TIMEOUT,   /**< The async operation timed out */
+    EZ_I2C_NUM_EVENTS,      /**< Number of event codes. Not an event */
+} EZ_I2C_EVENT;
+
+
+/** @brief I2C configuration
+ *
+ *  @details Passed by pointer to the HW initialize function, unchanged. The
+ *           I2C component does not check the values or copy the structure.
+ *           The HW driver decides which values it supports.
+ */
 typedef struct
 {
     EZ_I2C_MODE mode;                /**< I2C mode (master/slave) */
@@ -85,57 +153,153 @@ typedef struct
 } ezI2cConfig_t;
 
 
-typedef EZ_DRV_STATUS (*ezHwI2c_Initialize)(ezDriver_t *driver_h, ezI2cConfig_t *config);
-typedef EZ_DRV_STATUS (*ezHwI2c_TransmitSync)(ezDriver_t *driver_h,
+/** @brief Initialize the I2C peripheral. Called by ezI2c_Initialize().
+ *
+ *  @details Synchronous: the returned status is passed back to the caller.
+ *           The I2C component adds no wait. Whether the function blocks is up
+ *           to the HW driver. config is the pointer given to ezI2c_Initialize(),
+ *           not a copy. The driver is marked initialized only when the function
+ *           returns EZ_DRV_STATUS_OK.
+ */
+typedef EZ_DRV_STATUS (*ezHwI2c_Initialize)(void *driver_h, ezI2cConfig_t *config);
+
+/** @brief Transmit data, return when done. Called by ezI2c_TransmitSync().
+ *
+ *  @details Synchronous: return the final status. address, send_stop and
+ *           timeout_millis are passed unchanged, the HW driver is responsible
+ *           for them. See ezHwI2cInterface for their meaning.
+ */
+typedef EZ_DRV_STATUS (*ezHwI2c_TransmitSync)(void *driver_h,
                                               uint16_t address,
                                               const uint8_t *data,
                                               size_t length,
                                               bool send_stop,
                                               uint32_t timeout_millis);
 
-typedef EZ_DRV_STATUS (*ezHwI2c_TransmitAsync)(ezDriver_t *driver_h,
+/** @brief Start to transmit data, return immediately. Called by ezI2c_TransmitAsync().
+ *
+ *  @details Asynchronous. On EZ_DRV_STATUS_OK the transfer is started and the
+ *           HW driver must later call
+ *           ezDriver_NotifyEvent(&drv->base, EZ_DRV_EVENT_OP_DONE, EZ_I2C_EVENT_xxx, NULL, NULL)
+ *           exactly once when it ends. On any other status the transfer is not
+ *           started, and the HW driver must not call ezDriver_NotifyEvent().
+ *           data must stay valid until the end event.
+ */
+typedef EZ_DRV_STATUS (*ezHwI2c_TransmitAsync)(void *driver_h,
                                                uint16_t address,
                                                const uint8_t *data,
                                                size_t length,
                                                bool send_stop);
 
-typedef EZ_DRV_STATUS (*ezHwI2c_ReceiveSync)(ezDriver_t *driver_h,
+/** @brief Receive data, return when done. Called by ezI2c_ReceiveSync().
+ *
+ *  @details Synchronous: return the final status. address, send_stop and
+ *           timeout_millis are passed unchanged, the HW driver is responsible
+ *           for them. See ezHwI2cInterface for their meaning.
+ */
+typedef EZ_DRV_STATUS (*ezHwI2c_ReceiveSync)(void *driver_h,
                                              uint16_t address,
                                              uint8_t *data,
                                              size_t length,
                                              bool send_stop,
                                              uint32_t timeout_millis);
 
-typedef EZ_DRV_STATUS (*ezHwI2c_ReceiveAsync)(ezDriver_t *driver_h,
+/** @brief Start to receive data, return immediately. Called by ezI2c_ReceiveAsync().
+ *
+ *  @details Asynchronous. Same rules as ezHwI2c_TransmitAsync(): on
+ *           EZ_DRV_STATUS_OK the HW driver must later call
+ *           ezDriver_NotifyEvent(&drv->base, EZ_DRV_EVENT_OP_DONE, EZ_I2C_EVENT_xxx, NULL, NULL)
+ *           exactly once. On any other status it must not call it.
+ *           data must stay valid until the end event.
+ */
+typedef EZ_DRV_STATUS (*ezHwI2c_ReceiveAsync)(void *driver_h,
                                               uint16_t address,
                                               uint8_t *data,
                                               size_t length,
                                               bool send_stop);
 
-typedef EZ_DRV_STATUS (*ezHwI2c_Probe)(ezDriver_t *driver_h,
-                                  uint16_t address,
-                                  uint32_t timeout_millis);
+/** @brief Probe the device at an address, return when done. Called by ezI2c_Probe().
+ *
+ *  @details Synchronous: return the final status. address and timeout_millis
+ *           are passed unchanged, the HW driver is responsible for them. What
+ *           counts as an answer from the device is decided by the HW driver.
+ */
+typedef EZ_DRV_STATUS (*ezHwI2c_Probe)(void *driver_h,
+                                       uint16_t address,
+                                       uint32_t timeout_millis);
 
+
+/** @brief HW API provided by the HW driver. Unused functions can be NULL.
+ *
+ *  @details A NULL function makes the matching ezI2c_xxx() return
+ *           EZ_DRV_STATUS_ERR_INF_NOT_EXIST. The HW functions are called with
+ *           driver_h as the first argument.
+ *
+ *           The buffer pointers, lengths and addresses are not checked by the
+ *           I2C component. Each HW function must validate them and return an
+ *           error status when they are not valid. The component forwards that
+ *           status unchanged.
+ *
+ *           Meaning of the transfer arguments, decided by the HW driver:
+ *           - address: device address, passed unchanged. How it is
+ *             interpreted (7-bit or 10-bit, see addressing_mode) is defined by
+ *             the HW driver.
+ *           - send_stop: passed unchanged. The I2C component does not use it.
+ *             Its meaning is defined by the HW driver.
+ *           - timeout_millis: passed unchanged. The HW driver enforces it. Only
+ *             the synchronous functions have it. An async timeout is reported
+ *             with EZ_I2C_EVENT_TIMEOUT.
+ *
+ *           An async function returns EZ_DRV_STATUS_OK only if the transfer
+ *           is started. The HW driver must then call
+ *           ezDriver_NotifyEvent(&drv->base, EZ_DRV_EVENT_OP_DONE, EZ_I2C_EVENT_xxx, NULL, NULL)
+ *           exactly once when it ends. If it does not start the transfer, it
+ *           must return an error and must not call ezDriver_NotifyEvent().
+ *           See ezI2c_SystemRegisterHwDriver() for an example.
+ */
 struct ezHwI2cInterface
 {
-    ezHwI2c_Initialize     initialize;      /**< Initialize I2C interface */
-    ezHwI2c_TransmitSync   transmit_sync;   /**< Transmit data synchronously */
-    ezHwI2c_TransmitAsync  transmit_async;  /**< Transmit data asynchronously */
-    ezHwI2c_ReceiveSync    receive_sync;    /**< Receive data synchronously */
-    ezHwI2c_ReceiveAsync   receive_async;   /**< Receive data asynchronously */
-    ezHwI2c_Probe          probe;           /**< Probe the I2C device at a specific address */
+    void                   *driver_h;       /**< Opaque pointer of the HW driver, passed to every function below */
+    ezHwI2c_Initialize     initialize;      /**< Initialize the I2C peripheral (synchronous) */
+    ezHwI2c_TransmitSync   transmit_sync;   /**< Transmit data (synchronous) */
+    ezHwI2c_TransmitAsync  transmit_async;  /**< Transmit data (asynchronous) */
+    ezHwI2c_ReceiveSync    receive_sync;    /**< Receive data (synchronous) */
+    ezHwI2c_ReceiveAsync   receive_async;   /**< Receive data (asynchronous) */
+    ezHwI2c_Probe          probe;           /**< Probe the device at an address (synchronous) */
 };
 
+
+/** @brief I2C HW driver. Provided by the HW driver implementation.
+ *
+ *  @details base.name must be set before ezI2c_SystemRegisterHwDriver().
+ *           The driver is linked into the list of registered drivers, so its
+ *           memory (static storage, no malloc) must stay valid while it is
+ *           registered. ezI2c_SystemRegisterHwDriver() resets base.state,
+ *           base.user and initialized.
+ */
 struct ezI2cDriver
 {
-    struct Node                 ll_node;    /* linked list node to link to list of hw driver implmentation */
-    struct ezDriverCommon       common;     /* Common data of driver */
-    struct ezHwI2cInterface     interface;  /* HW API */
-    bool                        initialized; /* Flag to check if the driver is initialized */
+    struct Node                 ll_node;     /**< Node to link to the list of HW drivers */
+    struct ezDrvBase            base;        /**< Common data of driver: name, state and the handle in use */
+    struct ezHwI2cInterface     interface;   /**< HW API, see ezHwI2cInterface */
+    bool                        initialized; /**< true after ezI2c_Initialize() succeeded. Reset to false on register, unregister and when ezI2c_Initialize() fails */
 };
 
 
-typedef struct ezDrvInstance ezI2cDrvInstance_t;
+/** @brief I2C handle. Held by the user.
+ *
+ *  @details Must be zero-initialized (static storage, or memset) before the
+ *           first ezI2c_RegisterInstance(). Bind it with
+ *           ezI2c_RegisterInstance() before use. The driver keeps a pointer to
+ *           the handle in base.user while an operation is in flight, so the
+ *           handle must stay valid until ezI2c_UnregisterInstance() returns
+ *           EZ_DRV_STATUS_OK.
+ */
+typedef struct
+{
+    struct ezDrvHandle  drv_handle;     /**< Common handle, bound to a HW driver. Filled by ezI2c_RegisterInstance() */
+} ezI2cHandle_t;
+
 
 /*****************************************************************************
 * Component Variable Definitions
@@ -146,45 +310,483 @@ typedef struct ezDrvInstance ezI2cDrvInstance_t;
 * Function Prototypes
 *****************************************************************************/
 
+/*****************************************************************************
+* Function: ezI2c_SystemRegisterHwDriver
+*//**
+* @brief Register a HW driver to the I2C component.
+*
+* @details Called by the HW driver implementation, not by the application. The
+*          driver is reset to the idle, not-initialized state: initialized is
+*          false, base.state is 0 and base.user is NULL. It is then added to the
+*          list of HW drivers. base.name is compared with the names of the
+*          drivers already registered.
+*
+* @param[in]    hw_driver: HW driver. base.name must be set and unique.
+* @return       EZ_DRV_STATUS_OK on success,
+*               EZ_DRV_STATUS_ERR_ARG if hw_driver or its name is NULL, or the
+*               name is already registered.
+*
+* @post base.state is 0, base.user is NULL and initialized is false
+* @see ezI2c_SystemUnregisterHwDriver, ezHwI2cInterface
+* @warning The driver list is changed without a lock. Do not call it while
+*          another I2C call can run.
+*
+* @isr_safe{no}
+* @blocking{no}
+*
+* \b Example
+* @code
+* // HW driver side, at startup. The driver object is static (no malloc).
+* static struct ezI2cDriver i2c0_drv;
+*
+* EZ_DRV_STATUS RegisterI2c0(void)
+* {
+*     EZ_DRV_STATUS status = EZ_DRV_STATUS_ERR_GENERIC;
+*
+*     i2c0_drv.base.name = "i2c0";                      // Must be unique
+*     i2c0_drv.interface.driver_h = &i2c0_regs;         // Given to every HW function
+*     i2c0_drv.interface.initialize = I2c0_Initialize;
+*     i2c0_drv.interface.transmit_sync = I2c0_TransmitSync;
+*     i2c0_drv.interface.transmit_async = I2c0_TransmitAsync;
+*     i2c0_drv.interface.receive_sync = NULL;           // Unused: ezI2c_ReceiveSync() returns EZ_DRV_STATUS_ERR_INF_NOT_EXIST
+*     i2c0_drv.interface.receive_async = NULL;
+*     i2c0_drv.interface.probe = I2c0_Probe;
+*
+*     status = ezI2c_SystemRegisterHwDriver(&i2c0_drv);
+*     if(status != EZ_DRV_STATUS_OK)
+*     {
+*         return status;
+*     }
+*     return EZ_DRV_STATUS_OK;
+* }
+*
+* // In the ISR of the I2C peripheral, when an async transfer ends
+* ezDriver_NotifyEvent(&i2c0_drv.base, EZ_DRV_EVENT_OP_DONE, EZ_I2C_EVENT_CMPLT, NULL, NULL);
+* @endcode
+*
+*****************************************************************************/
 EZ_DRV_STATUS ezI2c_SystemRegisterHwDriver(struct ezI2cDriver *hw_driver);
+
+
+/*****************************************************************************
+* Function: ezI2c_SystemUnregisterHwDriver
+*//**
+* @brief Unregister a HW driver from the I2C component.
+*
+* @details Called by the HW driver implementation. The driver is removed from
+*          the list of HW drivers and initialized is set to false. base.state and
+*          base.user are not changed. The code does not check the handles: a
+*          handle still bound to the driver keeps its pointer to it.
+*
+* @param[in]    hw_driver: HW driver registered earlier.
+* @return       EZ_DRV_STATUS_OK on success,
+*               EZ_DRV_STATUS_ERR_ARG if hw_driver is NULL,
+*               EZ_DRV_STATUS_BUSY if an operation is in flight on the driver.
+*
+* @pre Every handle bound to the driver has been unregistered with
+*      ezI2c_UnregisterInstance(). Not checked by the code.
+* @see ezI2c_SystemRegisterHwDriver, ezI2c_UnregisterInstance
+* @warning The driver list is changed without a lock. Do not call it while
+*          another I2C call can run.
+*
+* @isr_safe{no}
+* @blocking{no}
+*
+*****************************************************************************/
+EZ_DRV_STATUS ezI2c_SystemUnregisterHwDriver(struct ezI2cDriver *hw_driver);
 
 EZ_DRV_STATUS ezI2c_SystemUnregisterHwDriver(struct ezI2cDriver *hw_driver);
 
-EZ_DRV_STATUS ezI2c_RegisterInstance(ezI2cDrvInstance_t *inst,
-                                      const char *driver_name,
-                                      ezDrvCallback callback);
+/*****************************************************************************
+* Function: ezI2c_RegisterInstance
+*//**
+* @brief Bind a handle to a registered HW driver.
+*
+* @details Stores the HW driver, the callback and the context in the handle.
+*          The driver is not marked busy by this call. A handle which is
+*          already bound is refused: call ezI2c_UnregisterInstance() first.
+*          The handle must be zero-initialized before the first call. The
+*          handle and the driver name are checked before the driver is looked up.
+*
+* @param[in]    inst: Handle owned by the caller. Zero-initialized and not
+*                     bound. Must stay valid while bound.
+* @param[in]    driver_name: Name of the HW driver (base.name).
+* @param[in]    callback: Called when an async operation ends. Can be NULL,
+*                         then the end of the operation is not reported.
+*                         Runs in the context of the HW driver, usually an ISR.
+* @param[in]    ctx: User context, passed to callback as first argument. Can be NULL.
+* @return       EZ_DRV_STATUS_OK on success,
+*               EZ_DRV_STATUS_ERR_ARG if inst or driver_name is NULL, or the
+*               handle is already bound,
+*               EZ_DRV_STATUS_ERR_DRV_NOT_FOUND if no HW driver has the name.
+*
+* @see ezI2c_UnregisterInstance, ezDrvCallback
+* @warning The callback runs inside ezDriver_NotifyEvent(), in the context of
+*          the HW driver, usually an ISR. It must not block.
+*
+* @isr_safe{no}
+* @blocking{no}
+*
+* \b Example
+* @code
+* static ezI2cHandle_t i2c0_handle;  // Static: the handle must stay valid while bound
+* static AppI2cCtx_t app_ctx;        // Passed to the callback, see ezI2c_TransmitAsync()
+*
+* EZ_DRV_STATUS BindI2c0(void)
+* {
+*     EZ_DRV_STATUS status = ezI2c_RegisterInstance(&i2c0_handle, "i2c0", OnI2cEvent, &app_ctx);
+*     if(status != EZ_DRV_STATUS_OK)
+*     {
+*         return status;
+*     }
+*     return EZ_DRV_STATUS_OK;
+* }
+* @endcode
+*
+*****************************************************************************/
+EZ_DRV_STATUS ezI2c_RegisterInstance(ezI2cHandle_t *inst,
+                                     const char *driver_name,
+                                     ezDrvCallback callback,
+                                     void *ctx);
 
-EZ_DRV_STATUS ezI2c_UnregisterInstance(ezI2cDrvInstance_t *inst);
+/*****************************************************************************
+* Function: ezI2c_UnregisterInstance
+*//**
+* @brief Unbind a handle from its HW driver.
+*
+* @details Clears hw, on_event and ctx of the handle. Refused only when this
+*          handle has an operation in flight. An operation of another handle
+*          does not block it. A handle which was never bound is accepted and
+*          stays empty.
+*
+* @param[in]    inst: Handle to unbind. Registered with ezI2c_RegisterInstance(),
+*                     or never bound.
+* @return       EZ_DRV_STATUS_OK on success,
+*               EZ_DRV_STATUS_ERR_ARG if inst is NULL,
+*               EZ_DRV_STATUS_BUSY if this handle has an operation in flight.
+*
+* @see ezI2c_RegisterInstance
+*
+* @isr_safe{no}
+* @blocking{no}
+*
+*****************************************************************************/
+EZ_DRV_STATUS ezI2c_UnregisterInstance(ezI2cHandle_t *inst);
 
-EZ_DRV_STATUS ezI2c_Initialize(ezI2cDrvInstance_t *inst, ezI2cConfig_t *config);
+/*****************************************************************************
+* Function: ezI2c_Initialize
+*//**
+* @brief Initialize the I2C peripheral of the HW driver.
+*
+* @details Calls the initialize function of the HW driver with driver_h and
+*          config. The config is passed as is, the I2C component does not check
+*          or copy it. The driver is taken for the call and released after it.
+*          It is marked initialized only when the HW function returns
+*          EZ_DRV_STATUS_OK, and that status is returned. A failed call marks
+*          the driver as not initialized, also when it was initialized before.
+*          Calling it again on an initialized driver calls the HW function
+*          again.
+*
+*          Whether it blocks depends on the HW driver. The I2C component adds no
+*          wait, but the HW initialize function is synchronous (there is no
+*          async variant), so it may block.
+*
+* @param[in]    inst: Registered handle.
+* @param[in]    config: I2C configuration. Passed to the HW driver as is.
+* @return       EZ_DRV_STATUS_OK on success,
+*               EZ_DRV_STATUS_ERR_ARG if config is NULL,
+*               EZ_DRV_STATUS_ERR_DRV_NOT_FOUND if inst is NULL or not bound,
+*               EZ_DRV_STATUS_BUSY if an operation is in flight,
+*               EZ_DRV_STATUS_ERR_INF_NOT_EXIST if the HW driver has no
+*               initialize function, or the HW driver status otherwise.
+*
+* @pre ezI2c_RegisterInstance() succeeded for inst.
+* @post On EZ_DRV_STATUS_OK the driver is initialized and idle.
+* @see ezI2cConfig_t, ezHwI2c_Initialize
+*
+* @isr_safe{no}
+* @blocking{yes}
+*
+* \b Example
+* @code
+* static ezI2cConfig_t i2c0_config = {
+*     EZ_I2C_MODE_MASTER,
+*     EZ_I2C_SPEED_FAST,              // 400 kHz
+*     EZ_I2C_ADDRESSING_MODE_7BIT,
+* };
+*
+* EZ_DRV_STATUS InitI2c0(void)
+* {
+*     EZ_DRV_STATUS status = ezI2c_Initialize(&i2c0_handle, &i2c0_config);
+*     if(status != EZ_DRV_STATUS_OK)
+*     {
+*         return status;
+*     }
+*     return EZ_DRV_STATUS_OK;
+* }
+* @endcode
+*
+*****************************************************************************/
+EZ_DRV_STATUS ezI2c_Initialize(ezI2cHandle_t *inst, ezI2cConfig_t *config);
 
-EZ_DRV_STATUS ezI2c_TransmitSync(ezI2cDrvInstance_t *inst,
+/*****************************************************************************
+* Function: ezI2c_TransmitSync
+*//**
+* @brief Transmit data to a device. Return when done.
+*
+* @details Blocks the caller until the HW driver returns. address, send_stop
+*          and timeout_millis are passed unchanged to the HW driver, which
+*          enforces the timeout. The driver is taken for the call and released
+*          after the HW call returns, whatever the status. See
+*          ezHwI2cInterface for the meaning of the arguments.
+*
+* @param[in]    inst: Registered handle.
+* @param[in]    address: Address of the device on the bus. Passed unchanged to
+*                        the HW driver, which validates it.
+* @param[in]    data: Data to transmit. Not checked by this component.
+* @param[in]    length: Number of bytes to transmit. Not checked by this component.
+* @param[in]    send_stop: Passed unchanged to the HW driver. Its meaning is
+*                          defined by the HW driver.
+* @param[in]    timeout_millis: Timeout in milliseconds, enforced by the HW driver.
+* @return       EZ_DRV_STATUS_OK on success,
+*               EZ_DRV_STATUS_ERR_DRV_NOT_FOUND if inst is NULL or not bound,
+*               EZ_DRV_STATUS_ERR_NOT_INITIALIZED if ezI2c_Initialize() has not
+*               succeeded,
+*               EZ_DRV_STATUS_BUSY if an operation is in flight on the driver,
+*               EZ_DRV_STATUS_ERR_INF_NOT_EXIST if the HW driver has no such
+*               function, or the HW driver status otherwise (e.g. EZ_DRV_STATUS_TIMEOUT).
+*
+* @pre ezI2c_Initialize() succeeded for the driver of inst.
+* @warning The I2C component is not a lock. The caller must serialize the calls
+*          on the same HW driver.
+* @note The buffers, lengths and addresses are not checked by this component,
+*       the HW driver validates them. See ezHwI2cInterface.
+* @see ezI2c_TransmitAsync, ezI2c_Initialize, ezHwI2cInterface
+*
+* @isr_safe{no}
+* @blocking{yes}
+*
+* \b Example
+* @code
+* uint8_t tx[2] = {0x10U, 0x20U};
+* uint16_t address = 0x50U;
+* EZ_DRV_STATUS status = ezI2c_TransmitSync(&i2c0_handle, address, tx, sizeof(tx), true, 100U);
+* if(status != EZ_DRV_STATUS_OK)
+* {
+*     return status;
+* }
+* @endcode
+*
+*****************************************************************************/
+EZ_DRV_STATUS ezI2c_TransmitSync(ezI2cHandle_t *inst,
                                  uint16_t address,
                                  const uint8_t *data,
                                  size_t length,
                                  bool send_stop,
                                  uint32_t timeout_millis);
 
-EZ_DRV_STATUS ezI2c_TransmitAsync(ezI2cDrvInstance_t *inst,
+/*****************************************************************************
+* Function: ezI2c_TransmitAsync
+*//**
+* @brief Start to transmit data to a device. Return immediately.
+*
+* @details Returns as soon as the HW driver has started, or refused, the
+*          transfer. On EZ_DRV_STATUS_OK the transfer is running and the driver
+*          stays busy. The HW driver must then call
+*          ezDriver_NotifyEvent(&drv->base, EZ_DRV_EVENT_OP_DONE, EZ_I2C_EVENT_xxx, NULL, NULL)
+*          exactly once when the transfer ends. The callback of the handle is
+*          then called with that event_code. The driver is released before the
+*          callback runs, so the callback may start the next operation.
+*
+*          On any other status this call did not start a transfer, so no
+*          callback comes for it. The driver is released by this call. The HW
+*          driver must not call ezDriver_NotifyEvent() then.
+*
+* @param[in]    inst: Registered handle.
+* @param[in]    address: Address of the device on the bus. Passed unchanged to
+*                        the HW driver, which validates it.
+* @param[in]    data: Data to transmit. Must stay valid until the end event.
+* @param[in]    length: Number of bytes to transmit. Not checked by this component.
+* @param[in]    send_stop: Passed unchanged to the HW driver. Its meaning is
+*                          defined by the HW driver.
+* @return       Same as ezI2c_TransmitSync().
+*
+* @pre ezI2c_Initialize() succeeded for the driver of inst.
+* @post On EZ_DRV_STATUS_OK the driver is busy until the end event is reported
+* @warning data must stay valid until the end event is reported. The I2C
+*          component does not copy it.
+* @warning The callback runs in the context of the HW driver, usually an ISR.
+*          It must not block.
+* @warning The I2C component is not a lock. The caller must serialize the calls
+*          on the same HW driver.
+* @note The buffers, lengths and addresses are not checked by this component,
+*       the HW driver validates them. See ezHwI2cInterface.
+* @see ezI2c_RegisterInstance, ezDriver_NotifyEvent, ezHwI2cInterface
+*
+* @isr_safe{no}
+* @blocking{no}
+*
+* \b Example
+* @code
+* typedef struct
+* {
+*     volatile bool done;   // Set by the callback
+* } AppI2cCtx_t;
+*
+* static AppI2cCtx_t app_ctx;     // Given to the callback as ctx, see ezI2c_RegisterInstance()
+* static uint8_t tx_buf[2];
+*
+* // Runs in the context of the HW driver, usually an ISR. Must not block.
+* static void OnI2cEvent(void *ctx, uint8_t event_code, void *param1, void *param2)
+* {
+*     AppI2cCtx_t *app = (AppI2cCtx_t *)ctx;
+*     if(event_code == EZ_I2C_EVENT_CMPLT)
+*     {
+*         app->done = true;
+*     }
+* }
+*
+* EZ_DRV_STATUS StartWrite(void)
+* {
+*     EZ_DRV_STATUS status = ezI2c_TransmitAsync(&i2c0_handle, 0x50U, tx_buf, sizeof(tx_buf), true);
+*     if(status != EZ_DRV_STATUS_OK)
+*     {
+*         return status;               // Not started: no callback will come
+*     }
+*     return EZ_DRV_STATUS_OK;         // Running: OnI2cEvent() gets the end event
+* }
+* @endcode
+*
+*****************************************************************************/
+EZ_DRV_STATUS ezI2c_TransmitAsync(ezI2cHandle_t *inst,
                                   uint16_t address,
                                   const uint8_t *data,
                                   size_t length,
                                   bool send_stop);
 
-EZ_DRV_STATUS ezI2c_ReceiveSync(ezI2cDrvInstance_t *inst,
+/*****************************************************************************
+* Function: ezI2c_ReceiveSync
+*//**
+* @brief Receive data from a device. Return when done.
+*
+* @details Same rules as ezI2c_TransmitSync(), with receive data instead of
+*          transmit data. The driver is taken for the call and released after
+*          the HW call returns, whatever the status.
+*
+* @param[in]    inst: Registered handle.
+* @param[in]    address: Address of the device on the bus. Passed unchanged to
+*                        the HW driver, which validates it.
+* @param[out]   data: Buffer for the received data. Not checked by this component.
+* @param[in]    length: Number of bytes to receive. Not checked by this component.
+* @param[in]    send_stop: Passed unchanged to the HW driver. Its meaning is
+*                          defined by the HW driver.
+* @param[in]    timeout_millis: Timeout in milliseconds, enforced by the HW driver.
+* @return       Same as ezI2c_TransmitSync().
+*
+* @pre ezI2c_Initialize() succeeded for the driver of inst.
+* @note The buffers, lengths and addresses are not checked by this component,
+*       the HW driver validates them. See ezHwI2cInterface.
+* @see ezI2c_ReceiveAsync, ezI2c_TransmitSync, ezHwI2cInterface
+*
+* @isr_safe{no}
+* @blocking{yes}
+*
+* \b Example
+* @code
+* uint8_t rx[2] = {0U, 0U};
+* uint16_t address = 0x50U;
+* EZ_DRV_STATUS status = ezI2c_ReceiveSync(&i2c0_handle, address, rx, sizeof(rx), true, 100U);
+* if(status != EZ_DRV_STATUS_OK)
+* {
+*     return status;
+* }
+* @endcode
+*
+*****************************************************************************/
+EZ_DRV_STATUS ezI2c_ReceiveSync(ezI2cHandle_t *inst,
                                 uint16_t address,
                                 uint8_t *data,
                                 size_t length,
                                 bool send_stop,
                                 uint32_t timeout_millis);
 
-EZ_DRV_STATUS ezI2c_ReceiveAsync(ezI2cDrvInstance_t *inst,
+/*****************************************************************************
+* Function: ezI2c_ReceiveAsync
+*//**
+* @brief Start to receive data from a device. Return immediately.
+*
+* @details Same rules as ezI2c_TransmitAsync(), with receive data instead of
+*          transmit data: the driver stays busy on EZ_DRV_STATUS_OK until the HW
+*          driver reports EZ_DRV_EVENT_OP_DONE, and the callback then gets the
+*          event code.
+*
+* @param[in]    inst: Registered handle.
+* @param[in]    address: Address of the device on the bus. Passed unchanged to
+*                        the HW driver, which validates it.
+* @param[out]   data: Buffer for the received data. Must stay valid until the end event.
+* @param[in]    length: Number of bytes to receive. Not checked by this component.
+* @param[in]    send_stop: Passed unchanged to the HW driver. Its meaning is
+*                          defined by the HW driver.
+* @return       Same as ezI2c_TransmitSync().
+*
+* @pre ezI2c_Initialize() succeeded for the driver of inst.
+* @post On EZ_DRV_STATUS_OK the driver is busy until the end event is reported
+* @warning data must stay valid until the end event is reported. The I2C
+*          component does not copy it.
+* @warning The callback runs in the context of the HW driver, usually an ISR.
+*          It must not block.
+* @warning The I2C component is not a lock. The caller must serialize the calls
+*          on the same HW driver.
+* @note The buffers, lengths and addresses are not checked by this component,
+*       the HW driver validates them. See ezHwI2cInterface.
+* @see ezI2c_ReceiveSync, ezI2c_TransmitAsync, ezDriver_NotifyEvent
+*
+* @isr_safe{no}
+* @blocking{no}
+*
+*****************************************************************************/
+EZ_DRV_STATUS ezI2c_ReceiveAsync(ezI2cHandle_t *inst,
                                  uint16_t address,
                                  uint8_t *data,
                                  size_t length,
                                  bool send_stop);
 
-EZ_DRV_STATUS ezI2c_Probe(ezI2cDrvInstance_t *inst,
+/*****************************************************************************
+* Function: ezI2c_Probe
+*//**
+* @brief Probe the device at an address. Return when done.
+*
+* @details Synchronous. The probe function of the HW driver is called with
+*          address and timeout_millis, and its status is returned. The driver is
+*          taken for the call and released after it, whatever the status. What
+*          counts as an answer from the device is decided by the HW driver.
+*
+* @param[in]    inst: Registered handle.
+* @param[in]    address: Address of the device on the bus. Passed unchanged to
+*                        the HW driver, which validates it.
+* @param[in]    timeout_millis: Timeout in milliseconds, enforced by the HW driver.
+* @return       Same as ezI2c_TransmitSync().
+*
+* @pre ezI2c_Initialize() succeeded for the driver of inst.
+* @note The address is not checked by this component, the HW driver validates
+*       it. See ezHwI2cInterface.
+* @see ezHwI2c_Probe, ezI2c_Initialize
+*
+* @isr_safe{no}
+* @blocking{yes}
+*
+* \b Example
+* @code
+* uint16_t address = 0x50U;
+* EZ_DRV_STATUS status = ezI2c_Probe(&i2c0_handle, address, 20U);
+* if(status != EZ_DRV_STATUS_OK)
+* {
+*     return status;
+* }
+* @endcode
+*
+*****************************************************************************/
+EZ_DRV_STATUS ezI2c_Probe(ezI2cHandle_t *inst,
                           uint16_t address,
                           uint32_t timeout_millis);
 #endif /* EZ_I2C == 1 */

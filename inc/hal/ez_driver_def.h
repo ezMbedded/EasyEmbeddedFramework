@@ -21,7 +21,7 @@
  *           which is bound to the HW driver by name. The base routes the
  *           events coming from the HW driver to one handle, the user:
  *           - EZ_DRV_EVENT_OP_PROGRESS and EZ_DRV_EVENT_OP_DONE belong to an
- *             operation in flight (state BUSY).
+ *             async operation in flight (state BUSY and ASYNC).
  *           - EZ_DRV_EVENT_ASYNC events are not tied to an operation (GPIO
  *             edge, UART RX data, bus fault, ...). They are delivered only
  *             while the user is subscribed (state LISTENING).
@@ -34,9 +34,14 @@
  *           busy flag to detect misuse and a key to route events.
  *
  *           Ownership rules:
- *           - Sync operation: ezDriver_Acquire() before the HW call,
- *             ezDriver_Release(handle, base) right after the HW call returns.
- *           - Async operation: ezDriver_Acquire() before the HW call. If the
+ *           - Sync operation: ezDriver_Acquire(handle, base, false) before the
+ *             HW call, ezDriver_Release(handle, base) right after the HW call
+ *             returns. A sync operation reports its result only through the
+ *             return value of the HW function. The HW driver must NOT call
+ *             ezDriver_NotifyEvent() for it (the framework drops such events).
+ *             A HW driver which builds the sync call on top of an interrupt
+ *             waits with its own semaphore or flag.
+ *           - Async operation: ezDriver_Acquire(handle, base, true) before the HW call. If the
  *             HW call fails to start, ezDriver_Release(handle, base).
  *             Otherwise BUSY is kept until the HW driver reports
  *             EZ_DRV_EVENT_OP_DONE with ezDriver_NotifyEvent().
@@ -88,6 +93,16 @@ extern "C" {
  *           ezDriver_NotifyEvent().
  */
 #define EZ_DRV_STATE_LISTENING      (0x02U)
+
+/** @brief State bit: the operation in flight is an async operation.
+ *
+ *  @details Set together with BUSY by ezDriver_Acquire() with is_async == true.
+ *           Cleared together with BUSY by ezDriver_Release() and by
+ *           ezDriver_NotifyEvent() with EZ_DRV_EVENT_OP_DONE. EZ_DRV_EVENT_OP_*
+ *           events are delivered only while BUSY and ASYNC are both set, so a
+ *           sync operation never produces a callback.
+ */
+#define EZ_DRV_STATE_ASYNC          (0x04U)
 
 /** @brief Check if the state bit(s) are set. ISR-safe: yes
  *
@@ -159,8 +174,8 @@ typedef void (*ezDrvCallback)(void *ctx, uint8_t event_code, void *param1, void 
  */
 typedef enum
 {
-    EZ_DRV_EVENT_OP_PROGRESS,   /**< Event of the operation in flight, BUSY is kept (e.g. half transfer). Delivered only while BUSY is set */
-    EZ_DRV_EVENT_OP_DONE,       /**< Final event of the operation in flight (done, error, timeout). BUSY is cleared before the callback. Delivered only while BUSY is set */
+    EZ_DRV_EVENT_OP_PROGRESS,   /**< Event of the async operation in flight, state is kept (e.g. half transfer). Delivered only while BUSY and ASYNC are set */
+    EZ_DRV_EVENT_OP_DONE,       /**< Final event of the operation in flight (done, error, timeout). BUSY and ASYNC are cleared before the callback. Delivered only while BUSY and ASYNC are set */
     EZ_DRV_EVENT_ASYNC,         /**< Event not tied to an operation (edge, RX data, bus fault). Delivered only while LISTENING is set */
 }ezDrvEventKind_t;
 
@@ -250,22 +265,25 @@ static inline void *ezDriver_GetHw(ezDrvHandle_t *handle)
 *          layer. Fails if an operation is already in flight (even from the
 *          same handle), or if another handle is subscribed to the driver.
 *          A handle which is subscribed to the driver can start an operation,
-*          and its subscription is kept.
+*          and its subscription is kept. With is_async == true the ASYNC bit is
+*          set too, so the events of the operation are delivered to the
+*          handle. With is_async == false they are dropped.
 *
 * @param[in]    handle: Driver handle
 * @param[in]    base: Pointer to the base structure of the driver.
+* @param[in]    is_async: true for an async operation (events are delivered), false for a sync operation
 * @return       true if the handle can start an operation, else false (busy,
 *               subscribed by another handle, or invalid argument)
 *
 * @pre None
-* @post On true, BUSY is set and base->user == handle
+* @post On true, BUSY is set (and ASYNC if is_async) and base->user == handle
 *
 * \b Example
 * @code
 * struct ezSpiDriver *drv = (struct ezSpiDriver *)ezDriver_GetHw(&inst->drv_handle);
 * EZ_DRV_STATUS status = EZ_DRV_STATUS_ERR_GENERIC;
 *
-* if(!ezDriver_Acquire(&inst->drv_handle, &drv->base))
+* if(!ezDriver_Acquire(&inst->drv_handle, &drv->base, false))
 * {
 *     return EZ_DRV_STATUS_BUSY;
 * }
@@ -281,7 +299,8 @@ static inline void *ezDriver_GetHw(ezDrvHandle_t *handle)
 *
 *****************************************************************************/
 static inline bool ezDriver_Acquire(ezDrvHandle_t *handle,
-                                    struct ezDrvBase *base)
+                                    struct ezDrvBase *base,
+                                    bool is_async)
 {
     if(handle == NULL || base == NULL)
     {
@@ -299,7 +318,8 @@ static inline bool ezDriver_Acquire(ezDrvHandle_t *handle,
     }
 
     base->user = handle;
-    EZ_DRV_STATE_SET(base, EZ_DRV_STATE_BUSY);
+    EZ_DRV_STATE_SET(base, is_async ? (EZ_DRV_STATE_BUSY | EZ_DRV_STATE_ASYNC)
+                                    : EZ_DRV_STATE_BUSY);
     return true;
 }
 
@@ -307,7 +327,7 @@ static inline bool ezDriver_Acquire(ezDrvHandle_t *handle,
 /*****************************************************************************
 * Function: ezDriver_Release
 *//**
-* @brief Clear BUSY if the handle is the one with the operation in flight.
+* @brief Clear BUSY and ASYNC if the handle is the one with the operation in flight.
 *
 * @details Use it after a sync operation, or when an async operation fails to
 *          start. A started async operation is released by
@@ -322,14 +342,14 @@ static inline bool ezDriver_Acquire(ezDrvHandle_t *handle,
 *               the driver is held by another handle, or invalid argument)
 *
 * @pre None
-* @post If true, BUSY is clear
+* @post If true, BUSY and ASYNC are clear
 *
 * \b Example
 * @code
 * struct ezSpiDriver *drv = (struct ezSpiDriver *)ezDriver_GetHw(&inst->drv_handle);
 * EZ_DRV_STATUS status = EZ_DRV_STATUS_ERR_GENERIC;
 *
-* if(!ezDriver_Acquire(&inst->drv_handle, &drv->base))
+* if(!ezDriver_Acquire(&inst->drv_handle, &drv->base, true))
 * {
 *     return EZ_DRV_STATUS_BUSY;
 * }
@@ -359,7 +379,7 @@ static inline bool ezDriver_Release(ezDrvHandle_t *handle,
         return false;
     }
 
-    EZ_DRV_STATE_CLEAR(base, EZ_DRV_STATE_BUSY);
+    EZ_DRV_STATE_CLEAR(base, EZ_DRV_STATE_BUSY | EZ_DRV_STATE_ASYNC);
     return true;
 }
 
@@ -458,10 +478,13 @@ static inline bool ezDriver_Unsubscribe(ezDrvHandle_t *handle,
 *
 * @details Called by the HW driver implementation, usually from its ISR.
 *          Routing by kind:
-*          - EZ_DRV_EVENT_OP_PROGRESS: delivered if BUSY, BUSY is kept.
-*          - EZ_DRV_EVENT_OP_DONE: delivered if BUSY. BUSY is cleared
-*            BEFORE the callback is invoked, so the callback may start a new
-*            operation.
+*          - EZ_DRV_EVENT_OP_PROGRESS: delivered if BUSY and ASYNC are set, the
+*            state is kept.
+*          - EZ_DRV_EVENT_OP_DONE: delivered if BUSY and ASYNC are set. BUSY
+*            and ASYNC are cleared BEFORE the callback is invoked, so the
+*            callback may start a new operation.
+*          Events of a sync operation (BUSY without ASYNC) are dropped: a sync
+*          operation reports only through the return value of the HW function.
 *          - EZ_DRV_EVENT_ASYNC: delivered if LISTENING. The state is not
 *            changed.
 *          An event whose condition is not met is dropped. The event goes to
@@ -474,8 +497,8 @@ static inline bool ezDriver_Unsubscribe(ezDrvHandle_t *handle,
 * @param[in]    param2: Second event parameter. Depending on event_code.
 *
 * @pre None
-* @post If kind is EZ_DRV_EVENT_OP_DONE and BUSY was set on entry, BUSY is
-*       clear before the callback runs
+* @post If kind is EZ_DRV_EVENT_OP_DONE and an async operation was in flight,
+*       BUSY and ASYNC are clear before the callback runs
 * @warning The callback runs inside this call, in the same context. If this
 *          call is made from an ISR, the callback must be ISR-safe. It must not
 *          block.
@@ -498,10 +521,11 @@ static inline void ezDriver_NotifyEvent(struct ezDrvBase *base,
                                         void *param2)
 {
     ezDrvHandle_t *target = NULL;
-    uint8_t needed = (kind == EZ_DRV_EVENT_ASYNC) ? EZ_DRV_STATE_LISTENING
-                                                  : EZ_DRV_STATE_BUSY;
+    uint8_t needed = (kind == EZ_DRV_EVENT_ASYNC)
+                         ? (uint8_t)EZ_DRV_STATE_LISTENING
+                         : (uint8_t)(EZ_DRV_STATE_BUSY | EZ_DRV_STATE_ASYNC);
 
-    if(base == NULL || !EZ_DRV_STATE_IS_SET(base, needed))
+    if(base == NULL || (base->state & needed) != needed)
     {
         return;
     }
@@ -509,7 +533,7 @@ static inline void ezDriver_NotifyEvent(struct ezDrvBase *base,
     target = base->user;
     if(kind == EZ_DRV_EVENT_OP_DONE)
     {
-        EZ_DRV_STATE_CLEAR(base, EZ_DRV_STATE_BUSY);
+        EZ_DRV_STATE_CLEAR(base, EZ_DRV_STATE_BUSY | EZ_DRV_STATE_ASYNC);
     }
 
     if(target != NULL && target->on_event != NULL)

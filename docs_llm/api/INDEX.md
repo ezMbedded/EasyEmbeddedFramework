@@ -5,6 +5,7 @@
 | ez_data_model | data_model/ez_data_model.h | Public API of data model component. | 6 |
 | ez_driver_def | hal/ez_driver_def.h | Common definitions shared by all HAL driver modules. | 6 |
 | ez_hexdump | hexdump/ez_hexdump.h | Public functions of hexdump component. | 1 |
+| ez_i2c | i2c/ez_i2c.h | Hardware Abstraction Layer for I2C communication. | 10 |
 | ez_linked_list | linked_list/ez_linked_list.h | Public functions of the linked list component. | 8 |
 | ez_logging | logging/ez_logging.h | This is the header file for logging module. | 1 |
 | ez_platform | platform/ez_platform.hpp | Platform singleton: event bus, data model and the platform task in one object. | 16 |

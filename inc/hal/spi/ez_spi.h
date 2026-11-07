@@ -33,6 +33,11 @@
  *           EZ_SPI_EVENT_xxx, NULL, NULL), usually from its ISR. The driver
  *           is busy until then, and the handle callback is invoked after the
  *           driver is released, so it may start the next operation.
+ *           A sync operation reports its result only through the return
+ *           value. The HW function of a sync operation must NOT call
+ *           ezDriver_NotifyEvent(): such events are dropped and the handle
+ *           callback is not invoked. A HW driver which waits for an interrupt
+ *           uses its own semaphore or flag for that.
  *
  *           No function of this component is ISR-safe. From an ISR, the HW
  *           driver only calls ezDriver_NotifyEvent().
@@ -264,7 +269,7 @@ struct ezSpiDriver
     struct Node                 ll_node;     /**< Node to link to the list of HW drivers */
     struct ezDrvBase            base;        /**< Common data of driver: name, state and the handle in use */
     struct ezHwSpiInterface     interface;   /**< HW API, see ezHwSpiInterface */
-    bool                        initialized; /**< true after ezSpi_Initialize() succeeded. Reset to false on register and unregister */
+    bool                        initialized; /**< true after ezSpi_Initialize() succeeded. Reset to false on register, unregister and when ezSpi_Initialize() fails */
 };
 
 
@@ -464,8 +469,10 @@ EZ_DRV_STATUS ezSpi_UnregisterInstance(ezSpiHandle_t *inst);
 *          config. The config is passed as is, the SPI component does not check
 *          or copy it. The driver is taken for the call and released after it.
 *          It is marked initialized only when the HW function returns
-*          EZ_DRV_STATUS_OK, and that status is returned. Calling it again on an
-*          initialized driver calls the HW function again.
+*          EZ_DRV_STATUS_OK, and that status is returned. A failed call marks the
+*          driver as not initialized, also when it was initialized before.
+*          Calling it again on an initialized driver calls the HW function
+*          again.
 *
 *          Whether it blocks depends on the HW driver. The SPI component adds no
 *          wait, but the HW initialize function is synchronous (there is no

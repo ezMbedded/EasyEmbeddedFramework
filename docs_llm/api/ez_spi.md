@@ -8,7 +8,7 @@ The user binds an ezSpiHandle_t to a HW driver by name. All the operations of a 
 
 Concurrency: this component does not provide mutual exclusion. The caller must serialize the calls on the same HW driver (mutex or semaphore of the upper layer). A call made while another operation is in flight returns EZ_DRV_STATUS_BUSY.
 
-Sync operations return when the transfer is done. Async operations return as soon as the transfer is started. The HW driver reports the end of an async operation by calling ezDriver_NotifyEvent(&hw_driver->base, EZ_DRV_EVENT_OP_DONE, EZ_SPI_EVENT_xxx, NULL, NULL), usually from its ISR. The driver is busy until then, and the handle callback is invoked after the driver is released, so it may start the next operation.
+Sync operations return when the transfer is done. Async operations return as soon as the transfer is started. The HW driver reports the end of an async operation by calling ezDriver_NotifyEvent(&hw_driver->base, EZ_DRV_EVENT_OP_DONE, EZ_SPI_EVENT_xxx, NULL, NULL), usually from its ISR. The driver is busy until then, and the handle callback is invoked after the driver is released, so it may start the next operation. A sync operation reports its result only through the return value. The HW function of a sync operation must NOT call ezDriver_NotifyEvent(): such events are dropped and the handle callback is not invoked. A HW driver which waits for an interrupt uses its own semaphore or flag for that.
 
 No function of this component is ISR-safe. From an ISR, the HW driver only calls ezDriver_NotifyEvent().
 
@@ -240,7 +240,7 @@ EZ_DRV_STATUS ezSpi_Initialize(ezSpiHandle_t *inst, ezSpiConfig_t *config);
 
 Initialize the SPI peripheral of the HW driver.
 
-Calls the initialize function of the HW driver with driver_h and config. The config is passed as is, the SPI component does not check or copy it. The driver is taken for the call and released after it. It is marked initialized only when the HW function returns EZ_DRV_STATUS_OK, and that status is returned. Calling it again on an initialized driver calls the HW function again.
+Calls the initialize function of the HW driver with driver_h and config. The config is passed as is, the SPI component does not check or copy it. The driver is taken for the call and released after it. It is marked initialized only when the HW function returns EZ_DRV_STATUS_OK, and that status is returned. A failed call marks the driver as not initialized, also when it was initialized before. Calling it again on an initialized driver calls the HW function again.
 
 Whether it blocks depends on the HW driver. The SPI component adds no wait, but the HW initialize function is synchronous (there is no async variant), so it may block.
 
