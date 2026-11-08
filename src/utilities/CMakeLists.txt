@@ -17,13 +17,13 @@ set(FRAMEWORK_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 # Source files ---------------------------------------------------------------
 target_sources(ez_utilities_lib
     PRIVATE
-        hexdump/ez_hexdump.c
-        linked_list/ez_linked_list.c
-        logging/ez_logging.c
-        ring_buffer/ez_ring_buffer.c
-        static_alloc/ez_static_alloc.c
-        system_error/ez_system_error.c
-        queue/ez_queue.c
+        $<$<BOOL:${ENABLE_EZ_HEXDUMP}>:hexdump/ez_hexdump.c>
+        $<$<BOOL:${ENABLE_EZ_LINKEDLIST}>:linked_list/ez_linked_list.c>
+        $<$<BOOL:${ENABLE_EZ_LOGGING}>:logging/ez_logging.c>
+        $<$<BOOL:${ENABLE_EZ_RING_BUFFER}>:ring_buffer/ez_ring_buffer.c>
+        $<$<BOOL:${ENABLE_EZ_STATIC_ALLOC}>:static_alloc/ez_static_alloc.c>
+        $<$<BOOL:${ENABLE_EZ_SYS_ERROR}>:system_error/ez_system_error.c>
+        $<$<BOOL:${ENABLE_EZ_QUEUE}>:queue/ez_queue.c>
 )
 
 

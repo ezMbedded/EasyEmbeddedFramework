@@ -218,7 +218,7 @@ void ezTaskWorker_ExecuteTask(struct ezTaskWorker *worker, uint32_t ticks_to_wai
     ezSTATUS status = ezFAIL;
     void *context = NULL;
     struct ezTaskBlockCommon *common = NULL;
-    uint32_t data_size = 0;
+    size_t data_size = 0;
 
     if(worker != NULL)
     {
@@ -266,7 +266,7 @@ void ezTaskWorker_ExecuteTaskNoRTOS(void)
     void *context = NULL;
     struct ezTaskWorker *worker = NULL;
     ezSTATUS status = ezFAIL;
-    uint32_t data_size = 0;
+    size_t data_size = 0;
 
     EZTRACE("ezTaskWorker_Run()");
 
