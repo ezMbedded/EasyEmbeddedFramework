@@ -12,6 +12,7 @@ Testing/
 coverage/
 extern/threadx/
 extern/freertos
+extern/pico-sdk
 extern/fff
 docs/_build/
 targets/nucleo_f746/.settings/

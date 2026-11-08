@@ -54,7 +54,7 @@ if(ENABLE_FREERTOS)
     FetchContent_Declare(
         freertos_kernel
         GIT_REPOSITORY    https://github.com/FreeRTOS/FreeRTOS-Kernel.git
-        GIT_TAG           V11.0.1
+        GIT_TAG           V11.3.3
         SOURCE_DIR        ${CMAKE_CURRENT_SOURCE_DIR}/freertos
     )
 

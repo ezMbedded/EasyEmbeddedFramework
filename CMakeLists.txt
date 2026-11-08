@@ -1,5 +1,10 @@
 cmake_minimum_required(VERSION 3.25)
 
+# The Pico build needs the SDK on disk before project() (toolchain file)
+if(FETCH_PICO_SDK)
+    include(cmake/FetchPicoSdk.cmake)
+endif()
+
 project(EzEmbeddedFramework
     VERSION 1.0.2
     LANGUAGES C CXX
