@@ -3,32 +3,41 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
-static void main_task(void *arg) {
-    (void)arg;
-    uint32_t count = 0;
-    for (;;) {
-        count++;
-        printf("Hello, world! (%lu)\n", (unsigned long)count);
-        vTaskDelay(pdMS_TO_TICKS(500));
-    }
-}
+#include "ez_platform.hpp"
+#include "platform/platform_config.hpp"
+#include "platform/platform_data.hpp"
+
+
+#define DEBUG_LVL   LVL_DEBUG   /**< logging level */
+#define MOD_NAME    "main"       /**< module name */
+#include "ez_logging.h"
+
+using namespace ez::platform;
+
 
 void vApplicationMallocFailedHook(void) {
-    printf("FreeRTOS: malloc failed\n");
+    EZINFO("FreeRTOS: malloc failed\n");
     taskDISABLE_INTERRUPTS();
     for (;;) {}
 }
 
 void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName) {
     (void)xTask;
-    printf("FreeRTOS: stack overflow in task %s\n", pcTaskName);
+    EZINFO("FreeRTOS: stack overflow in task %s\n", pcTaskName);
     taskDISABLE_INTERRUPTS();
     for (;;) {}
 }
 
 int main() {
     stdio_init_all();
-    xTaskCreate(main_task, "main", 2048, NULL, tskIDLE_PRIORITY + 1, NULL);
+
+    EZINFO("EasyEmbeddedFramework sample for Raspberry Pi Pico");
+    if(appPlatformConfig_Init() == false)
+    {
+        return -1;
+    }
+
+    
     vTaskStartScheduler();
     for (;;){
     }

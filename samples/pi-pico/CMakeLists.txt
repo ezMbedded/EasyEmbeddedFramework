@@ -37,7 +37,13 @@ project(pi-pico C CXX ASM)
 pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
-add_executable(pi-pico pi-pico.cpp )
+add_executable(pi-pico
+    pi-pico.cpp
+    tasks/sensor/sensor_task.cpp
+    tasks/climate_control/climate_control_task.cpp
+    tasks/logging/logging_task.cpp
+    tasks/platform/platform_config.cpp
+)
 
 pico_set_program_name(pi-pico "pi-pico")
 pico_set_program_version(pi-pico "0.1")
@@ -49,13 +55,17 @@ pico_enable_stdio_uart(pi-pico 0)
 # Add the standard library and PIO hardware library to the build
 target_link_libraries(pi-pico
         pico_stdlib
+        pico_rand
         hardware_pio
+        easy_embedded_lib
         FreeRTOS-Kernel-Heap4)
 
 # Add the standard include files to the build
 target_include_directories(pi-pico PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}
         ${CMAKE_CURRENT_LIST_DIR}/config
+        ${CMAKE_CURRENT_LIST_DIR}/porting
+        ${CMAKE_CURRENT_LIST_DIR}/tasks
 )
 
 pico_add_extra_outputs(pi-pico)
