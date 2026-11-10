@@ -1,11 +1,11 @@
 {
     "version": 6,
     "cmakeMinimumRequired": {
-      "major": 3,
-      "minor": 23,
-      "patch": 0
+        "major": 3,
+        "minor": 23,
+        "patch": 0
     },
-    "configurePresets":[
+    "configurePresets": [
         {
             "name": "linux_base",
             "displayName": "Linux base configuration",
@@ -81,6 +81,34 @@
             }
         },
         {
+            "name": "pi_pico_base",
+            "displayName": "Raspberry Pi Pico base configuration",
+            "description": "Base configuration for the Pico SDK (installed by the VS Code extension in ~/.pico-sdk)",
+            "generator": "Ninja",
+            "hidden": true,
+            "environment": {
+                "PICO_SDK_PATH": "${sourceDir}/extern/pico-sdk"
+            },
+            "cacheVariables": {
+                "TARGET_PATH": "samples/pi-pico",
+                "FETCH_PICO_SDK": "ON",
+                "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/extern/pico-sdk/cmake/preload/toolchains/pico_arm_cortex_m0plus_gcc.cmake",
+                "CMAKE_MODULE_PATH": "${sourceDir}/extern/pico-sdk/cmake",
+                "PICO_BOARD": "pico",
+                "BUILD_TESTING": "OFF"
+            }
+        },
+        {
+            "name": "pi_pico_debug",
+            "displayName": "pi_pico_debug",
+            "description": "Debug configuration for Raspberry Pi Pico",
+            "inherits": "pi_pico_base",
+            "binaryDir": "${sourceDir}/build_pi-pico_debug",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
             "name": "linux_debug",
             "displayName": "linux_debug",
             "description": "Debug configuration using ninja generator on linux",
@@ -150,6 +178,10 @@
             "configurePreset": "linux_debug"
         },
         {
+            "name": "pi_pico_debug",
+            "configurePreset": "pi_pico_debug"
+        },
+        {
             "name": "linux_release",
             "configurePreset": "linux_release"
         },
@@ -172,10 +204,15 @@
     ],
     "testPresets": [
         {
-          "name": "linux_test_debug",
-          "configurePreset": "linux_test_debug",
-          "output": {"outputOnFailure": true},
-          "execution": {"noTestsAction": "error", "stopOnFailure": true}
+            "name": "linux_test_debug",
+            "configurePreset": "linux_test_debug",
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "noTestsAction": "error",
+                "stopOnFailure": true
+            }
         }
     ]
 }

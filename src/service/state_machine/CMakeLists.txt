@@ -18,8 +18,8 @@ set(FRAMEWORK_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 # Source files ---------------------------------------------------------------
 target_sources(ez_state_machine_lib
     PRIVATE
-        ez_state_machine.c
-        ez_state_machine_v2.c
+        $<$<BOOL:${ENABLE_EZ_STATE_MACHINE}>:ez_state_machine.c>
+        $<$<BOOL:${ENABLE_EZ_STATE_MACHINE_V2}>:ez_state_machine_v2.c>
 )
 
 
