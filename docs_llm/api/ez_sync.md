@@ -4,7 +4,7 @@
 
 Synchronization interfaces the application provides to the platform.
 
-The platform needs two kinds of synchronization, which are different types so they cannot be mixed up: Mutex: protects data from concurrent access Signal: wakes up a task that waits for something to happen
+The platform needs three interfaces, which are different types so they cannot be mixed up: Mutex: protects data from concurrent access Signal: wakes up a task that waits for something to happen Delay: puts a task to sleep for a fixed time, nothing can wake it up early
 
 ## class `ez::platform::Mutex`
 
@@ -14,7 +14,7 @@ class ez::platform::Mutex;
 
 Mutual exclusion lock.
 
-The platform uses it from tasks only. The mutex given to the platform for the event bus MUST be recursive: event listeners run with the lock held and may call back into the platform. The mutex given for the data model must be a different object from the event bus mutex: Platform::Setup() rejects the same object for both. The application implements this interface; the caller of Platform::Setup() owns the object and keeps it alive while the platform uses it.
+The platform uses it from tasks only. The mutex given to the platform for the event bus MUST be recursive: event listeners run with the lock held and may call back into the platform. The mutex given for the data model must be a different object from the event bus mutex: Platform::Init() rejects the same object for both, and rejects a NULL mutex. The application implements this interface; the caller of Platform::Init() owns the object and keeps it alive while the platform uses it.
 
 ### `Mutex::~Mutex`
 
@@ -32,7 +32,7 @@ bool Lock(std::uint32_t timeout_ms=EZ_SEM_NO_WAIT)=0;
 
 Take the lock.
 
-The platform passes its configured lock timeout, or the timeout given to Platform::TakeDataModel(). A recursive implementation lets the owner take the lock again.
+The platform passes its configured lock timeout, or the timeout given to Platform::TakeDataModel(). A recursive implementation lets the owner take the lock again. With EZ_SEM_NO_WAIT the call does not wait.
 
 **Parameters**
 
@@ -50,7 +50,14 @@ The platform passes its configured lock timeout, or the timeout given to Platfor
 if (mutex.Lock(100U) == true)
 {
     // access the protected data
-    mutex.Unlock();
+    if (mutex.Unlock() == false)
+    {
+        HandleError();
+    }
+}
+else
+{
+    HandleError();
 }
 ```
 
@@ -61,6 +68,8 @@ bool Unlock()=0;
 ```
 
 Release the lock, only the task that took it may call it.
+
+The platform calls it only after its own Lock() succeeded. When it returns false, the platform task base logs an error (ezTaskCore::Unlock).
 
 **Returns:** true if the lock is released, false otherwise
 
@@ -85,7 +94,7 @@ class ez::platform::Signal;
 
 Binary signal: "something happened".
 
-Starts cleared. Notify() sets it, Wait() blocks until it is set and clears it. Several Notify() calls before a Wait() count as one. Any task or interrupt may notify. The application implements this interface; the caller of Platform::Setup() owns the object and keeps it alive while the platform uses it.
+Starts cleared. Notify() sets it, Wait() blocks until it is set and clears it. Several Notify() calls before a Wait() count as one. A task sets it with Notify(), an interrupt with NotifyFromISR(). The application implements this interface; the caller of Platform::Init() owns the object and keeps it alive while the platform uses it.
 
 ### `Signal::~Signal`
 
@@ -103,11 +112,13 @@ bool Wait(std::uint32_t timeout_ms=EZ_SEM_NO_WAIT)=0;
 
 Wait until the signal is set, then clear it.
 
+Blocks the calling task until Notify() or NotifyFromISR() sets the signal, or the timeout expires. With EZ_SEM_NO_WAIT it only checks the signal and returns at once.
+
 **Parameters**
 
 - `timeout_ms`: Max time to wait in milliseconds, EZ_SEM_NO_WAIT or EZ_SEM_WAIT_FOREVER are allowed
 
-**Returns:** true if the signal was set, false on timeout
+**Returns:** true if the signal was set (and is now cleared), false on timeout
 
 - **See:** Notify
 - ISR-safe: no
@@ -130,7 +141,9 @@ bool Notify()=0;
 
 Set the signal and wake up the waiting task, call it from a task.
 
-**Returns:** true if the signal is set, false otherwise
+Does not wait. If the signal is already set, the call has no further effect.
+
+**Returns:** true if the signal is set (also when it was already set), false if the signal object is not usable
 
 - **See:** NotifyFromISR
 - ISR-safe: no
@@ -144,7 +157,9 @@ bool NotifyFromISR()=0;
 
 Set the signal and wake up the waiting task, call it from an interrupt.
 
-**Returns:** true if the signal is set, false otherwise
+Does not wait. The implementation must use the interrupt-safe RTOS call.
+
+**Returns:** true if the signal is set (also when it was already set), false if the signal object is not usable
 
 - **See:** Notify
 - ISR-safe: yes
@@ -154,6 +169,57 @@ Set the signal and wake up the waiting task, call it from an interrupt.
 
 ```cpp
 Signal()=default;
+```
+
+Default constructor.
+
+## class `ez::platform::Delay`
+
+```cpp
+class ez::platform::Delay;
+```
+
+Fixed-time sleep of the calling task.
+
+For tasks that run on a period and need no wake-up. Unlike Signal it holds no state, so one object can be shared by all tasks. A task configured with a delay (ezTaskConfiguration_t::delay) calls Sleep() with its task_delay_ms between two passes of its body; the platform never passes 0 because Init() replaces 0 with the default. The application implements this interface; its owner keeps the object alive while it is used.
+
+### `Delay::~Delay`
+
+```cpp
+virtual  ~Delay()=default;
+```
+
+Virtual destructor.
+
+### `Delay::Sleep`
+
+```cpp
+void Sleep(std::uint32_t time_ms)=0;
+```
+
+Put the calling task to sleep.
+
+Nothing wakes the task before the time has passed. Other tasks can run meanwhile. The sleep is not ended by a signal, unlike Signal::Wait().
+
+**Parameters**
+
+- `time_ms`: Time to sleep in milliseconds. EZ_SEM_WAIT_FOREVER must not be passed, the platform does not check the value
+
+- **See:** Signal::Wait
+- ISR-safe: no
+- Blocking: yes
+
+**Example**
+
+```cpp
+// sleep 100 ms between two passes of a periodic task
+delay.Sleep(100U);
+```
+
+### `Delay::Delay`
+
+```cpp
+Delay()=default;
 ```
 
 Default constructor.

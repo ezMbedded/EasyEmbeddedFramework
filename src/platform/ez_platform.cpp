@@ -37,30 +37,24 @@
 
 using namespace ez::platform;
 
-/* Namespace-scope instance: avoids the __cxa_guard_* calls that a
- * function-local static would generate on bare-metal toolchains. */
-Platform Platform::s_instance;
-
-
-void Platform::Run(void *context)
+void Platform::Run()
 {
-    (void)context;
-    if(this->is_initialized == false
-        || this->is_configured == false
-        || this->is_running == false)
-    {
-        return;
-    }
-
-    /* The mutex must be recursive: listeners may call SendEvent()/RegisterListener() */
-    if(this->config.mutex->Lock(this->config.lock_timeout_ms) == false)
+    if(IsInitialized() == false || this->is_running == false)
     {
         return;
     }
 
     ezSTATUS status = ezSUCCESS;
-    status = ezEventBus_Run(&this->event_bus);
-    this->config.mutex->Unlock();
+    {
+        /* The mutex must be recursive: listeners may call SendEvent()/RegisterListener() */
+        LockGuard lock;
+        if(lock.Locked() == false)
+        {
+            return;
+        }
+        status = ezEventBus_Run(&this->event_bus);
+    }
+
     if(status != ezSUCCESS)
     {
         EZWARNING("ezEventBus_Run() failed, error code = %d", status);
@@ -81,51 +75,49 @@ void Platform::Start(void)
 
 PlatformResult Platform::RegisterListener(ezEventListener_t *listener)
 {
-    if(instance().is_configured == false)
+    if(IsInitialized() == false)
     {
         return PlatformResult::TaskNotConfigured;
     }
 
-    if(instance().config.mutex->Lock(instance().config.lock_timeout_ms) == false)
+    LockGuard lock;
+    if(lock.Locked() == false)
     {
         return PlatformResult::Timeout;
     }
 
-    PlatformResult result = PlatformResult::Failed;
     if(ezEventBus_Listen(&instance().event_bus, listener) == ezSUCCESS)
     {
-        result = PlatformResult::OK;
+        return PlatformResult::OK;
     }
-    instance().config.mutex->Unlock();
-    return result;
+    return PlatformResult::Failed;
 }
 
 PlatformResult Platform::UnregisterListener(ezEventListener_t *listener)
 {
-    if(instance().is_configured == false)
+    if(IsInitialized() == false)
     {
         return PlatformResult::TaskNotConfigured;
     }
 
-    if(instance().config.mutex->Lock(instance().config.lock_timeout_ms) == false)
+    LockGuard lock;
+    if(lock.Locked() == false)
     {
         return PlatformResult::Timeout;
     }
 
-    PlatformResult result = PlatformResult::Failed;
     if(ezEventBus_Unlisten(&instance().event_bus, listener) == ezSUCCESS)
     {
-        result = PlatformResult::OK;
+        return PlatformResult::OK;
     }
-    instance().config.mutex->Unlock();
-    return result;
+    return PlatformResult::Failed;
 }
 
 PlatformResult Platform::SendEvent(uint32_t event_code,
     const void *event_data,
     size_t event_data_size)
 {
-    if(instance().is_configured == false)
+    if(IsInitialized() == false)
     {
         return PlatformResult::TaskNotConfigured;
     }
@@ -135,34 +127,35 @@ PlatformResult Platform::SendEvent(uint32_t event_code,
         return PlatformResult::InvalidParams;
     }
 
-    if(instance().config.mutex->Lock(instance().config.lock_timeout_ms) == false)
-    {
-        return PlatformResult::Timeout;
-    }
-
     PlatformResult result = PlatformResult::Failed;
-    if(ezEventBus_SendEvent(&instance().event_bus,
-        event_code,
-        event_data,
-        event_data_size) == ezSUCCESS)
     {
-        result = PlatformResult::OK;
+        LockGuard lock;
+        if(lock.Locked() == false)
+        {
+            return PlatformResult::Timeout;
+        }
+
+        if(ezEventBus_SendEvent(&instance().event_bus,
+            event_code,
+            event_data,
+            event_data_size) == ezSUCCESS)
+        {
+            result = PlatformResult::OK;
+        }
     }
-    instance().config.mutex->Unlock();
 
     /* wake the platform task after the lock is released, so it does not block on it */
-    if(result == PlatformResult::OK)
+    if(result == PlatformResult::OK && Wake() == false)
     {
-        instance().platform_config.wake_signal->Notify();
+        EZWARNING("cannot wake the platform task");
     }
     return result;
 }
 
-PlatformResult Platform::Setup(const ezPlatformConfiguration_t &conf)
+PlatformResult Platform::Init(const ezPlatformConfiguration_t &conf)
 {
     /* an invalid or failed setup must not leave a previous valid one running */
-    this->is_configured = false;
-    this->is_initialized = false;
+    Invalidate();
     this->datamodel_created = false;
 
     const ezPlatformDataModelConfig_t &dm = conf.data_model;
@@ -174,7 +167,7 @@ PlatformResult Platform::Setup(const ezPlatformConfiguration_t &conf)
     /* every lock has its own purpose, sharing a mutex would deadlock */
     if(conf.task_config.mutex == nullptr
         || conf.datamodel_mutex == nullptr
-        || conf.wake_signal == nullptr
+        || conf.task_config.wake_signal == nullptr
         || conf.task_config.mutex == conf.datamodel_mutex)
     {
         EZERROR("invalid sync objects: mutexes and signal must be provided, the mutexes must be different");
@@ -199,16 +192,25 @@ PlatformResult Platform::Setup(const ezPlatformConfiguration_t &conf)
         return PlatformResult::InvalidParams;
     }
 
-    /* the platform is marked as configured at the end, when everything is created */
-    if(this->ApplyConfig(conf.task_config) != PlatformResult::OK)
-    {
-        return PlatformResult::InvalidParams;
-    }
+    /* Init() stores the task configuration and calls OnInit(), which creates the bus and the data model.
+     * The platform does not listen to its own bus, so there is no event callback */
     this->platform_config = conf;
+    const PlatformResult result = ezTask<Platform>::Init(conf.task_config, nullptr);
+    if(result == PlatformResult::OK)
+    {
+        EZDEBUG("platform setup ok");
+    }
+    return result;
+}
+
+PlatformResult Platform::OnInit()
+{
+    const ezPlatformDataModelConfig_t &dm = this->platform_config.data_model;
+    const bool has_data_model = (dm.data_points != nullptr);
 
     if(ezEventBus_CreateBus(&this->event_bus,
-        conf.event_bus.buffer,
-        (uint32_t)conf.event_bus.size) != ezSUCCESS)
+        this->platform_config.event_bus.buffer,
+        (uint32_t)this->platform_config.event_bus.size) != ezSUCCESS)
     {
         EZERROR("create platform event bus failed");
         return PlatformResult::EventBusNotCreated;
@@ -225,10 +227,6 @@ PlatformResult Platform::Setup(const ezPlatformConfiguration_t &conf)
         }
         this->datamodel_created = true;
     }
-
-    this->is_initialized = true;
-    this->is_configured = true;
-    EZDEBUG("platform setup ok");
     return PlatformResult::OK;
 }
 
@@ -240,7 +238,7 @@ Mutex *Platform::DataModelMutex()
 PlatformResult Platform::TakeDataModel(uint32_t timeout_ms)
 {
     Mutex *mutex = DataModelMutex();
-    if(instance().is_configured == false || mutex == nullptr)
+    if(IsInitialized() == false || mutex == nullptr)
     {
         return PlatformResult::TaskNotConfigured;
     }
@@ -255,7 +253,7 @@ PlatformResult Platform::TakeDataModel(uint32_t timeout_ms)
 PlatformResult Platform::GiveDataModel()
 {
     Mutex *mutex = DataModelMutex();
-    if(instance().is_configured == false || mutex == nullptr)
+    if(IsInitialized() == false || mutex == nullptr)
     {
         return PlatformResult::TaskNotConfigured;
     }
@@ -314,26 +312,6 @@ PlatformResult Platform::ClearDirtyData(uint32_t index)
 
     ezDataModel_ClearDirtyFlags(&instance().dataModel, index);
     return PlatformResult::OK;
-}
-
-void Platform::TaskEntry(void *context)
-{
-    Platform &platform = instance();
-    if(platform.is_configured == false)
-    {
-        EZERROR("task is not configured, call Setup() before creating the task");
-        return;
-    }
-
-    const uint32_t delay_ms = platform.config.task_delay_ms;
-
-    EZINFO("enter platform task");
-    while(1)
-    {
-        platform.Run(context);
-        /* sleep until SendEvent() wakes the task, delay_ms is the fallback timeout */
-        (void)platform.platform_config.wake_signal->Wait(delay_ms);
-    }
 }
 
 #endif /* EZ_PLATFORM */

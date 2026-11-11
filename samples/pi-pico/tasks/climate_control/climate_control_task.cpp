@@ -25,9 +25,8 @@ enum EventId : uint16_t
 static uint8_t sm_buff[256];
 static ezSm_StateMachine_t sm;
 static ezSm_Config_t sm_config;
-static ClimateControlTask *self = nullptr;
 
-static int OnEvent(uint32_t event_code, const void *data, size_t data_size)
+int ClimateControlTask::OnEvent(uint32_t event_code, const void *data, size_t data_size)
 {
     switch (event_code)
     {
@@ -46,11 +45,6 @@ static int OnEvent(uint32_t event_code, const void *data, size_t data_size)
                     ezSm_Event_t event = {};
                     bool have_event = false;
 
-                    if(self == nullptr)
-                    {
-                        break;
-                    }
-
                     if(Platform::Get(index, temperature, 100) != PlatformResult::OK)
                     {
                         EZERROR("cannot read temperature");
@@ -58,21 +52,29 @@ static int OnEvent(uint32_t event_code, const void *data, size_t data_size)
                     }
                     EZINFO("Temperature = %f", temperature);
 
-                    self->SetCurrentTemperature(temperature);
-                    if(temperature > self->GetTargetTemperature() + self->offset_temperature)
+                    ClimateControlTask &task = instance();
+                    task.SetCurrentTemperature(temperature);
+                    if(temperature > task.GetTargetTemperature() + offset_temperature)
                     {
                         event.id = EVENT_COOLING;
                         have_event = true;
                     }
-                    else if (temperature < self->GetTargetTemperature() - self->offset_temperature)
+                    else if (temperature < task.GetTargetTemperature() - offset_temperature)
                     {
                         event.id = EVENT_HEATING;
                         have_event = true;
                     }
 
-                    if(have_event && !ezSm_PostEvent(&sm, &event))
+                    if(have_event)
                     {
-                        EZERROR("cannot post event to state machine");
+                        if(!ezSm_PostEvent(&sm, &event))
+                        {
+                            EZERROR("cannot post event to state machine");
+                        }
+                        else if(Wake() == false)
+                        {
+                            EZERROR("cannot wake the climate control task");
+                        }
                     }
                     break;
                 }
@@ -107,28 +109,8 @@ static const ezSm_Transition_t transition[] = {
     {&state_cooling, &state_heating,    nullptr,    nullptr,   EVENT_HEATING},
 };
 
-PlatformResult ClimateControlTask::Init(void)
+PlatformResult ClimateControlTask::OnInit()
 {
-    if(this->is_configured == false)
-    {
-        EZERROR("task is not configured.");
-        return PlatformResult::TaskNotConfigured;
-    }
-
-    self = this;
-
-    if(ezEventBus_CreateListener(&this->event_listener, OnEvent) != ezSUCCESS)
-    {
-        EZERROR("cannot create event bus");
-        return PlatformResult::Failed;
-    }
-
-    if(Platform::instance().RegisterListener(&this->event_listener) != PlatformResult::OK)
-    {
-        EZERROR("cannot register listerner");
-        return PlatformResult::Failed;
-    }
-
     memset(&sm, 0, sizeof(sm));
     memset(sm_buff, 0, sizeof(sm_buff));
 
@@ -146,49 +128,15 @@ PlatformResult ClimateControlTask::Init(void)
     }
 
     ezSm_Start(&sm);
-
-    this->is_initialized = true;
-    this->running = true;
     return PlatformResult::OK;
 }
 
-void ClimateControlTask::Stop(void)
+void ClimateControlTask::Run()
 {
-    if (this->running)
+    if(ezSm_Run(&sm) == 0)
     {
-        this->running = false;
+        EZTRACE("no event handled");
     }
-}
-
-void ClimateControlTask::Start(void)
-{
-    if(!this->running)
-    {
-        this->running = true;
-    }
-}
-
-void ClimateControlTask::TaskEntry(void *context)
-{
-    if(self->is_configured == false)
-    {
-        EZERROR("task not configured. Call Setup()");
-        return;
-    }
-
-    if(self->is_initialized == false)
-    {
-        EZERROR("task not init. Call Init()");
-        return;
-    }
-    
-    self->Run(context);
-}
-
-void ClimateControlTask::Run(void *context)
-{
-    (void)context;
-    (void)ezSm_Run(&sm);
 }
 
 static void OnEnterStateIdle(void *context)
@@ -205,8 +153,8 @@ static void OnExitStateIdle(void *context)
 
 static void OnEnterStateHeating(void *context)
 {
-    EZINFO("curr=%f < target=%f: start heater", self->GetCurrentTemperature(), self->GetTargetTemperature());
-    if(Platform::instance().SendEvent(EVENT_HEATER_START, nullptr, 0) != PlatformResult::OK)
+    EZINFO("curr=%f < target=%f: start heater", ClimateControlTask::instance().GetCurrentTemperature(), ClimateControlTask::instance().GetTargetTemperature());
+    if(Platform::SendEvent(EVENT_HEATER_START, nullptr, 0) != PlatformResult::OK)
     {
         EZERROR("Send EVENT_HEATER_START failed");
     }
@@ -216,7 +164,7 @@ static void OnEnterStateHeating(void *context)
 static void OnExitStateHeating(void *context)
 {
     EZINFO("Stop heater");
-    if(Platform::instance().SendEvent(EVENT_HEATER_STOP, nullptr, 0) != PlatformResult::OK)
+    if(Platform::SendEvent(EVENT_HEATER_STOP, nullptr, 0) != PlatformResult::OK)
     {
         EZERROR("Send EVENT_HEATER_STOP failed");
     }
@@ -225,8 +173,8 @@ static void OnExitStateHeating(void *context)
 
 static void OnEnterStateCooling(void *context)
 {
-    EZINFO("curr=%f > target=%f: start cooler", self->GetCurrentTemperature(), self->GetTargetTemperature());
-    if(Platform::instance().SendEvent(EVENT_COOLER_START, nullptr, 0) != PlatformResult::OK)
+    EZINFO("curr=%f > target=%f: start cooler", ClimateControlTask::instance().GetCurrentTemperature(), ClimateControlTask::instance().GetTargetTemperature());
+    if(Platform::SendEvent(EVENT_COOLER_START, nullptr, 0) != PlatformResult::OK)
     {
         EZERROR("Send EVENT_COOLER_START failed");
     }
@@ -236,7 +184,7 @@ static void OnEnterStateCooling(void *context)
 static void OnExitStateCooling(void *context)
 {
     EZINFO("Stop cooler");
-    if(Platform::instance().SendEvent(EVENT_COOLER_STOP, nullptr, 0) != PlatformResult::OK)
+    if(Platform::SendEvent(EVENT_COOLER_STOP, nullptr, 0) != PlatformResult::OK)
     {
         EZERROR("Send EVENT_COOLER_STOP failed");
     }

@@ -2,26 +2,34 @@
 
 # ez_task  (`#include "ez_task.hpp"`)
 
-Common interface for the tasks of the platform layer.
+Common base of the tasks of the platform layer.
 
-Only available when EZ_PLATFORM is 1. A task derives from ez::platform::Task, is configured with Task::Setup() and ezTaskConfiguration_t, and implements Start(), Stop() and Run(). All memory and the mutex are supplied by the caller.
+Only available when EZ_PLATFORM is 1. Every task type exists exactly once: a task derives from ez::platform::ezTask<Derived> (CRTP) and the base provides the one static instance, Init(), Entry() and the locking helper. The derived class implements Run() and, if it has more to set up, OnInit(). There is no virtual function and no object pointer to carry around. All memory, the signal or delay and the optional mutex are supplied by the caller.
 
 ## Namespace `ez::platform`
 
 ```cpp
 enum class PlatformResult {
-  OK,
-  Failed,
-  InvalidParams,
-  EventBusNotCreated,
-  EventListenerNotCreated,
-  DataModelNotCreated,
-  TaskNotConfigured,
-  Timeout,
-  NoData
+  OK,  /* Operation success */
+  Failed,  /* Operation failed */
+  InvalidParams,  /* Invalid argument or configuration */
+  EventBusNotCreated,  /* The event bus could not be created or is not available */
+  EventListenerNotCreated,  /* The event listener could not be created */
+  DataModelNotCreated,  /* The data model could not be created or is not available */
+  TaskNotConfigured,  /* Platform::Init() has not succeeded */
+  Timeout,  /* Could not get the lock in time */
+  NoData  /* Nothing to report. No function of the current code returns it */
 }
 ```
 Result codes returned by the platform layer functions.
+
+```cpp
+enum class ezTaskState {
+  Uninitialized,  /* Init() has not succeeded, Entry() does not run the task */
+  Initialized  /* Init() succeeded */
+}
+```
+Lifecycle state of a task.
 
 ## struct `ez::platform::ezTaskConfiguration_t`
 
@@ -29,7 +37,9 @@ Result codes returned by the platform layer functions.
 struct ez::platform::ezTaskConfiguration_t;
 ```
 
-Configuration of a task, see Task::Setup()
+Configuration of a task, see ezTask::Init()
+
+Exactly one of wake_signal and delay must be set: it is how the task sleeps between two passes of Run(). The struct is copied by Init(), the objects it points to are not copied and must stay valid while the task runs.
 
 ### Types and data members of `ez::platform::ezTaskConfiguration_t`
 
@@ -45,71 +55,265 @@ uint32_t ez::platform::ezTaskConfiguration_t::lock_timeout_ms;
 uint32_t ez::platform::ezTaskConfiguration_t::task_delay_ms;
 ```
 
-## class `ez::platform::Task`
-
 ```cpp
-class ez::platform::Task;
+Signal* ez::platform::ezTaskConfiguration_t::wake_signal;
 ```
 
-Base class of the platform tasks.
-
-Holds the validated configuration and the configured/initialized flags. The derived class implements Start(), Stop() and Run().
-
-### `Task::~Task`
-
 ```cpp
-virtual  ~Task()=default;
+Delay* ez::platform::ezTaskConfiguration_t::delay;
 ```
 
-### `Task::Stop`
+## class `ez::platform::ezTaskCore`
 
 ```cpp
-void Stop()=0;
+class ez::platform::ezTaskCore;
 ```
 
-Stop the task from handling events. Implemented by the derived class.
+Part of the task that does not depend on the derived class.
 
-### `Task::Start`
+Implemented once in ez_task.cpp, so the code does not grow with the number of tasks. Use ezTask<Derived>, not this class. The members of this class are called by ezTask<Derived>.
+
+### `ezTaskCore::Init`
 
 ```cpp
-void Start()=0;
+PlatformResult Init(const ezTaskConfiguration_t &conf, EVENT_CALLBACK on_event, PlatformResult(*on_init)());
 ```
 
-Start or resume the task. Implemented by the derived class.
+Validate and store the configuration, run on_init, register the listener.
 
-### `Task::Setup`
-
-```cpp
-PlatformResult Setup(const ezTaskConfiguration_t &conf);
-```
-
-Validate and store the task configuration, and mark the task as configured.
-
-Calls ApplyConfig(). A lock_timeout_ms or task_delay_ms equal to 0 is replaced by EZ_DEFAULT_LOCK_TIMEOUT_MS or EZ_DEFAULT_TASK_DELAY_MS. A failed call leaves the task not configured and not initialized, even if it was configured before.
+Exactly one of conf.wake_signal and conf.delay must be set. The defaults of lock_timeout_ms and task_delay_ms are resolved here. The state is set to uninitialized first. Results are the same as in ezTask::Init().
 
 **Parameters**
 
-- `conf`: Mutex and timing of the task. The mutex is owned by the caller
+- `conf`: Configuration of the task, copied
+- `on_event`: Event callback, NULL = the task does not listen
+- `on_init`: Hook of the derived class, may be NULL
+
+**Returns:** PlatformResult, see ezTask::Init()
+
+- **See:** ezTask::Init
+- ISR-safe: no
+- Blocking: yes
+
+### `ezTaskCore::IsInitialized`
+
+```cpp
+bool IsInitialized() const;
+```
+
+Check whether Init() succeeded.
+
+**Returns:** true if Init() succeeded
+
+- ISR-safe: yes
+- Blocking: no
+
+### `ezTaskCore::Invalidate`
+
+```cpp
+void Invalidate();
+```
+
+Mark the task as not initialized, for derived classes that validate before calling Init()
+
+Only the state is changed. A listener registered by an earlier Init() stays on the event bus.
+
+- ISR-safe: no
+- Blocking: no
+
+### `ezTaskCore::BeginEntry`
+
+```cpp
+bool BeginEntry() const;
+```
+
+Check at the start of Entry(), logs an error if the task is not initialized.
+
+**Returns:** true if the task can run, false if Init() has not succeeded
+
+- ISR-safe: no
+- Blocking: no
+
+### `ezTaskCore::Sleep`
+
+```cpp
+void Sleep();
+```
+
+Sleep between two passes: wait on the signal or sleep with the delay.
+
+With a wake signal the sleep ends early when Wake() notifies the signal, otherwise after task_delay_ms. With a delay the task always sleeps task_delay_ms.
+
+- ISR-safe: no
+- Blocking: yes
+
+### `ezTaskCore::Wake`
+
+```cpp
+bool Wake();
+```
+
+Wake the task if it sleeps on a signal.
+
+**Returns:** true if the signal was set, false if the task uses a delay or the call failed
+
+- ISR-safe: no
+- Blocking: no
+
+### `ezTaskCore::Lock`
+
+```cpp
+bool Lock();
+```
+
+Take the mutex, waits up to lock_timeout_ms.
+
+Returns true at once when the configuration has no mutex.
+
+**Returns:** true if the mutex is taken or there is none, false on timeout
+
+- **See:** Unlock
+- ISR-safe: no
+- Blocking: yes
+
+### `ezTaskCore::Unlock`
+
+```cpp
+void Unlock();
+```
+
+Release the mutex, nothing to do if there is no mutex.
+
+Logs an error if the mutex cannot be released. Only the task that took the mutex may release it.
+
+- **See:** Lock
+- ISR-safe: no
+- Blocking: no
+
+## class `ez::platform::ezTask`
+
+```cpp
+template <class Derived> class ez::platform::ezTask;
+```
+
+Base class of the platform tasks, one static instance per task type.
+
+The derived class must declare friend class ez::platform::ezTask<Derived>;, because the base calls its Run() and OnInit(). It implements void Run(): one pass of the task body, it must not block and must not loop forever; Entry() sleeps between two passes. It may implement PlatformResult OnInit(): setup that only this task needs. It runs before the listener is registered and may run again after a failed Init(). It must not declare its own constructor with arguments, because the instance is created statically.
+
+The task is used through its static members, e.g. SensorTask::Init(config). There is no virtual function and no object pointer.
+
+### `ezTask::instance`
+
+```cpp
+static Derived & instance() noexcept;
+```
+
+Get the one and only instance of the task.
+
+Returns a reference only. The ISR rules of the calls made through it are those of each call.
+
+**Returns:** Reference to the instance
+
+- ISR-safe: yes
+- Blocking: no
+
+### `ezTask::Init`
+
+```cpp
+static PlatformResult Init(const ezTaskConfiguration_t &conf, EVENT_CALLBACK on_event=nullptr);
+```
+
+Configure the task and make it ready to run.
+
+Validates conf, resolves the default timeouts, calls OnInit(), creates and registers the event listener on the platform event bus (only if on_event is not NULL), and marks the task as initialized. All or nothing: on failure the task stays uninitialized and Entry() does not run it. A new call replaces the previous configuration.
+
+The listener is registered with Platform::RegisterListener(), which waits for the platform event bus mutex up to lock_timeout_ms. Any result of OnInit() other than OK is returned unchanged.
+
+**Parameters**
+
+- `conf`: Signal or delay, optional mutex and timing of the task
+- `on_event`: Callback of the task for the platform events, NULL = no listener
 
 **Return values**
 
-- `PlatformResult::OK`: Task configured
-- `PlatformResult::InvalidParams`: conf.mutex is NULL
+- `PlatformResult::OK`: Task initialized
+- `PlatformResult::InvalidParams`: Both or none of conf.wake_signal and conf.delay are set
+- `PlatformResult::EventListenerNotCreated`: ezEventBus_CreateListener() failed
+- `PlatformResult::TaskNotConfigured`: on_event is given but Platform::Init() has not succeeded
+- `PlatformResult::Timeout`: The event bus mutex could not be taken in time
+- `PlatformResult::Failed`: The listener could not be registered, e.g. it is already on the bus
 
 **Returns:** PlatformResult
 
-- **Pre:** None
-- **Post:** On success the task is configured; on failure it is not configured
+- **Pre:** Platform::Init() has succeeded if on_event is not NULL. Not called while the task runs, because Init() writes the configuration without a lock
+- **Post:** On OK, IsInitialized() is true and Entry() runs the task. On failure, IsInitialized() is false
+- **Warning:** A listener registered by an earlier Init() stays on the event bus. Init() does not unregister it, and a new Init() with on_event returns Failed while it is still there. The new on_event also replaces the callback of that listener before the call fails.
+- **See:** Entry
+- **See:** Wake
 - ISR-safe: no
-- Blocking: no
+- Blocking: yes
 
 **Example**
 
 ```cpp
-ezTaskConfiguration_t task_config = {};
-task_config.mutex = &task_mutex;
-if(my_task.Setup(task_config) != PlatformResult::OK)
+static MyMutex logging_mutex;     // implements ez::platform::Mutex
+static MySignal logging_signal;   // implements ez::platform::Signal
+static const ezTaskConfiguration_t logging_config = {
+    .mutex = &logging_mutex,
+    .lock_timeout_ms = 100,
+    .task_delay_ms = 5000,
+    .wake_signal = &logging_signal,
+};
+if(LoggingTask::Init(logging_config, LoggingTask::OnEvent) != PlatformResult::OK)
 {
     HandleError();
 }
 ```
+
+### `ezTask::Entry`
+
+```cpp
+static void Entry(void *arg);
+```
+
+Entry point of the task, hand it to the RTOS. The RTOS argument is not used.
+
+If the task is not initialized it logs an error and returns, so create the RTOS task only after Init() returned OK. Otherwise it never returns: it calls Run(), then sleeps on the wake signal or the delay, again and again.
+
+**Parameters**
+
+- `arg`: Not used
+
+- **Pre:** Init() succeeded
+- **See:** Init
+- ISR-safe: no
+- Blocking: yes
+
+**Example**
+
+```cpp
+if(SensorTask::Init(sensor_config) != PlatformResult::OK)
+{
+    HandleError();
+}
+if(xTaskCreate(SensorTask::Entry, "sensor", 1024, NULL, tskIDLE_PRIORITY + 1, NULL) != pdPASS)
+{
+    HandleError();
+}
+```
+
+### `ezTask::Wake`
+
+```cpp
+static bool Wake();
+```
+
+Wake the task, so it runs again without waiting for the timeout.
+
+Notifies the wake signal given in the configuration. It is not for interrupts: from an interrupt, call NotifyFromISR() on the Signal object that was given as wake_signal.
+
+**Returns:** true if the wake signal was set, false if the task sleeps with a delay or the call failed
+
+- **See:** Signal::NotifyFromISR
+- ISR-safe: no
+- Blocking: no

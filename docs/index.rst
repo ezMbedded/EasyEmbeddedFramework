@@ -22,6 +22,7 @@ Table of contents:
    :maxdepth: 1
    :caption: Platform:
 
+   easy_embedded/platform/platform_guide.rst
    easy_embedded/platform/platform.rst
 
 .. toctree::

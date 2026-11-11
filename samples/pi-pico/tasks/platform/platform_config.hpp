@@ -11,36 +11,32 @@
 *//**
 * @brief This function configures the platform and creates the sample tasks.
 *
-* @details The steps run in this order. The first two stop the function on failure:
-*  -# Platform::instance().Setup() with the static memory, mutexes and wake signal
+* @details The steps run in this order and each one stops the function on failure:
+*  -# Platform::instance().Init() with the static memory, mutexes and wake signal
 *     of platform_config.cpp.
 *  -# ezEventBus_CreateListener() and Platform::RegisterListener() for the OnEvent callback.
-*  -# Setup() and Init() of the sensor, climate control and logging tasks. Their results are
-*     not checked.
-*  -# xTaskCreate() of the main, sensor, alive, climate control and logging tasks. Their results
-*     are not checked.
+*  -# SensorTask::Init(), ClimateControlTask::Init() and LoggingTask::Init(). One call each
+*     validates the configuration, sets the task up and registers its listener.
+*  -# xTaskCreate() of the platform, sensor, climate control, logging and alive tasks, with
+*     the task type's Entry() as the entry function.
 *
-*  If Platform::Setup() succeeded and a later step of the first two fails, the platform stays
-*  configured. Nothing is rolled back. pi-pico.cpp calls this function before vTaskStartScheduler().
+*  Nothing is rolled back on a failure. pi-pico.cpp calls this function before vTaskStartScheduler().
 *
 * @return       bool
 *
-* @retval true   Platform configured, listener registered and the tasks created.
-*                The results of xTaskCreate() are not checked, so a task that failed to be
-*                created is not reported.
-* @retval false  Platform::Setup() failed, or the listener could not be created or registered
+* @retval true   Platform configured, the tasks initialized and created.
+* @retval false  A step failed, see details
 *
 * @pre None
-* @post On true the platform is configured, the listener is registered and the five sample
-*       tasks are created. On false after a successful Platform::Setup() the platform stays
-*       configured without the listener.
-* @warning Call it once. Each call runs Platform::Setup() again, which re-creates the event bus
+* @post On true the platform is configured, the listeners are registered and the five sample
+*       tasks are created. On false the earlier steps stay done.
+* @warning Call it once. Each call runs Platform::Init() again, which re-creates the event bus
 *          and loses the registered listeners, and creates the five tasks again.
 * @isr_safe{no}
 * @blocking{yes}
 *   Platform::RegisterListener() waits for the event bus mutex for up to lock_timeout_ms.
 *   The sample sets lock_timeout_ms to 0, so the default of 500 ms applies.
-*   The Init() functions of the sensor, climate control and logging tasks also call
+*   The Init() functions of the climate control and logging tasks also call
 *   RegisterListener().
 *
 * \b Example
