@@ -84,46 +84,6 @@ static int32_t OnReceiveEvent(uint32_t event_code, const void *event_data, size_
     return 0;
 }
 
-class FakeTask : public Task {
-public:
-    void Stop() override {}
-    void Start() override {}
-
-    bool IsInitialized() const { return this->is_initialized; }
-
-    PlatformResult UnregisterListener(void)
-    {
-        PlatformResult result = Platform::UnregisterListener(&this->event_listener);
-        return result;
-    }
-
-    bool Init(void)
-    {
-        if(this->is_configured == false)
-        {
-            return false;
-        }
-
-        if(ezEventBus_CreateListener(&this->event_listener, OnReceiveEvent) == ezSUCCESS)
-        {
-            if(Platform::RegisterListener(&this->event_listener) == PlatformResult::OK)
-            {
-                this->event_listener_created = true;
-            }
-        }
-
-        if(this->event_listener_created == true)
-        {
-            this->is_initialized = true;
-        }
-        return this->is_initialized;
-    }
-protected:
-    void Run(void *context) override {}
-private:
-    bool event_listener_created = false;
-};
-
 /* Non recursive mutex, remembers the last timeout */
 class FakeMutex : public Mutex {
 public:
@@ -146,6 +106,41 @@ public:
 
     bool locked = false;
     uint32_t last_timeout = 0;
+};
+
+/* The one instance of the fake task: counts what the task base class does */
+class FakeTask : public ezTask<FakeTask> {
+    friend class ezTask<FakeTask>;
+public:
+    using ezTask<FakeTask>::IsInitialized;
+
+    /* Take the task mutex like a task that shares data, report if the mutex is held inside */
+    bool Probe(const FakeMutex &mutex, bool &held_inside)
+    {
+        LockGuard lock;
+        held_inside = mutex.locked;
+        return lock.Locked();
+    }
+
+    int run_calls = 0;
+    int on_init_calls = 0;
+    PlatformResult on_init_result = PlatformResult::OK;
+
+    void ResetCounters()
+    {
+        run_calls = 0;
+        on_init_calls = 0;
+        on_init_result = PlatformResult::OK;
+    }
+
+private:
+    PlatformResult OnInit()
+    {
+        on_init_calls++;
+        return on_init_result;
+    }
+
+    void Run() { run_calls++; }
 };
 
 /* Binary signal: Notify sets, Wait consumes */
@@ -171,26 +166,42 @@ public:
     uint32_t last_timeout = 0;
 };
 
+/* Remembers how it was used, does not sleep */
+class FakeDelay : public Delay {
+public:
+    void Sleep(std::uint32_t time_ms) override
+    {
+        last_time = time_ms;
+        sleep_calls++;
+    }
+
+    int sleep_calls = 0;
+    uint32_t last_time = 0;
+};
+
 namespace ez { namespace platform {
 
+/* Access to the private state of the task base class, one state per task type */
+struct TaskTestAccess {
+    template <class D> static void Reset() { ezTask<D>::core = ezTaskCore(); }
+    template <class D> static const ezTaskConfiguration_t &Config() { return ezTask<D>::core.config; }
+    template <class D> static ezEventListener_t &Listener() { return ezTask<D>::core.listener; }
+};
+
 struct PlatformTestAccess {
-    static void Run(Platform &p, void *context) { p.Run(context); }
-    static uint32_t LockTimeout(Platform &p) { return p.config.lock_timeout_ms; }
-    static uint32_t TaskDelay(Platform &p) { return p.config.task_delay_ms; }
+    static void Run(Platform &p) { p.Run(); }
+    static uint32_t LockTimeout() { return TaskTestAccess::Config<Platform>().lock_timeout_ms; }
+    static uint32_t TaskDelay() { return TaskTestAccess::Config<Platform>().task_delay_ms; }
 
     /* Return the platform to its power-on state (unconfigured, no bus, no data model) */
     static void Reset(Platform &p)
     {
+        TaskTestAccess::Reset<Platform>();
         p.datamodel_created = false;
-        p.is_initialized = false;
-        p.is_configured = false;
-        p.config = {};
         p.platform_config = {};
         p.is_running = true;
 
         p.event_bus = {};
-        p.event_listener = {};
-
         p.dataModel = {};
     }
 };
@@ -209,13 +220,15 @@ protected:
     FakeMutex datamodel_mutex;
     FakeMutex task_mutex;
     FakeSignal platform_wake;
+    FakeSignal task_wake;
+    FakeDelay task_delay;
 
     ezPlatformConfiguration_t platform_config = {
         .task_config = {
             .mutex = &platform_mutex,
+            .wake_signal = &platform_wake,
         },
         .datamodel_mutex = &datamodel_mutex,
-        .wake_signal = &platform_wake,
         .event_bus = {
             .buffer = event_bus_buff,
             .size = event_buff_size,
@@ -230,11 +243,12 @@ protected:
 
     ezTaskConfiguration_t task_config = {
         .mutex = &task_mutex,
+        .delay = &task_delay,
     };
 
     Platform &platform = Platform::instance();
 
-    FakeTask fake_task;
+    FakeTask &fake_task = FakeTask::instance();
 public:
     PlatformTestsFixture();
     ~PlatformTestsFixture(){}
@@ -253,8 +267,8 @@ protected:
         CHECK(Platform::SendEvent(0x01, data, sizeof(data)) == PlatformResult::TaskNotConfigured);
         CHECK(Platform::TakeDataModel() == PlatformResult::TaskNotConfigured);
         CHECK(Platform::Set(DATA_POINT_UINT32_IDX, value) == PlatformResult::DataModelNotCreated);
-        PlatformTestAccess::Run(platform, nullptr);
-        CHECK_NOTHROW(Platform::TaskEntry(nullptr));   /* returns at once when not configured */
+        PlatformTestAccess::Run(platform);
+        CHECK_NOTHROW(Platform::Entry(nullptr));   /* returns at once when not configured */
     }
 
     void ResetEventData()
@@ -279,10 +293,9 @@ TEST_CASE_METHOD(PlatformTestsFixture, "Setup platform", "[platform][Configurati
     {
         uint8_t data[4] = {1, 2, 3, 4};
         REQUIRE(platform.Setup(platform_config) == PlatformResult::OK);
-        REQUIRE(fake_task.Setup(task_config) == PlatformResult::OK);
-        REQUIRE(fake_task.Init() == true);
+        REQUIRE(FakeTask::Init(task_config, OnReceiveEvent) == PlatformResult::OK);
         REQUIRE(Platform::SendEvent(0x42, data, sizeof(data)) == PlatformResult::OK);
-        PlatformTestAccess::Run(platform, nullptr);
+        PlatformTestAccess::Run(platform);
         CHECK(last_event_code == 0x42);
 
         uint32_t value = 7U;
@@ -316,7 +329,20 @@ TEST_CASE_METHOD(PlatformTestsFixture, "Setup platform", "[platform][Configurati
 
         WHEN("Wake signal is NULL")
         {
-            platform_config.wake_signal = nullptr;
+            platform_config.task_config.wake_signal = nullptr;
+            CHECK(platform.Setup(platform_config) == PlatformResult::InvalidParams);
+        }
+
+        WHEN("A delay is given instead of the wake signal")
+        {
+            platform_config.task_config.wake_signal = nullptr;
+            platform_config.task_config.delay = &task_delay;
+            CHECK(platform.Setup(platform_config) == PlatformResult::InvalidParams);
+        }
+
+        WHEN("A delay is given besides the wake signal")
+        {
+            platform_config.task_config.delay = &task_delay;
             CHECK(platform.Setup(platform_config) == PlatformResult::InvalidParams);
         }
 
@@ -392,7 +418,7 @@ TEST_CASE_METHOD(PlatformTestsFixture, "Setup platform", "[platform][Configurati
     SECTION("A valid configuration replaced by an invalid one stops the platform")
     {
         REQUIRE(platform.Setup(platform_config) == PlatformResult::OK);
-        platform_config.wake_signal = nullptr;
+        platform_config.task_config.wake_signal = nullptr;
         REQUIRE(platform.Setup(platform_config) == PlatformResult::InvalidParams);
         CheckPlatformIsNotConfigured();
     }
@@ -401,26 +427,25 @@ TEST_CASE_METHOD(PlatformTestsFixture, "Setup platform", "[platform][Configurati
     {
         uint8_t data[4] = {1, 2, 3, 4};
         InitPlatform();
-        REQUIRE(fake_task.Setup(task_config) == PlatformResult::OK);
-        REQUIRE(fake_task.Init() == true);
+        REQUIRE(FakeTask::Init(task_config, OnReceiveEvent) == PlatformResult::OK);
 
         REQUIRE(platform.Setup(platform_config) == PlatformResult::OK);
         REQUIRE(Platform::SendEvent(0x42, data, sizeof(data)) == PlatformResult::OK);
-        PlatformTestAccess::Run(platform, nullptr);
+        PlatformTestAccess::Run(platform);
         CHECK(last_event_code == 0);
     }
 
     SECTION("Defaults are resolved once in Setup")
     {
         REQUIRE(platform.Setup(platform_config) == PlatformResult::OK);
-        CHECK(PlatformTestAccess::LockTimeout(platform) == EZ_DEFAULT_LOCK_TIMEOUT_MS);
-        CHECK(PlatformTestAccess::TaskDelay(platform) == EZ_DEFAULT_TASK_DELAY_MS);
+        CHECK(PlatformTestAccess::LockTimeout() == EZ_DEFAULT_LOCK_TIMEOUT_MS);
+        CHECK(PlatformTestAccess::TaskDelay() == EZ_DEFAULT_TASK_DELAY_MS);
 
         platform_config.task_config.lock_timeout_ms = 123U;
         platform_config.task_config.task_delay_ms = 456U;
         REQUIRE(platform.Setup(platform_config) == PlatformResult::OK);
-        CHECK(PlatformTestAccess::LockTimeout(platform) == 123U);
-        CHECK(PlatformTestAccess::TaskDelay(platform) == 456U);
+        CHECK(PlatformTestAccess::LockTimeout() == 123U);
+        CHECK(PlatformTestAccess::TaskDelay() == 456U);
     }
 }
 
@@ -430,47 +455,225 @@ TEST_CASE_METHOD(
     "Initialize Task",
     "[platform][task]")
 {
-    SECTION("Initialize task with invalid configuration")
+    SECTION("Initialization fails when the way to sleep is not exactly one")
     {
         InitPlatform();
 
-        WHEN("Task is not configured")
+        WHEN("Neither a wake signal nor a delay is given")
         {
-            THEN("Initialization fails")
-            {
-                fake_task.Init();
-                CHECK(fake_task.IsInitialized() == false);
-            }
+            task_config.delay = nullptr;
+            CHECK(FakeTask::Init(task_config, OnReceiveEvent) == PlatformResult::InvalidParams);
         }
 
-        WHEN("Task is configured with invalid configuration")
+        WHEN("Both a wake signal and a delay are given")
         {
-            ezTaskConfiguration_t task_config_invalid1 = {
-                .mutex = nullptr,
-            };
-
-            CHECK(fake_task.Setup(task_config_invalid1) == PlatformResult::InvalidParams);
-            THEN("Initialization fails")
-            {
-                fake_task.Init();
-                CHECK(fake_task.IsInitialized() == false);
-            }
+            task_config.wake_signal = &task_wake;
+            CHECK(FakeTask::Init(task_config, OnReceiveEvent) == PlatformResult::InvalidParams);
         }
+
+        CHECK(fake_task.IsInitialized() == false);
+        CHECK(fake_task.on_init_calls == 0);
     }
 
     SECTION("Initialize task when platform is not set up")
     {
-        REQUIRE(fake_task.Setup(task_config) == PlatformResult::OK);
-        fake_task.Init();
+        CHECK(FakeTask::Init(task_config, OnReceiveEvent) == PlatformResult::TaskNotConfigured);
         CHECK(fake_task.IsInitialized() == false);
     }
 
     SECTION("Initialize task with valid configuration")
     {
         InitPlatform();
-        REQUIRE(fake_task.Setup(task_config) == PlatformResult::OK);
-        fake_task.Init();
+        CHECK(FakeTask::Init(task_config, OnReceiveEvent) == PlatformResult::OK);
         CHECK(fake_task.IsInitialized() == true);
+        CHECK(fake_task.on_init_calls == 1);
+    }
+
+    SECTION("A task without an event callback does not need the platform")
+    {
+        CHECK(FakeTask::Init(task_config) == PlatformResult::OK);
+        CHECK(fake_task.IsInitialized() == true);
+    }
+
+    SECTION("The mutex is optional")
+    {
+        task_config.mutex = nullptr;
+        CHECK(FakeTask::Init(task_config) == PlatformResult::OK);
+        bool held_inside = false;
+        CHECK(fake_task.Probe(task_mutex, held_inside) == true);
+        CHECK(held_inside == false);
+    }
+
+    SECTION("A task with a wake signal instead of a delay is valid")
+    {
+        task_config.delay = nullptr;
+        task_config.wake_signal = &task_wake;
+        CHECK(FakeTask::Init(task_config) == PlatformResult::OK);
+    }
+
+    SECTION("A failing OnInit() fails the initialization and nothing is registered")
+    {
+        InitPlatform();
+        fake_task.on_init_result = PlatformResult::Failed;
+        CHECK(FakeTask::Init(task_config, OnReceiveEvent) == PlatformResult::Failed);
+        CHECK(fake_task.IsInitialized() == false);
+
+        uint8_t data[4] = {1, 2, 3, 4};
+        REQUIRE(Platform::SendEvent(0x42, data, sizeof(data)) == PlatformResult::OK);
+        PlatformTestAccess::Run(platform);
+        CHECK(last_event_code == 0);
+    }
+
+    SECTION("A failed initialization replaces a valid one")
+    {
+        InitPlatform();
+        REQUIRE(FakeTask::Init(task_config, OnReceiveEvent) == PlatformResult::OK);
+        task_config.delay = nullptr;
+        CHECK(FakeTask::Init(task_config) == PlatformResult::InvalidParams);
+        CHECK(fake_task.IsInitialized() == false);
+    }
+
+    SECTION("Defaults are resolved once in Init")
+    {
+        REQUIRE(FakeTask::Init(task_config) == PlatformResult::OK);
+        CHECK(TaskTestAccess::Config<FakeTask>().lock_timeout_ms == EZ_DEFAULT_LOCK_TIMEOUT_MS);
+        CHECK(TaskTestAccess::Config<FakeTask>().task_delay_ms == EZ_DEFAULT_TASK_DELAY_MS);
+
+        task_config.lock_timeout_ms = 11U;
+        task_config.task_delay_ms = 22U;
+        REQUIRE(FakeTask::Init(task_config) == PlatformResult::OK);
+        CHECK(TaskTestAccess::Config<FakeTask>().lock_timeout_ms == 11U);
+        CHECK(TaskTestAccess::Config<FakeTask>().task_delay_ms == 22U);
+    }
+}
+
+
+TEST_CASE_METHOD(
+    PlatformTestsFixture,
+    "Task entry",
+    "[platform][task]")
+{
+    /* Entry never returns, the sleep throws to leave the loop */
+    struct ThrowingDelay : FakeDelay {
+        void Sleep(std::uint32_t time_ms) override
+        {
+            FakeDelay::Sleep(time_ms);
+            throw std::runtime_error("leave Entry loop");
+        }
+    } throwing_delay;
+
+    struct ThrowingSignal : FakeSignal {
+        bool Wait(std::uint32_t timeout_ms = EZ_SEM_NO_WAIT) override
+        {
+            FakeSignal::Wait(timeout_ms);
+            throw std::runtime_error("leave Entry loop");
+        }
+    } throwing_signal;
+
+    SECTION("Entry does not run a task that is not initialized")
+    {
+        CHECK_NOTHROW(FakeTask::Entry(nullptr));
+        CHECK(fake_task.run_calls == 0);
+    }
+
+    SECTION("Entry does not run a task whose initialization failed")
+    {
+        task_config.delay = nullptr;
+        REQUIRE(FakeTask::Init(task_config) == PlatformResult::InvalidParams);
+        CHECK_NOTHROW(FakeTask::Entry(nullptr));
+        CHECK(fake_task.run_calls == 0);
+    }
+
+    SECTION("Entry runs the task, then sleeps with the delay")
+    {
+        task_config.delay = &throwing_delay;
+        task_config.task_delay_ms = 30U;
+        REQUIRE(FakeTask::Init(task_config) == PlatformResult::OK);
+        CHECK_THROWS_AS(FakeTask::Entry(nullptr), std::runtime_error);
+        CHECK(fake_task.run_calls == 1);
+        CHECK(throwing_delay.sleep_calls == 1);
+        CHECK(throwing_delay.last_time == 30U);
+    }
+
+    SECTION("Entry runs the task, then waits on the wake signal")
+    {
+        task_config.delay = nullptr;
+        task_config.wake_signal = &throwing_signal;
+        task_config.task_delay_ms = 40U;
+        REQUIRE(FakeTask::Init(task_config) == PlatformResult::OK);
+        CHECK_THROWS_AS(FakeTask::Entry(nullptr), std::runtime_error);
+        CHECK(fake_task.run_calls == 1);
+        CHECK(throwing_signal.wait_calls == 1);
+        CHECK(throwing_signal.last_timeout == 40U);
+    }
+
+    SECTION("Entry uses the default delay when none is configured")
+    {
+        task_config.delay = &throwing_delay;
+        REQUIRE(FakeTask::Init(task_config) == PlatformResult::OK);
+        CHECK_THROWS_AS(FakeTask::Entry(nullptr), std::runtime_error);
+        CHECK(throwing_delay.last_time == EZ_DEFAULT_TASK_DELAY_MS);
+    }
+}
+
+
+TEST_CASE_METHOD(
+    PlatformTestsFixture,
+    "Task wake",
+    "[platform][task]")
+{
+    SECTION("Wake notifies the signal of the task")
+    {
+        task_config.delay = nullptr;
+        task_config.wake_signal = &task_wake;
+        REQUIRE(FakeTask::Init(task_config) == PlatformResult::OK);
+        CHECK(FakeTask::Wake() == true);
+        CHECK(task_wake.notify_calls == 1);
+    }
+
+    SECTION("Wake fails for a task that sleeps with a delay")
+    {
+        REQUIRE(FakeTask::Init(task_config) == PlatformResult::OK);
+        CHECK(FakeTask::Wake() == false);
+        CHECK(task_wake.notify_calls == 0);
+    }
+
+    SECTION("Wake fails for a task that is not initialized")
+    {
+        CHECK(FakeTask::Wake() == false);
+    }
+}
+
+
+TEST_CASE_METHOD(
+    PlatformTestsFixture,
+    "Task lock guard",
+    "[platform][task]")
+{
+    bool held_inside = false;
+    REQUIRE(FakeTask::Init(task_config) == PlatformResult::OK);
+
+    SECTION("The mutex is held while the guard lives and released after it")
+    {
+        CHECK(fake_task.Probe(task_mutex, held_inside) == true);
+        CHECK(held_inside == true);
+        CHECK(task_mutex.locked == false);
+    }
+
+    SECTION("The configured lock timeout is used")
+    {
+        task_config.lock_timeout_ms = 77U;
+        REQUIRE(FakeTask::Init(task_config) == PlatformResult::OK);
+        CHECK(fake_task.Probe(task_mutex, held_inside) == true);
+        CHECK(task_mutex.last_timeout == 77U);
+    }
+
+    SECTION("The guard reports a timeout and does not release a mutex it does not hold")
+    {
+        REQUIRE(task_mutex.Lock() == true);
+        CHECK(fake_task.Probe(task_mutex, held_inside) == false);
+        CHECK(task_mutex.locked == true);
+        task_mutex.Unlock();
     }
 }
 
@@ -481,8 +684,7 @@ TEST_CASE_METHOD(
     "[platform][task]")
 {
     InitPlatform();
-    REQUIRE(fake_task.Setup(task_config) == PlatformResult::OK);
-    fake_task.Init();
+    REQUIRE(FakeTask::Init(task_config, OnReceiveEvent) == PlatformResult::OK);
     REQUIRE(fake_task.IsInitialized() == true);
 
     SECTION("Task sends event to platform")
@@ -492,7 +694,7 @@ TEST_CASE_METHOD(
         size_t event_data_size = sizeof(event_data);
 
         REQUIRE(platform.SendEvent(event_code, event_data, event_data_size) == PlatformResult::OK);
-        PlatformTestAccess::Run(platform, nullptr);
+        PlatformTestAccess::Run(platform);
         CHECK(last_event_code == event_code);
         CHECK(last_event_data_size == event_data_size);
         CHECK(std::memcmp(last_event_data, event_data, event_data_size) == 0);
@@ -506,13 +708,12 @@ TEST_CASE_METHOD(
     "[platform][task]")
 {
     InitPlatform();
-    REQUIRE(fake_task.Setup(task_config) == PlatformResult::OK);
-    fake_task.Init();
+    REQUIRE(FakeTask::Init(task_config, OnReceiveEvent) == PlatformResult::OK);
     REQUIRE(fake_task.IsInitialized() == true);
 
     SECTION("Task unregisters listener from platform")
     {
-        CHECK(fake_task.UnregisterListener() == PlatformResult::OK);
+        CHECK(Platform::UnregisterListener(&TaskTestAccess::Listener<FakeTask>()) == PlatformResult::OK);
     }
 }
 
@@ -524,8 +725,7 @@ TEST_CASE_METHOD(
 {
     PlatformResult result = PlatformResult::Failed;
     InitPlatform();
-    REQUIRE(fake_task.Setup(task_config) == PlatformResult::OK);
-    fake_task.Init();
+    REQUIRE(FakeTask::Init(task_config, OnReceiveEvent) == PlatformResult::OK);
     REQUIRE(fake_task.IsInitialized() == true);
 
     SECTION("Task get/set data point")
@@ -554,7 +754,7 @@ TEST_CASE_METHOD(
         size_t event_data_size = sizeof(event_data);
 
         REQUIRE(platform.SendEvent(event_code, (void*)&event_data, event_data_size) == PlatformResult::OK);
-        PlatformTestAccess::Run(platform, nullptr);
+        PlatformTestAccess::Run(platform);
         CHECK(last_event_code == event_code);
         CHECK(last_event_data_size == event_data_size);
         CHECK(std::memcmp(last_event_data, &event_data, event_data_size) == 0);
@@ -575,8 +775,7 @@ TEST_CASE_METHOD(
 {
     PlatformResult result = PlatformResult::Failed;
     InitPlatform();
-    REQUIRE(fake_task.Setup(task_config) == PlatformResult::OK);
-    fake_task.Init();
+    REQUIRE(FakeTask::Init(task_config, OnReceiveEvent) == PlatformResult::OK);
     REQUIRE(fake_task.IsInitialized() == true);
 
     uint32_t index = DATA_POINT_UINT32_IDX;
@@ -604,8 +803,7 @@ TEST_CASE_METHOD(
 {
     InitPlatform();
     ResetEventData();
-    REQUIRE(fake_task.Setup(task_config) == PlatformResult::OK);
-    REQUIRE(fake_task.Init() == true);
+    REQUIRE(FakeTask::Init(task_config, OnReceiveEvent) == PlatformResult::OK);
     REQUIRE(fake_task.IsInitialized() == true);
 
     SECTION("Platform is stop")
@@ -618,7 +816,7 @@ TEST_CASE_METHOD(
         GIVEN("Platform is stopped")
         {
             platform.Stop();
-            PlatformTestAccess::Run(platform, nullptr);
+            PlatformTestAccess::Run(platform);
             THEN("No event is notified on the event bus")
             {
                 CHECK(last_event_code == 0);
@@ -629,7 +827,7 @@ TEST_CASE_METHOD(
         GIVEN("Platform is started")
         {
             platform.Start();
-            PlatformTestAccess::Run(platform, nullptr);
+            PlatformTestAccess::Run(platform);
             THEN("Task receives event from platform")
             {
                 CHECK(last_event_code == event_code);
@@ -680,10 +878,9 @@ TEST_CASE_METHOD(
 
     SECTION("Send event without data is valid")
     {
-        REQUIRE(fake_task.Setup(task_config) == PlatformResult::OK);
-        REQUIRE(fake_task.Init() == true);
+        REQUIRE(FakeTask::Init(task_config, OnReceiveEvent) == PlatformResult::OK);
         CHECK(Platform::SendEvent(0x77, nullptr, 0U) == PlatformResult::OK);
-        PlatformTestAccess::Run(platform, nullptr);
+        PlatformTestAccess::Run(platform);
         CHECK(last_event_code == 0x77);
         CHECK(last_event_data_size == 0U);
     }
@@ -892,22 +1089,22 @@ TEST_CASE_METHOD(
     "Platform task entry",
     "[platform][task]")
 {
-    /* TaskEntry never returns, the signal throws to leave the loop */
+    /* Entry never returns, the signal throws to leave the loop */
     struct ThrowingSignal : FakeSignal {
         bool Wait(std::uint32_t timeout_ms = EZ_SEM_NO_WAIT) override
         {
             FakeSignal::Wait(timeout_ms);
-            throw std::runtime_error("leave TaskEntry loop");
+            throw std::runtime_error("leave Entry loop");
         }
     } wake;
 
-    platform_config.wake_signal = &wake;
+    platform_config.task_config.wake_signal = &wake;
 
     SECTION("Task entry waits on the wake signal with the configured timeout")
     {
         platform_config.task_config.task_delay_ms = 25U;
         InitPlatform();
-        CHECK_THROWS_AS(Platform::TaskEntry(nullptr), std::runtime_error);
+        CHECK_THROWS_AS(Platform::Entry(nullptr), std::runtime_error);
         CHECK(wake.wait_calls == 1);
         CHECK(wake.last_timeout == 25U);
     }
@@ -915,7 +1112,7 @@ TEST_CASE_METHOD(
     SECTION("Task entry uses the default timeout when none is configured")
     {
         InitPlatform();
-        CHECK_THROWS_AS(Platform::TaskEntry(nullptr), std::runtime_error);
+        CHECK_THROWS_AS(Platform::Entry(nullptr), std::runtime_error);
         CHECK(wake.last_timeout == EZ_DEFAULT_TASK_DELAY_MS);
     }
 
@@ -923,16 +1120,15 @@ TEST_CASE_METHOD(
     {
         uint8_t data[4] = {1, 2, 3, 4};
         InitPlatform();
-        REQUIRE(fake_task.Setup(task_config) == PlatformResult::OK);
-        REQUIRE(fake_task.Init() == true);
+        REQUIRE(FakeTask::Init(task_config, OnReceiveEvent) == PlatformResult::OK);
         REQUIRE(Platform::SendEvent(0x42, data, sizeof(data)) == PlatformResult::OK);
-        CHECK_THROWS_AS(Platform::TaskEntry(nullptr), std::runtime_error);
+        CHECK_THROWS_AS(Platform::Entry(nullptr), std::runtime_error);
         CHECK(last_event_code == 0x42);
     }
 
     SECTION("Task entry does not run when the platform is not configured")
     {
-        CHECK_NOTHROW(Platform::TaskEntry(nullptr));
+        CHECK_NOTHROW(Platform::Entry(nullptr));
         CHECK(wake.wait_calls == 0);
     }
 }
@@ -944,5 +1140,7 @@ TEST_CASE_METHOD(
 PlatformTestsFixture::PlatformTestsFixture()
 {
     PlatformTestAccess::Reset(platform);
+    TaskTestAccess::Reset<FakeTask>();
+    fake_task.ResetCounters();
     ResetEventData();
 }

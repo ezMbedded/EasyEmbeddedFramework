@@ -18,6 +18,7 @@ set(FRAMEWORK_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 target_sources(ez_platform_lib
     PRIVATE
         ez_platform.cpp
+        ez_task.cpp
 )
 
 

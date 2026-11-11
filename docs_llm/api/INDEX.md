@@ -9,12 +9,12 @@
 | ez_i2c | i2c/ez_i2c.h | Hardware Abstraction Layer for I2C communication. | 10 |
 | ez_linked_list | linked_list/ez_linked_list.h | Public functions of the linked list component. | 8 |
 | ez_logging | logging/ez_logging.h | This is the header file for logging module. | 1 |
-| ez_platform | platform/ez_platform.hpp | Platform singleton: event bus, data model and the platform task in one object. | 16 |
+| ez_platform | platform/ez_platform.hpp | Platform singleton: event bus, data model and the platform task in one object. | 14 |
 | ez_queue | queue/ez_queue.h | Public API of the queue component. | 11 |
 | ez_ring_buffer | ring_buffer/ez_ring_buffer.h | Public API of ring buffer component. | 7 |
 | ez_spi | spi/ez_spi.h | Hardware Abstraction Layer for SPI communication. | 12 |
 | ez_state_machine_v2 | state_machine/ez_state_machine_v2.h | Table driven state machine with guards, actions and an event queue. | 5 |
 | ez_static_alloc | static_alloc/ez_static_alloc.h | Public API of the static allocation component. | 12 |
-| ez_sync | sync/ez_sync.hpp | Synchronization interfaces the application provides to the platform. | 9 |
-| ez_task | task/ez_task.hpp | Common interface for the tasks of the platform layer. | 4 |
+| ez_sync | sync/ez_sync.hpp | Synchronization interfaces the application provides to the platform. | 12 |
+| ez_task | task/ez_task.hpp | Common base of the tasks of the platform layer. | 12 |
 | ez_uart | uart/ez_uart.h | Hardware Abstraction Layer for UART communication. | 12 |

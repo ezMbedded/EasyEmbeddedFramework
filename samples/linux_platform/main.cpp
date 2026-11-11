@@ -9,7 +9,7 @@
 
 using namespace ez::platform;
 
-/* The platform needs two kinds of synchronization from the application.
+/* The platform needs two kinds of synchronization from the application (and a Delay for periodic tasks).
  * This sample implements them with the C++ standard library; on a target
  * they wrap the RTOS (e.g. a FreeRTOS recursive mutex and a task notification). */
 
@@ -103,9 +103,9 @@ int main()
     ezPlatformConfiguration_t config = {
         .task_config = {
             .mutex = &task_mutex,
+            .wake_signal = &wake_signal,
         },
         .datamodel_mutex = &datamodel_mutex,
-        .wake_signal = &wake_signal,
         .event_bus = {
             .buffer = event_bus_buffer,
             .size = sizeof(event_bus_buffer),
@@ -132,7 +132,7 @@ int main()
     }
 
     /* On a target this is the entry of the RTOS task */
-    std::thread platform_task(Platform::TaskEntry, nullptr);
+    std::thread platform_task(Platform::Entry, nullptr);
     platform_task.detach();
 
     /* Write and read a data point, then tell the others about it */
