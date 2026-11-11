@@ -16,7 +16,7 @@ delay) that wrap the services of its RTOS.
 
 **Key Features:**
 
-*   **One call setup:** ``Platform::Setup`` creates the event bus and the data model, and it is all
+*   **One call setup:** ``Platform::Init`` creates the event bus and the data model, and it is all
     or nothing.
 *   **Event driven:** The platform task sleeps until an event is sent. It does not poll.
 *   **No dynamic allocation:** The application provides every buffer.
@@ -42,7 +42,7 @@ Component's structure
             #LockGuard
         }
         class Platform {
-            +Setup(ezPlatformConfiguration_t) PlatformResult
+            +Init(ezPlatformConfiguration_t) PlatformResult
             +SendEvent()$ PlatformResult
             +RegisterListener()$ PlatformResult
             +UnregisterListener()$ PlatformResult
@@ -131,7 +131,7 @@ so they cannot be mixed up. A ``Delay`` is only used by periodic tasks, see `Tas
 
 Configuration
 ============================
-``Platform::Setup`` takes an ``ezPlatformConfiguration_t``:
+``Platform::Init`` takes an ``ezPlatformConfiguration_t``:
 
 .. list-table::
     :header-rows: 1
@@ -166,17 +166,17 @@ only some of the fields is an error.
 
 Component's behavior
 ============================
-**Setup**
+**Init**
 
-1.  The application fills an ``ezPlatformConfiguration_t`` and calls ``Platform::instance().Setup``.
-2.  ``Setup`` checks the configuration, then creates the event bus and the data model.
+1.  The application fills an ``ezPlatformConfiguration_t`` and calls ``Platform::instance().Init``.
+2.  ``Init`` checks the configuration, then creates the event bus and the data model.
 3.  If anything fails, nothing stays half created: the platform is left unconfigured, and every
     function, including ``Entry``, refuses to run.
 4.  The application registers its listeners with ``Platform::RegisterListener``.
 5.  The application creates the RTOS task with ``Platform::Entry`` as the entry function. This
-    must be done **after** ``Setup`` succeeded.
+    must be done **after** ``Init`` succeeded.
 
-``Setup`` returns:
+``Init`` returns:
 
 .. list-table::
     :header-rows: 1
@@ -195,7 +195,7 @@ Component's behavior
     * - ``DataModelNotCreated``
       - The data model rejected its table or buffer.
 
-``Setup`` is meant to be called once, before the platform task runs. Calling it again creates a new
+``Init`` is meant to be called once, before the platform task runs. Calling it again creates a new
 event bus and a new data model, and the registered listeners are lost.
 
 **Running**
@@ -230,7 +230,7 @@ again. The events sent while it is stopped stay in the queue.
 ``NULL`` if the size is ``0``. The function returns:
 
 *   ``OK``: the event is queued and the platform task is woken.
-*   ``TaskNotConfigured``: ``Setup`` did not succeed.
+*   ``TaskNotConfigured``: ``Init`` did not succeed.
 *   ``InvalidParams``: the data is ``NULL`` but the size is not ``0``.
 *   ``Timeout``: the task mutex is not available within ``lock_timeout_ms``. It can be retried.
 *   ``Failed``: the event does not fit into the queue.
@@ -356,16 +356,16 @@ calls ``Wake()``, because it is a ``static`` function it reaches the task with `
 
 Rules
 ============================
-*   Call ``Setup`` before anything else, and create the platform task only after it succeeded. If
+*   Call ``Init`` before anything else, and create the platform task only after it succeeded. If
     ``Entry`` runs on an unconfigured platform, it returns at once. On an RTOS where a task is not
-    allowed to return, create the task only when ``Setup`` returned ``OK``. The same holds for every
+    allowed to return, create the task only when ``Init`` returned ``OK``. The same holds for every
     task and its ``Init``.
 *   The task mutex must be recursive. The data model mutex and the task mutex must be different
     objects.
 *   The listeners run in the platform task with the task mutex held. Keep them short. The event data
     is only valid during the callback. The rules of the :doc:`event bus
     <../service/event_bus/event_bus>` apply, for example a listener must not unregister itself.
-*   The memory given to ``Setup`` and the synchronization objects must live as long as the platform
+*   The memory given to ``Init`` and the synchronization objects must live as long as the platform
     task runs.
 *   Do not call the platform functions that wait for a mutex from an interrupt.
 
@@ -419,7 +419,7 @@ tasks. This is an example for FreeRTOS:
         void Sleep(std::uint32_t time_ms) override { vTaskDelay(pdMS_TO_TICKS(time_ms)); }
     };
 
-Then create the objects with static storage, call ``Setup``, and give ``Platform::Entry`` to
+Then create the objects with static storage, call ``Init``, and give ``Platform::Entry`` to
 ``xTaskCreate``. A complete example that runs on Linux, with ``std::thread`` instead of an RTOS,
 is in ``samples/linux_platform/main.cpp``.
 
@@ -438,13 +438,13 @@ Result codes
     * - ``InvalidParams``
       - An argument is invalid.
     * - ``TaskNotConfigured``
-      - ``Setup`` did not succeed.
+      - ``Init`` did not succeed.
     * - ``EventListenerNotCreated``
       - ``ezTask::Init`` could not create the event listener of the task.
     * - ``EventBusNotCreated``
-      - ``Setup`` could not create the event bus.
+      - ``Init`` could not create the event bus.
     * - ``DataModelNotCreated``
-      - There is no data model, or ``Setup`` could not create it.
+      - There is no data model, or ``Init`` could not create it.
     * - ``Timeout``
       - A mutex was not available in time. The call can be retried.
     * - ``NoData``

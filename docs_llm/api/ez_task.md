@@ -16,7 +16,7 @@ enum class PlatformResult {
   EventBusNotCreated,  /* The event bus could not be created or is not available */
   EventListenerNotCreated,  /* The event listener could not be created */
   DataModelNotCreated,  /* The data model could not be created or is not available */
-  TaskNotConfigured,  /* Platform::Setup() has not succeeded */
+  TaskNotConfigured,  /* Platform::Init() has not succeeded */
   Timeout,  /* Could not get the lock in time */
   NoData  /* Nothing to report. No function of the current code returns it */
 }
@@ -239,13 +239,13 @@ The listener is registered with Platform::RegisterListener(), which waits for th
 - `PlatformResult::OK`: Task initialized
 - `PlatformResult::InvalidParams`: Both or none of conf.wake_signal and conf.delay are set
 - `PlatformResult::EventListenerNotCreated`: ezEventBus_CreateListener() failed
-- `PlatformResult::TaskNotConfigured`: on_event is given but Platform::Setup() has not succeeded
+- `PlatformResult::TaskNotConfigured`: on_event is given but Platform::Init() has not succeeded
 - `PlatformResult::Timeout`: The event bus mutex could not be taken in time
 - `PlatformResult::Failed`: The listener could not be registered, e.g. it is already on the bus
 
 **Returns:** PlatformResult
 
-- **Pre:** Platform::Setup() has succeeded if on_event is not NULL. Not called while the task runs, because Init() writes the configuration without a lock
+- **Pre:** Platform::Init() has succeeded if on_event is not NULL. Not called while the task runs, because Init() writes the configuration without a lock
 - **Post:** On OK, IsInitialized() is true and Entry() runs the task. On failure, IsInitialized() is false
 - **Warning:** A listener registered by an earlier Init() stays on the event bus. Init() does not unregister it, and a new Init() with on_event returns Failed while it is still there. The new on_event also replaces the callback of that listener before the call fails.
 - **See:** Entry

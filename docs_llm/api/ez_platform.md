@@ -4,7 +4,7 @@
 
 Platform singleton: event bus, data model and the platform task in one object.
 
-Only available when EZ_PLATFORM is 1. The platform owns one event bus and one optional data model. All memory (event queue, data point table and values) and all synchronization objects (two mutexes, one wake signal) are supplied by the application through Platform::Setup(); the platform does not allocate. Call Setup() first, register the listeners, then run Platform::Entry() in an RTOS task.
+Only available when EZ_PLATFORM is 1. The platform owns one event bus and one optional data model. All memory (event queue, data point table and values) and all synchronization objects (two mutexes, one wake signal) are supplied by the application through Platform::Init(); the platform does not allocate. Call Init() first, register the listeners, then run Platform::Entry() in an RTOS task.
 
 ## struct `ez::platform::ezPlatformEventBusConfig_t`
 
@@ -14,7 +14,7 @@ struct ez::platform::ezPlatformEventBusConfig_t;
 
 Memory of the platform event bus.
 
-Required. The memory is owned by the caller and is not copied, see Platform::Setup()
+Required. The memory is owned by the caller and is not copied, see Platform::Init()
 
 ### Types and data members of `ez::platform::ezPlatformEventBusConfig_t`
 
@@ -60,9 +60,9 @@ size_t ez::platform::ezPlatformDataModelConfig_t::buffer_size;
 struct ez::platform::ezPlatformConfiguration_t;
 ```
 
-Everything the platform needs, see Platform::Setup()
+Everything the platform needs, see Platform::Init()
 
-The struct is copied by Setup(). The mutexes, the signal and the memory it points to are not copied and must stay valid while the platform is used.
+The struct is copied by Init(). The mutexes, the signal and the memory it points to are not copied and must stay valid while the platform is used.
 
 ### Types and data members of `ez::platform::ezPlatformConfiguration_t`
 
@@ -90,17 +90,17 @@ class ez::platform::Platform;
 
 Singleton that bundles the event bus, the data model and the platform task.
 
-Get the instance with Platform::instance(), which ezTask<Platform> provides. Entry() and Wake() are the inherited static members of ezTask<Platform>. Configure the platform with Setup(), not with the inherited ezTask::Init(): Setup() validates the memory and stores it for the creation of the event bus and the data model.
+Get the instance with Platform::instance(), which ezTask<Platform> provides. Entry() and Wake() are the inherited static members of ezTask<Platform>. Platform::Init() takes the platform configuration and hides the inherited ezTask::Init(): it validates the memory and stores it for the creation of the event bus and the data model.
 
-### `Platform::Setup`
+### `Platform::Init`
 
 ```cpp
-PlatformResult Setup(const ezPlatformConfiguration_t &conf);
+PlatformResult Init(const ezPlatformConfiguration_t &conf);
 ```
 
 Configure the platform: creates the event bus and the data model. Call it first and once.
 
-All or nothing. It fails with InvalidParams: the task mutex, the data model mutex or the wake signal is NULL, the two mutexes are the same object, task_config.delay is set, the event bus buffer is NULL or its size is 0 or larger than UINT32_MAX, or the data model is only partly provided (one of its four fields is set and another one is not). EventBusNotCreated: the event bus rejected its memory (ezEventBus_CreateBus() failed). DataModelNotCreated: the data model rejected its memory (ezDataModel_Initialize() failed). A failed call leaves the platform unconfigured, so Entry() does not run it. Calling it again re-creates the event bus and the data model: the registered listeners are lost and the data model values are zeroed. It does not change the Stop()/Start() flag. Setup() takes no lock. Do not call it while the platform task is running. The mutexes, the signal and the memory are not copied, they are owned by the caller and must outlive the platform. The structure conf is copied. lock_timeout_ms and task_delay_ms equal to 0 are replaced by EZ_DEFAULT_LOCK_TIMEOUT_MS and EZ_DEFAULT_TASK_DELAY_MS.
+All or nothing. It fails with InvalidParams: the task mutex, the data model mutex or the wake signal is NULL, the two mutexes are the same object, task_config.delay is set, the event bus buffer is NULL or its size is 0 or larger than UINT32_MAX, or the data model is only partly provided (one of its four fields is set and another one is not). EventBusNotCreated: the event bus rejected its memory (ezEventBus_CreateBus() failed). DataModelNotCreated: the data model rejected its memory (ezDataModel_Initialize() failed). A failed call leaves the platform unconfigured, so Entry() does not run it. Calling it again re-creates the event bus and the data model: the registered listeners are lost and the data model values are zeroed. It does not change the Stop()/Start() flag. Init() takes no lock. Do not call it while the platform task is running. The mutexes, the signal and the memory are not copied, they are owned by the caller and must outlive the platform. The structure conf is copied. lock_timeout_ms and task_delay_ms equal to 0 are replaced by EZ_DEFAULT_LOCK_TIMEOUT_MS and EZ_DEFAULT_TASK_DELAY_MS.
 
 **Parameters**
 
@@ -131,7 +131,7 @@ config.task_config.wake_signal = &wake_signal;
 config.datamodel_mutex = &datamodel_mutex;
 config.event_bus.buffer = event_bus_buffer;
 config.event_bus.size = sizeof(event_bus_buffer);
-if(Platform::instance().Setup(config) != PlatformResult::OK)
+if(Platform::instance().Init(config) != PlatformResult::OK)
 {
     HandleError();
 }
@@ -145,7 +145,7 @@ void Stop(void);
 
 Stop handling events.
 
-Sets a flag. While it is cleared, Run() returns without delivering the queued events to the listeners. The events stay in the queue, and SendEvent() still queues new ones and wakes the platform task. Undone by Start(). Setup() does not change the flag.
+Sets a flag. While it is cleared, Run() returns without delivering the queued events to the listeners. The events stay in the queue, and SendEvent() still queues new ones and wakes the platform task. Undone by Start(). Init() does not change the flag.
 
 - **See:** Start
 
@@ -157,7 +157,7 @@ void Start(void);
 
 Resume handling events after Stop(). The flag is set when the platform is created.
 
-Setup() does not change the flag, so a platform stopped before Setup() stays stopped until Start().
+Init() does not change the flag, so a platform stopped before Init() stays stopped until Start().
 
 - **See:** Stop
 
@@ -178,13 +178,13 @@ Takes the event bus mutex of the task configuration for up to lock_timeout_ms. T
 **Return values**
 
 - `PlatformResult::OK`: Listener registered
-- `PlatformResult::TaskNotConfigured`: Setup() has not succeeded
+- `PlatformResult::TaskNotConfigured`: Init() has not succeeded
 - `PlatformResult::Timeout`: The mutex could not be taken in time
 - `PlatformResult::Failed`: Listener is NULL or already registered
 
 **Returns:** PlatformResult
 
-- **Pre:** Setup() succeeded
+- **Pre:** Init() succeeded
 - **Warning:** The callback must not call UnregisterListener() (see EVENT_CALLBACK in ez_event_bus.h).
 - **See:** UnregisterListener
 - ISR-safe: no
@@ -218,13 +218,13 @@ Takes the event bus mutex of the task configuration for up to lock_timeout_ms
 **Return values**
 
 - `PlatformResult::OK`: Listener removed
-- `PlatformResult::TaskNotConfigured`: Setup() has not succeeded
+- `PlatformResult::TaskNotConfigured`: Init() has not succeeded
 - `PlatformResult::Timeout`: The mutex could not be taken in time
 - `PlatformResult::Failed`: Listener is NULL or not registered
 
 **Returns:** PlatformResult
 
-- **Pre:** Setup() succeeded
+- **Pre:** Init() succeeded
 - **See:** RegisterListener
 - ISR-safe: no
 - Blocking: yes
@@ -248,14 +248,14 @@ Not for interrupts, it waits for the mutex. The event data is copied into the ev
 **Return values**
 
 - `PlatformResult::OK`: Event queued, the platform task is woken up
-- `PlatformResult::TaskNotConfigured`: Setup() has not succeeded
+- `PlatformResult::TaskNotConfigured`: Init() has not succeeded
 - `PlatformResult::InvalidParams`: event_data is NULL but event_data_size is not 0
 - `PlatformResult::Timeout`: The mutex could not be taken in time
 - `PlatformResult::Failed`: The event bus rejected the event: no space in the queue, or the data is too big for it
 
 **Returns:** PlatformResult
 
-- **Pre:** Setup() succeeded
+- **Pre:** Init() succeeded
 - ISR-safe: no
 - Blocking: yes
 
@@ -286,12 +286,12 @@ The data model functions below do NOT lock by themselves (except Get() and Set()
 **Return values**
 
 - `PlatformResult::OK`: Data model locked
-- `PlatformResult::TaskNotConfigured`: Setup() has not succeeded
+- `PlatformResult::TaskNotConfigured`: Init() has not succeeded
 - `PlatformResult::Timeout`: The mutex could not be taken in time
 
 **Returns:** PlatformResult
 
-- **Pre:** Setup() succeeded
+- **Pre:** Init() succeeded
 - **Post:** On OK the caller must call GiveDataModel()
 - **See:** GiveDataModel
 - ISR-safe: no
@@ -308,7 +308,7 @@ Unlock the data model, only after a successful TakeDataModel()
 **Return values**
 
 - `PlatformResult::OK`: Data model unlocked
-- `PlatformResult::TaskNotConfigured`: Setup() has not succeeded
+- `PlatformResult::TaskNotConfigured`: Init() has not succeeded
 - `PlatformResult::Failed`: The mutex could not be released
 
 **Returns:** PlatformResult
@@ -337,14 +337,14 @@ Do not call it while holding the data model lock (TakeDataModel()). The value is
 **Return values**
 
 - `PlatformResult::OK`: Value read
-- `PlatformResult::DataModelNotCreated`: Setup() did not create a data model (also when not configured)
+- `PlatformResult::DataModelNotCreated`: Init() did not create a data model (also when not configured)
 - `PlatformResult::Timeout`: The mutex could not be taken in time
 - `PlatformResult::Failed`: Unknown index
 - `PlatformResult::InvalidParams`: Size of T is not the size of the data point
 
 **Returns:** PlatformResult
 
-- **Pre:** Setup() succeeded with a data model
+- **Pre:** Init() succeeded with a data model
 - **See:** Set
 - ISR-safe: no
 - Blocking: yes
@@ -378,13 +378,13 @@ Do not call it while holding the data model lock (TakeDataModel()). The value is
 **Return values**
 
 - `PlatformResult::OK`: Value stored
-- `PlatformResult::DataModelNotCreated`: Setup() did not create a data model
+- `PlatformResult::DataModelNotCreated`: Init() did not create a data model
 - `PlatformResult::Timeout`: The mutex could not be taken in time
 - `PlatformResult::Failed`: Unknown index or wrong size
 
 **Returns:** PlatformResult
 
-- **Pre:** Setup() succeeded with a data model
+- **Pre:** Init() succeeded with a data model
 - **See:** Get
 - ISR-safe: no
 - Blocking: yes
@@ -418,13 +418,13 @@ The data is copied into the data model and the data point is marked dirty. The d
 **Return values**
 
 - `PlatformResult::OK`: Value stored
-- `PlatformResult::DataModelNotCreated`: Setup() did not create a data model
+- `PlatformResult::DataModelNotCreated`: Init() did not create a data model
 - `PlatformResult::InvalidParams`: data is NULL
 - `PlatformResult::Failed`: Unknown index or wrong size
 
 **Returns:** PlatformResult
 
-- **Pre:** Setup() succeeded with a data model; the caller holds the data model lock if other tasks use it
+- **Pre:** Init() succeeded with a data model; the caller holds the data model lock if other tasks use it
 - **See:** Set
 - ISR-safe: no
 - Blocking: no
@@ -446,7 +446,7 @@ The pointer references the data model buffer, no copy is made. The data is only 
 
 **Returns:** Pointer to the data point, or nullptr if the data model is not created, the index is unknown or data_size is NULL
 
-- **Pre:** Setup() succeeded with a data model; the caller holds the data model lock if other tasks use it
+- **Pre:** Init() succeeded with a data model; the caller holds the data model lock if other tasks use it
 - **Warning:** Do not write through the pointer, use SetDataPoint() or Set()
 - **See:** Get
 - ISR-safe: no
@@ -504,7 +504,7 @@ The data model clears the flag of the index. An unknown index is ignored and the
 **Return values**
 
 - `PlatformResult::OK`: Dirty flag cleared, or the index is unknown and nothing changed
-- `PlatformResult::DataModelNotCreated`: Setup() did not create a data model
+- `PlatformResult::DataModelNotCreated`: Init() did not create a data model
 
 **Returns:** PlatformResult
 

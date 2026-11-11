@@ -14,7 +14,7 @@ class ez::platform::Mutex;
 
 Mutual exclusion lock.
 
-The platform uses it from tasks only. The mutex given to the platform for the event bus MUST be recursive: event listeners run with the lock held and may call back into the platform. The mutex given for the data model must be a different object from the event bus mutex: Platform::Setup() rejects the same object for both, and rejects a NULL mutex. The application implements this interface; the caller of Platform::Setup() owns the object and keeps it alive while the platform uses it.
+The platform uses it from tasks only. The mutex given to the platform for the event bus MUST be recursive: event listeners run with the lock held and may call back into the platform. The mutex given for the data model must be a different object from the event bus mutex: Platform::Init() rejects the same object for both, and rejects a NULL mutex. The application implements this interface; the caller of Platform::Init() owns the object and keeps it alive while the platform uses it.
 
 ### `Mutex::~Mutex`
 
@@ -94,7 +94,7 @@ class ez::platform::Signal;
 
 Binary signal: "something happened".
 
-Starts cleared. Notify() sets it, Wait() blocks until it is set and clears it. Several Notify() calls before a Wait() count as one. A task sets it with Notify(), an interrupt with NotifyFromISR(). The application implements this interface; the caller of Platform::Setup() owns the object and keeps it alive while the platform uses it.
+Starts cleared. Notify() sets it, Wait() blocks until it is set and clears it. Several Notify() calls before a Wait() count as one. A task sets it with Notify(), an interrupt with NotifyFromISR(). The application implements this interface; the caller of Platform::Init() owns the object and keeps it alive while the platform uses it.
 
 ### `Signal::~Signal`
 

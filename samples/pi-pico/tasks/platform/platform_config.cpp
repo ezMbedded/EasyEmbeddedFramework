@@ -126,7 +126,7 @@ static void alive_task(void *arg)
 bool appPlatformConfig_Init(void)
 {
     /* One call per task: configure it, then create the RTOS task only after it succeeded */
-    if(Platform::instance().Setup(config) != PlatformResult::OK)
+    if(Platform::instance().Init(config) != PlatformResult::OK)
     {
         return false;
     }

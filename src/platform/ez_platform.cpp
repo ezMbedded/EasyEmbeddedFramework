@@ -152,7 +152,7 @@ PlatformResult Platform::SendEvent(uint32_t event_code,
     return result;
 }
 
-PlatformResult Platform::Setup(const ezPlatformConfiguration_t &conf)
+PlatformResult Platform::Init(const ezPlatformConfiguration_t &conf)
 {
     /* an invalid or failed setup must not leave a previous valid one running */
     Invalidate();
@@ -195,7 +195,7 @@ PlatformResult Platform::Setup(const ezPlatformConfiguration_t &conf)
     /* Init() stores the task configuration and calls OnInit(), which creates the bus and the data model.
      * The platform does not listen to its own bus, so there is no event callback */
     this->platform_config = conf;
-    const PlatformResult result = Init(conf.task_config, nullptr);
+    const PlatformResult result = ezTask<Platform>::Init(conf.task_config, nullptr);
     if(result == PlatformResult::OK)
     {
         EZDEBUG("platform setup ok");

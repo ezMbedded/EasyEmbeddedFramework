@@ -119,7 +119,7 @@ int main()
     };
 
     /* One call configures everything. Create the task only after it succeeded */
-    if(Platform::instance().Setup(config) != PlatformResult::OK)
+    if(Platform::instance().Init(config) != PlatformResult::OK)
     {
         return 1;
     }

@@ -25,7 +25,7 @@ using namespace ez::platform;
  *  Platform::SendEvent().
  *
  *  Only one instance exists, see ClimateControlTask::instance(). Start it with
- *  ClimateControlTask::Init(config, ClimateControlTask::OnEvent), after Platform::Setup(),
+ *  ClimateControlTask::Init(config, ClimateControlTask::OnEvent), after Platform::Init(),
  *  and give ClimateControlTask::Entry to the RTOS. The target temperature starts at 20.0.
  */
 class ClimateControlTask : public platform::ezTask<ClimateControlTask>

@@ -39,7 +39,7 @@ enum class PlatformResult : uint8_t
     EventBusNotCreated,         /**< The event bus could not be created or is not available */
     EventListenerNotCreated,    /**< The event listener could not be created */
     DataModelNotCreated,        /**< The data model could not be created or is not available */
-    TaskNotConfigured,          /**< Platform::Setup() has not succeeded */
+    TaskNotConfigured,          /**< Platform::Init() has not succeeded */
     Timeout,                    /**< Could not get the lock in time */
     NoData,                     /**< Nothing to report. No function of the current code returns it */
 };
@@ -216,11 +216,11 @@ public:
      *  @retval PlatformResult::OK                      Task initialized
      *  @retval PlatformResult::InvalidParams           Both or none of conf.wake_signal and conf.delay are set
      *  @retval PlatformResult::EventListenerNotCreated ezEventBus_CreateListener() failed
-     *  @retval PlatformResult::TaskNotConfigured       on_event is given but Platform::Setup() has not succeeded
+     *  @retval PlatformResult::TaskNotConfigured       on_event is given but Platform::Init() has not succeeded
      *  @retval PlatformResult::Timeout                 The event bus mutex could not be taken in time
      *  @retval PlatformResult::Failed                  The listener could not be registered, e.g. it is already on the bus
      *
-     *  @pre Platform::Setup() has succeeded if on_event is not NULL. Not called while the task runs,
+     *  @pre Platform::Init() has succeeded if on_event is not NULL. Not called while the task runs,
      *       because Init() writes the configuration without a lock
      *  @post On OK, IsInitialized() is true and Entry() runs the task. On failure, IsInitialized() is false
      *  @warning A listener registered by an earlier Init() stays on the event bus. Init() does not

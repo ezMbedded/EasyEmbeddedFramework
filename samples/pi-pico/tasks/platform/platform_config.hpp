@@ -12,7 +12,7 @@
 * @brief This function configures the platform and creates the sample tasks.
 *
 * @details The steps run in this order and each one stops the function on failure:
-*  -# Platform::instance().Setup() with the static memory, mutexes and wake signal
+*  -# Platform::instance().Init() with the static memory, mutexes and wake signal
 *     of platform_config.cpp.
 *  -# ezEventBus_CreateListener() and Platform::RegisterListener() for the OnEvent callback.
 *  -# SensorTask::Init(), ClimateControlTask::Init() and LoggingTask::Init(). One call each
@@ -30,7 +30,7 @@
 * @pre None
 * @post On true the platform is configured, the listeners are registered and the five sample
 *       tasks are created. On false the earlier steps stay done.
-* @warning Call it once. Each call runs Platform::Setup() again, which re-creates the event bus
+* @warning Call it once. Each call runs Platform::Init() again, which re-creates the event bus
 *          and loses the registered listeners, and creates the five tasks again.
 * @isr_safe{no}
 * @blocking{yes}

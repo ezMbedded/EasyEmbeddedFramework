@@ -256,7 +256,7 @@ protected:
     void InitPlatform()
     {
         PlatformTestAccess::Reset(platform);
-        REQUIRE(platform.Setup(platform_config) == PlatformResult::OK);
+        REQUIRE(platform.Init(platform_config) == PlatformResult::OK);
     }
 
     /* The platform is not configured: nothing works and nothing runs */
@@ -279,9 +279,9 @@ protected:
     }
 };
 
-TEST_CASE_METHOD(PlatformTestsFixture, "Setup platform", "[platform][Configuration]")
+TEST_CASE_METHOD(PlatformTestsFixture, "Init platform", "[platform][Configuration]")
 {
-    SECTION("Platform is not configured before Setup")
+    SECTION("Platform is not configured before Init")
     {
         CheckPlatformIsNotConfigured();
         ezEventListener_t listener = {};
@@ -289,10 +289,10 @@ TEST_CASE_METHOD(PlatformTestsFixture, "Setup platform", "[platform][Configurati
         CHECK(Platform::UnregisterListener(&listener) == PlatformResult::TaskNotConfigured);
     }
 
-    SECTION("Setup with valid configuration")
+    SECTION("Init with valid configuration")
     {
         uint8_t data[4] = {1, 2, 3, 4};
-        REQUIRE(platform.Setup(platform_config) == PlatformResult::OK);
+        REQUIRE(platform.Init(platform_config) == PlatformResult::OK);
         REQUIRE(FakeTask::Init(task_config, OnReceiveEvent) == PlatformResult::OK);
         REQUIRE(Platform::SendEvent(0x42, data, sizeof(data)) == PlatformResult::OK);
         PlatformTestAccess::Run(platform);
@@ -302,148 +302,148 @@ TEST_CASE_METHOD(PlatformTestsFixture, "Setup platform", "[platform][Configurati
         CHECK(Platform::Set(DATA_POINT_UINT32_IDX, value) == PlatformResult::OK);
     }
 
-    SECTION("Setup without a data model")
+    SECTION("Init without a data model")
     {
         platform_config.data_model = {};
         uint8_t data[4] = {1, 2, 3, 4};
         uint32_t value = 7U;
-        REQUIRE(platform.Setup(platform_config) == PlatformResult::OK);
+        REQUIRE(platform.Init(platform_config) == PlatformResult::OK);
         CHECK(Platform::SendEvent(0x42, data, sizeof(data)) == PlatformResult::OK);
         CHECK(Platform::Set(DATA_POINT_UINT32_IDX, value) == PlatformResult::DataModelNotCreated);
         CHECK(Platform::GetFirstDirtyDataIndex() == DATA_POINT_INVALID);
     }
 
-    SECTION("Setup fails when a mutex or the signal is NULL")
+    SECTION("Init fails when a mutex or the signal is NULL")
     {
         WHEN("Task mutex is NULL")
         {
             platform_config.task_config.mutex = nullptr;
-            CHECK(platform.Setup(platform_config) == PlatformResult::InvalidParams);
+            CHECK(platform.Init(platform_config) == PlatformResult::InvalidParams);
         }
 
         WHEN("Data model mutex is NULL")
         {
             platform_config.datamodel_mutex = nullptr;
-            CHECK(platform.Setup(platform_config) == PlatformResult::InvalidParams);
+            CHECK(platform.Init(platform_config) == PlatformResult::InvalidParams);
         }
 
         WHEN("Wake signal is NULL")
         {
             platform_config.task_config.wake_signal = nullptr;
-            CHECK(platform.Setup(platform_config) == PlatformResult::InvalidParams);
+            CHECK(platform.Init(platform_config) == PlatformResult::InvalidParams);
         }
 
         WHEN("A delay is given instead of the wake signal")
         {
             platform_config.task_config.wake_signal = nullptr;
             platform_config.task_config.delay = &task_delay;
-            CHECK(platform.Setup(platform_config) == PlatformResult::InvalidParams);
+            CHECK(platform.Init(platform_config) == PlatformResult::InvalidParams);
         }
 
         WHEN("A delay is given besides the wake signal")
         {
             platform_config.task_config.delay = &task_delay;
-            CHECK(platform.Setup(platform_config) == PlatformResult::InvalidParams);
+            CHECK(platform.Init(platform_config) == PlatformResult::InvalidParams);
         }
 
         WHEN("Both mutexes are the same object")
         {
             platform_config.datamodel_mutex = platform_config.task_config.mutex;
-            CHECK(platform.Setup(platform_config) == PlatformResult::InvalidParams);
+            CHECK(platform.Init(platform_config) == PlatformResult::InvalidParams);
         }
 
         CheckPlatformIsNotConfigured();
     }
 
-    SECTION("Setup fails when the event bus memory is invalid")
+    SECTION("Init fails when the event bus memory is invalid")
     {
         WHEN("Buffer is NULL")
         {
             platform_config.event_bus.buffer = nullptr;
-            CHECK(platform.Setup(platform_config) == PlatformResult::InvalidParams);
+            CHECK(platform.Init(platform_config) == PlatformResult::InvalidParams);
         }
 
         WHEN("Buffer size is zero")
         {
             platform_config.event_bus.size = 0U;
-            CHECK(platform.Setup(platform_config) == PlatformResult::InvalidParams);
+            CHECK(platform.Init(platform_config) == PlatformResult::InvalidParams);
         }
 
         CheckPlatformIsNotConfigured();
     }
 
-    SECTION("Setup fails when the data model memory is only partly provided")
+    SECTION("Init fails when the data model memory is only partly provided")
     {
         WHEN("Table is NULL")
         {
             platform_config.data_model.data_points = nullptr;
-            CHECK(platform.Setup(platform_config) == PlatformResult::InvalidParams);
+            CHECK(platform.Init(platform_config) == PlatformResult::InvalidParams);
         }
 
         WHEN("Number of data points is zero")
         {
             platform_config.data_model.num_of_data_points = 0U;
-            CHECK(platform.Setup(platform_config) == PlatformResult::InvalidParams);
+            CHECK(platform.Init(platform_config) == PlatformResult::InvalidParams);
         }
 
         WHEN("Buffer is NULL")
         {
             platform_config.data_model.buffer = nullptr;
-            CHECK(platform.Setup(platform_config) == PlatformResult::InvalidParams);
+            CHECK(platform.Init(platform_config) == PlatformResult::InvalidParams);
         }
 
         WHEN("Buffer size is zero")
         {
             platform_config.data_model.buffer_size = 0U;
-            CHECK(platform.Setup(platform_config) == PlatformResult::InvalidParams);
+            CHECK(platform.Init(platform_config) == PlatformResult::InvalidParams);
         }
 
         CheckPlatformIsNotConfigured();
     }
 
-    SECTION("Setup fails when the event bus rejects its memory")
+    SECTION("Init fails when the event bus rejects its memory")
     {
         platform_config.event_bus.size = 1U;
-        CHECK(platform.Setup(platform_config) == PlatformResult::EventBusNotCreated);
+        CHECK(platform.Init(platform_config) == PlatformResult::EventBusNotCreated);
         CheckPlatformIsNotConfigured();
     }
 
-    SECTION("Setup fails when the data model rejects its memory")
+    SECTION("Init fails when the data model rejects its memory")
     {
         platform_config.data_model.buffer_size = 1U;
-        CHECK(platform.Setup(platform_config) == PlatformResult::DataModelNotCreated);
+        CHECK(platform.Init(platform_config) == PlatformResult::DataModelNotCreated);
         CheckPlatformIsNotConfigured();
     }
 
     SECTION("A valid configuration replaced by an invalid one stops the platform")
     {
-        REQUIRE(platform.Setup(platform_config) == PlatformResult::OK);
+        REQUIRE(platform.Init(platform_config) == PlatformResult::OK);
         platform_config.task_config.wake_signal = nullptr;
-        REQUIRE(platform.Setup(platform_config) == PlatformResult::InvalidParams);
+        REQUIRE(platform.Init(platform_config) == PlatformResult::InvalidParams);
         CheckPlatformIsNotConfigured();
     }
 
-    SECTION("Setup again re-creates the event bus, the listeners are lost")
+    SECTION("Init again re-creates the event bus, the listeners are lost")
     {
         uint8_t data[4] = {1, 2, 3, 4};
         InitPlatform();
         REQUIRE(FakeTask::Init(task_config, OnReceiveEvent) == PlatformResult::OK);
 
-        REQUIRE(platform.Setup(platform_config) == PlatformResult::OK);
+        REQUIRE(platform.Init(platform_config) == PlatformResult::OK);
         REQUIRE(Platform::SendEvent(0x42, data, sizeof(data)) == PlatformResult::OK);
         PlatformTestAccess::Run(platform);
         CHECK(last_event_code == 0);
     }
 
-    SECTION("Defaults are resolved once in Setup")
+    SECTION("Defaults are resolved once in Init")
     {
-        REQUIRE(platform.Setup(platform_config) == PlatformResult::OK);
+        REQUIRE(platform.Init(platform_config) == PlatformResult::OK);
         CHECK(PlatformTestAccess::LockTimeout() == EZ_DEFAULT_LOCK_TIMEOUT_MS);
         CHECK(PlatformTestAccess::TaskDelay() == EZ_DEFAULT_TASK_DELAY_MS);
 
         platform_config.task_config.lock_timeout_ms = 123U;
         platform_config.task_config.task_delay_ms = 456U;
-        REQUIRE(platform.Setup(platform_config) == PlatformResult::OK);
+        REQUIRE(platform.Init(platform_config) == PlatformResult::OK);
         CHECK(PlatformTestAccess::LockTimeout() == 123U);
         CHECK(PlatformTestAccess::TaskDelay() == 456U);
     }
