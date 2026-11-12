@@ -81,7 +81,7 @@ extern "C" {
 
 #if (PRINT_MODULE_NAME == 1U)
 /** @brief Prints the module name as "[name] " if PRINT_MODULE_NAME is 1U, else nothing. */
-#define print_module(mod_name)      dbg_print("[%s] ", mod_name)
+#define print_module(mod_name)      dbg_print("::%s::", mod_name)
 #else
 #define print_module(mod_name)  /**< disabled: expands to nothing */
 #endif
@@ -110,7 +110,7 @@ extern "C" {
 #if (EZ_LOGGING == 1U)
 #if DEBUG_LVL >= LVL_CRITICAL
 #define EZCRITICAL(fmt, ...) do {\
-                                dbg_print("\n" EZ_PURPLE "[CRITICAL] " EZ_RESET_COLOR);\
+                                dbg_print("\n" EZ_PURPLE "C" EZ_RESET_COLOR);\
                                 print_module(MOD_NAME);\
                                 print_file();\
                                 print_line();\
@@ -137,7 +137,7 @@ extern "C" {
 
 #if DEBUG_LVL >= LVL_ERROR
 #define EZERROR(fmt, ...)   do {\
-                                dbg_print("\n" EZ_RED "[   ERROR] " EZ_RESET_COLOR);\
+                                dbg_print("\n" EZ_RED "E" EZ_RESET_COLOR);\
                                 print_module(MOD_NAME);\
                                 print_file();\
                                 print_line();\
@@ -166,7 +166,7 @@ extern "C" {
 #define EZWARNING(fmt, ...) do {\
                                 if (DEBUG_LVL >= LVL_WARNING)\
                                 {\
-                                    dbg_print("\n" EZ_YELLOW "[ WARNING] " EZ_RESET_COLOR);\
+                                    dbg_print("\n" EZ_YELLOW "W" EZ_RESET_COLOR);\
                                     print_module(MOD_NAME);\
                                     print_file();\
                                     print_line();\
@@ -194,7 +194,7 @@ extern "C" {
 
 #if DEBUG_LVL >= LVL_INFO
 #define EZINFO(fmt, ...)    do {\
-                                dbg_print("\n" EZ_CYAN "[    INFO] " EZ_RESET_COLOR);\
+                                dbg_print("\n" EZ_CYAN "I" EZ_RESET_COLOR);\
                                 print_module(MOD_NAME);\
                                 print_file();\
                                 print_line();\
@@ -221,7 +221,7 @@ extern "C" {
 
 #if DEBUG_LVL >= LVL_DEBUG
 #define EZDEBUG(fmt, ...)   do {\
-                                dbg_print("\n" EZ_GREEN "[   DEBUG] " EZ_RESET_COLOR);\
+                                dbg_print("\n" EZ_GREEN "D" EZ_RESET_COLOR);\
                                 print_module(MOD_NAME);\
                                 print_file();\
                                 print_line();\
@@ -249,7 +249,7 @@ extern "C" {
 #if DEBUG_LVL >= LVL_TRACE
 #define EZTRACE(fmt, ...)   do {\
                                 dbg_print("\n");\
-                                dbg_print(EZ_BLUE "[   TRACE] " EZ_RESET_COLOR);\
+                                dbg_print(EZ_BLUE "T" EZ_RESET_COLOR);\
                                 print_module(MOD_NAME);\
                                 print_file();\
                                 print_line();\
