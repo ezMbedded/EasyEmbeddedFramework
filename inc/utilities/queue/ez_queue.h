@@ -239,7 +239,7 @@ ezSTATUS ezQueue_PopBack(ezQueue *queue);
 * @see ezQueue_CreateQueue, ezQueue_PushReservedElement, ezQueue_ReleaseReservedElement
 *
 *****************************************************************************/
-ezReservedElement ezQueue_ReserveElement(ezQueue* queue, void **data, uint32_t data_size);
+ezReservedElement ezQueue_ReserveElement(ezQueue* queue, void **data, size_t data_size);
 
 
 
