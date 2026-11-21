@@ -185,16 +185,16 @@ struct UartTestFixture
             OnEvent_fake.custom_fake = NULL;
             g_chain_handle = NULL;
             SimulateIsrDone(0);
+            /* Handles left open by a test: the driver must be unregistrable, or it stays in the list */
+            g_drv.open_count = 0U;
             CHECK(ezUart_SystemUnregisterHwDriver(&g_drv) == EZ_DRV_STATUS_OK);
         }
     }
 
-    /* Register a handle and initialize the driver. */
-    void BindAndInit(ezUartHandle_t *handle, ezDrvCallback cb = OnEvent, void *ctx = NULL)
+    /* Open a handle on the mock driver. */
+    void OpenHandle(ezUartHandle_t *handle, ezDrvCallback cb = OnEvent, void *ctx = NULL)
     {
-        HwInitialize_fake.return_val = EZ_DRV_STATUS_OK;
-        REQUIRE(ezUart_RegisterInstance(handle, "uart_mock", cb, ctx) == EZ_DRV_STATUS_OK);
-        REQUIRE(ezUart_Initialize(handle) == EZ_DRV_STATUS_OK);
+        REQUIRE(ezUart_Open(handle, "uart_mock", cb, ctx) == EZ_DRV_STATUS_OK);
     }
 
     /* Start an async transmit which is accepted by the HW driver. */
@@ -249,20 +249,20 @@ TEST_CASE_METHOD(UartTestFixture, "Test driver registration", "[hal][uart]")
         THEN("Both can be found by name")
         {
             REQUIRE(ezUart_SystemRegisterHwDriver(&other) == EZ_DRV_STATUS_OK);
-            CHECK(ezUart_RegisterInstance(&first, "uart_other", OnEvent, NULL) == EZ_DRV_STATUS_OK);
+            CHECK(ezUart_Open(&first, "uart_other", OnEvent, NULL) == EZ_DRV_STATUS_OK);
             CHECK(first.drv_handle.hw == &other);
-            CHECK(ezUart_RegisterInstance(&second, "uart_mock", OnEvent, NULL) == EZ_DRV_STATUS_OK);
+            CHECK(ezUart_Open(&second, "uart_mock", OnEvent, NULL) == EZ_DRV_STATUS_OK);
             CHECK(second.drv_handle.hw == &g_drv);
-            CHECK(ezUart_UnregisterInstance(&first) == EZ_DRV_STATUS_OK);
+            CHECK(ezUart_Close(&first) == EZ_DRV_STATUS_OK);
             CHECK(ezUart_SystemUnregisterHwDriver(&other) == EZ_DRV_STATUS_OK);
         }
     }
 
     WHEN("A driver is registered")
     {
-        THEN("It starts idle and not initialized")
+        THEN("It starts idle with no open handle")
         {
-            CHECK(g_drv.initialized == false);
+            CHECK(g_drv.open_count == 0U);
             CHECK(g_drv.base.state == 0U);
             CHECK(g_drv.base.user == NULL);
         }
@@ -270,20 +270,30 @@ TEST_CASE_METHOD(UartTestFixture, "Test driver registration", "[hal][uart]")
 
     WHEN("A driver is unregistered")
     {
-        g_drv.initialized = true;
-
-        THEN("It is reset and cannot be found anymore")
+        THEN("It is removed from the list and cannot be found anymore")
         {
             CHECK(ezUart_SystemUnregisterHwDriver(&g_drv) == EZ_DRV_STATUS_OK);
             driver_registered = false;
-            CHECK(g_drv.initialized == false);
-            CHECK(ezUart_RegisterInstance(&first, "uart_mock", OnEvent, NULL) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
+            CHECK(ezUart_Open(&first, "uart_mock", OnEvent, NULL) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
+        }
+    }
+
+    WHEN("A driver is unregistered while a handle is open")
+    {
+        OpenHandle(&first);
+
+        THEN("The unregistration is refused until the handle is closed")
+        {
+            CHECK(ezUart_SystemUnregisterHwDriver(&g_drv) == EZ_DRV_STATUS_BUSY);
+            REQUIRE(ezUart_Close(&first) == EZ_DRV_STATUS_OK);
+            CHECK(ezUart_SystemUnregisterHwDriver(&g_drv) == EZ_DRV_STATUS_OK);
+            driver_registered = false;
         }
     }
 
     WHEN("A driver is unregistered while an operation is in flight")
     {
-        BindAndInit(&first);
+        OpenHandle(&first);
         StartAsyncTransmit(&first);
 
         THEN("The unregistration is refused")
@@ -294,82 +304,264 @@ TEST_CASE_METHOD(UartTestFixture, "Test driver registration", "[hal][uart]")
 }
 
 
-TEST_CASE_METHOD(UartTestFixture, "Test instance registration lifecycle", "[hal][uart]")
+TEST_CASE_METHOD(UartTestFixture, "Test open and close", "[hal][uart]")
 {
     WHEN("Invalid arguments are used")
     {
         THEN("The APIs report an argument error")
         {
-            CHECK(ezUart_RegisterInstance(NULL, "uart_mock", NULL, NULL) == EZ_DRV_STATUS_ERR_ARG);
-            CHECK(ezUart_RegisterInstance(&first, NULL, NULL, NULL) == EZ_DRV_STATUS_ERR_ARG);
-            CHECK(ezUart_UnregisterInstance(NULL) == EZ_DRV_STATUS_ERR_ARG);
+            CHECK(ezUart_Open(NULL, "uart_mock", OnEvent, NULL) == EZ_DRV_STATUS_ERR_ARG);
+            CHECK(ezUart_Open(&first, NULL, OnEvent, NULL) == EZ_DRV_STATUS_ERR_ARG);
+            CHECK(ezUart_Close(NULL) == EZ_DRV_STATUS_ERR_ARG);
+        }
+    }
+
+    WHEN("A handle which was never opened is closed")
+    {
+        THEN("The call succeeds, the handle stays empty and the HW is not called")
+        {
+            CHECK(ezUart_Close(&first) == EZ_DRV_STATUS_OK);
+            CHECK(first.drv_handle.hw == NULL);
+            CHECK(first.drv_handle.on_event == NULL);
+            CHECK(first.drv_handle.ctx == NULL);
+            CHECK(HwDeinitialize_fake.call_count == 0U);
         }
     }
 
     WHEN("The target driver does not exist")
     {
-        THEN("The registration fails with driver-not-found")
+        THEN("The open fails with driver-not-found and the HW is not called")
         {
-            CHECK(ezUart_RegisterInstance(&first, "unknown", OnEvent, NULL) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
-        }
-    }
-
-    WHEN("A handle which was never bound is unregistered")
-    {
-        THEN("The call succeeds and the handle stays empty")
-        {
-            CHECK(ezUart_UnregisterInstance(&first) == EZ_DRV_STATUS_OK);
+            CHECK(ezUart_Open(&first, "unknown", OnEvent, NULL) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
+            CHECK(HwInitialize_fake.call_count == 0U);
             CHECK(first.drv_handle.hw == NULL);
-            CHECK(first.drv_handle.on_event == NULL);
-            CHECK(first.drv_handle.ctx == NULL);
         }
     }
 
-    WHEN("A handle which is already bound is registered again")
+    WHEN("The HW driver has no initialize or deinitialize function (the UART is already configured)")
     {
-        int first_ctx = 0;
-        REQUIRE(ezUart_RegisterInstance(&first, "uart_mock", OnEvent, &first_ctx) == EZ_DRV_STATUS_OK);
+        g_drv.interface.initialize = NULL;
+        g_drv.interface.deinitialize = NULL;
 
-        THEN("The registration is refused and the first binding is kept")
+        THEN("The open only binds the handle, and the close only unbinds it")
         {
-            CHECK(ezUart_RegisterInstance(&first, "uart_mock", NULL, NULL) == EZ_DRV_STATUS_ERR_ARG);
+            REQUIRE(ezUart_Open(&first, "uart_mock", OnEvent, NULL) == EZ_DRV_STATUS_OK);
             CHECK(first.drv_handle.hw == &g_drv);
-            CHECK(first.drv_handle.on_event == OnEvent);
-            CHECK(first.drv_handle.ctx == &first_ctx);
+            CHECK(g_drv.open_count == 1U);
+            CHECK(HwInitialize_fake.call_count == 0U);
+            CHECK(ezUart_Close(&first) == EZ_DRV_STATUS_OK);
+            CHECK(first.drv_handle.hw == NULL);
+            CHECK(g_drv.open_count == 0U);
+            CHECK(HwDeinitialize_fake.call_count == 0U);
         }
     }
 
-    WHEN("A handle is registered")
+    WHEN("The HW driver has an initialize function but no deinitialize function")
+    {
+        g_drv.interface.deinitialize = NULL;
+
+        THEN("The close succeeds without a HW call")
+        {
+            REQUIRE(ezUart_Open(&first, "uart_mock", OnEvent, NULL) == EZ_DRV_STATUS_OK);
+            CHECK(HwInitialize_fake.call_count == 1U);
+            CHECK(ezUart_Close(&first) == EZ_DRV_STATUS_OK);
+            CHECK(HwDeinitialize_fake.call_count == 0U);
+        }
+    }
+
+    WHEN("The handle is opened")
     {
         int user_ctx = 0;
+        REQUIRE(ezUart_Open(&first, "uart_mock", OnEvent, &user_ctx) == EZ_DRV_STATUS_OK);
 
-        THEN("The driver, callback and context are stored, and unregister clears them")
+        THEN("The HW gets its token, once")
         {
-            REQUIRE(ezUart_RegisterInstance(&first, "uart_mock", OnEvent, &user_ctx) == EZ_DRV_STATUS_OK);
+            CHECK(HwInitialize_fake.call_count == 1U);
+            CHECK(HwInitialize_fake.arg0_val == &g_hw_token);
+        }
+
+        THEN("The handle stores the driver, the callback and the context, and the driver is idle")
+        {
             CHECK(first.drv_handle.hw == &g_drv);
             CHECK(first.drv_handle.on_event == OnEvent);
             CHECK(first.drv_handle.ctx == &user_ctx);
-            REQUIRE(ezUart_UnregisterInstance(&first) == EZ_DRV_STATUS_OK);
-            CHECK(first.drv_handle.hw == NULL);
-            CHECK(first.drv_handle.on_event == NULL);
-            CHECK(first.drv_handle.ctx == NULL);
-            CHECK(ezUart_RegisterInstance(&first, "uart_mock", NULL, NULL) == EZ_DRV_STATUS_OK);
+            CHECK(g_drv.open_count == 1U);
+            CHECK(IsBusy() == false);
+        }
+
+        THEN("Opening it again is refused and the binding is unchanged")
+        {
+            CHECK(ezUart_Open(&first, "uart_mock", NULL, NULL) == EZ_DRV_STATUS_ERR_ARG);
+            CHECK(first.drv_handle.on_event == OnEvent);
+            CHECK(first.drv_handle.ctx == &user_ctx);
+            CHECK(HwInitialize_fake.call_count == 1U);
+            CHECK(g_drv.open_count == 1U);
         }
     }
 
-    WHEN("The handle has an operation in flight")
+    WHEN("The HW initialization fails")
     {
-        BindAndInit(&first);
-        REQUIRE(ezUart_RegisterInstance(&second, "uart_mock", OnEvent, NULL) == EZ_DRV_STATUS_OK);
+        HwInitialize_fake.return_val = EZ_DRV_STATUS_ERR_GENERIC;
+
+        THEN("The status is forwarded and nothing is bound")
+        {
+            CHECK(ezUart_Open(&first, "uart_mock", OnEvent, NULL) == EZ_DRV_STATUS_ERR_GENERIC);
+            CHECK(first.drv_handle.hw == NULL);
+            CHECK(g_drv.open_count == 0U);
+            CHECK(IsBusy() == false);
+        }
+
+        THEN("The same handle can be opened again once the failure is gone")
+        {
+            CHECK(ezUart_Open(&first, "uart_mock", OnEvent, NULL) == EZ_DRV_STATUS_ERR_GENERIC);
+            HwInitialize_fake.return_val = EZ_DRV_STATUS_OK;
+            CHECK(ezUart_Open(&first, "uart_mock", OnEvent, NULL) == EZ_DRV_STATUS_OK);
+            CHECK(HwInitialize_fake.call_count == 2U);
+            CHECK(g_drv.open_count == 1U);
+        }
+    }
+
+    WHEN("A second handle is opened")
+    {
+        OpenHandle(&first);
+        REQUIRE(ezUart_Open(&second, "uart_mock", OnEvent, NULL) == EZ_DRV_STATUS_OK);
+
+        THEN("The UART is not initialized again")
+        {
+            CHECK(HwInitialize_fake.call_count == 1U);
+            CHECK(g_drv.open_count == 2U);
+            CHECK(second.drv_handle.hw == &g_drv);
+        }
+    }
+
+    WHEN("A handle is opened while an operation is in flight")
+    {
+        OpenHandle(&first);
         StartAsyncTransmit(&first);
 
-        THEN("Its unregistration is refused, but another handle can be unregistered")
+        THEN("The open is refused and the operation is not disturbed")
         {
-            CHECK(ezUart_UnregisterInstance(&first) == EZ_DRV_STATUS_BUSY);
-            CHECK(first.drv_handle.hw == &g_drv);
-            CHECK(ezUart_UnregisterInstance(&second) == EZ_DRV_STATUS_OK);
+            CHECK(ezUart_Open(&second, "uart_mock", OnEvent, NULL) == EZ_DRV_STATUS_BUSY);
+            CHECK(second.drv_handle.hw == NULL);
+            CHECK(IsBusy() == true);
             SimulateIsrDone(UART_EVENT_TX_CMPLT);
-            CHECK(ezUart_UnregisterInstance(&first) == EZ_DRV_STATUS_OK);
+            CHECK(OnEvent_fake.call_count == 1U);
+        }
+    }
+
+    WHEN("The maximum number of handles is open")
+    {
+        g_drv.open_count = UINT8_MAX;
+
+        THEN("The open fails and the HW is not called")
+        {
+            CHECK(ezUart_Open(&first, "uart_mock", OnEvent, NULL) == EZ_DRV_STATUS_ERR_GENERIC);
+            CHECK(HwInitialize_fake.call_count == 0U);
+            CHECK(g_drv.open_count == UINT8_MAX);
+        }
+    }
+
+    WHEN("The only open handle is closed")
+    {
+        OpenHandle(&first);
+
+        THEN("The UART is released and everything is cleared")
+        {
+            CHECK(ezUart_Close(&first) == EZ_DRV_STATUS_OK);
+            CHECK(HwDeinitialize_fake.call_count == 1U);
+            CHECK(HwDeinitialize_fake.arg0_val == &g_hw_token);
+            CHECK(first.drv_handle.hw == NULL);
+            CHECK(first.drv_handle.on_event == NULL);
+            CHECK(first.drv_handle.ctx == NULL);
+            CHECK(g_drv.open_count == 0U);
+        }
+
+        THEN("It can be opened again afterwards and the UART is initialized again")
+        {
+            REQUIRE(ezUart_Close(&first) == EZ_DRV_STATUS_OK);
+            CHECK(ezUart_Open(&first, "uart_mock", OnEvent, NULL) == EZ_DRV_STATUS_OK);
+            CHECK(HwInitialize_fake.call_count == 2U);
+        }
+    }
+
+    WHEN("One of two open handles is closed")
+    {
+        OpenHandle(&first);
+        OpenHandle(&second);
+        REQUIRE(ezUart_Close(&first) == EZ_DRV_STATUS_OK);
+
+        THEN("The UART stays up and the other handle keeps working")
+        {
+            CHECK(HwDeinitialize_fake.call_count == 0U);
+            CHECK(g_drv.open_count == 1U);
+            HwTransmitSync_fake.return_val = EZ_DRV_STATUS_OK;
+            CHECK(ezUart_TransmitSync(&second, g_buf, 1, 5) == EZ_DRV_STATUS_OK);
+        }
+
+        THEN("Closing the other one releases the UART")
+        {
+            CHECK(ezUart_Close(&second) == EZ_DRV_STATUS_OK);
+            CHECK(HwDeinitialize_fake.call_count == 1U);
+            CHECK(g_drv.open_count == 0U);
+        }
+    }
+
+    WHEN("A handle with an operation in flight is closed")
+    {
+        OpenHandle(&first);
+        StartAsyncTransmit(&first);
+
+        THEN("The close is refused until the operation ends")
+        {
+            CHECK(ezUart_Close(&first) == EZ_DRV_STATUS_BUSY);
+            CHECK(first.drv_handle.hw == &g_drv);
+            CHECK(HwDeinitialize_fake.call_count == 0U);
+            SimulateIsrDone(UART_EVENT_TX_CMPLT);
+            CHECK(ezUart_Close(&first) == EZ_DRV_STATUS_OK);
+        }
+    }
+
+    WHEN("Another handle is closed while a handle has an operation in flight")
+    {
+        OpenHandle(&first);
+        OpenHandle(&second);
+        StartAsyncTransmit(&first);
+
+        THEN("It is allowed and does not disturb the operation")
+        {
+            CHECK(ezUart_Close(&second) == EZ_DRV_STATUS_OK);
+            CHECK(IsBusy() == true);
+            CHECK(HwDeinitialize_fake.call_count == 0U);
+        }
+    }
+
+    WHEN("The HW driver fails to release the UART")
+    {
+        OpenHandle(&first);
+        HwDeinitialize_fake.return_val = EZ_DRV_STATUS_ERR_GENERIC;
+
+        THEN("The status is returned and the handle is closed")
+        {
+            CHECK(ezUart_Close(&first) == EZ_DRV_STATUS_ERR_GENERIC);
+            CHECK(first.drv_handle.hw == NULL);
+            CHECK(g_drv.open_count == 0U);
+        }
+    }
+
+    WHEN("Two handles start async operations one after the other")
+    {
+        int ctx_first = 0;
+        int ctx_second = 0;
+        HwTransmitAsync_fake.return_val = EZ_DRV_STATUS_OK;
+        REQUIRE(ezUart_Open(&first, "uart_mock", OnEvent, &ctx_first) == EZ_DRV_STATUS_OK);
+        REQUIRE(ezUart_Open(&second, "uart_mock", OnEvent, &ctx_second) == EZ_DRV_STATUS_OK);
+
+        THEN("The end event goes to the callback of the handle which started the operation")
+        {
+            REQUIRE(ezUart_TransmitAsync(&second, g_buf, 1) == EZ_DRV_STATUS_OK);
+            SimulateIsrDone(UART_EVENT_TX_CMPLT);
+            REQUIRE(OnEvent_fake.call_count == 1U);
+            CHECK(OnEvent_fake.arg0_val == &ctx_second);
         }
     }
 }
@@ -380,43 +572,44 @@ TEST_CASE_METHOD(UartTestFixture, "Test operations on an unusable handle", "[hal
     uint8_t rx[2] = {0};
     struct ezUartConfiguration *cfg = NULL;
 
-    WHEN("The handle is NULL or not bound")
+    WHEN("The handle is NULL or not open")
     {
         THEN("Every API reports driver-not-found")
         {
-            CHECK(ezUart_Initialize(NULL) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
-            CHECK(ezUart_Initialize(&first) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
-            CHECK(ezUart_Deinitialize(&first) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
             CHECK(ezUart_TransmitAsync(&first, g_buf, 1) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
             CHECK(ezUart_ReceiveAsync(&first, rx, 1) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
             CHECK(ezUart_TransmitSync(&first, g_buf, 1, 5) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
             CHECK(ezUart_ReceiveSync(&first, rx, 1, 5) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
+            CHECK(ezUart_TransmitSync(NULL, g_buf, 1, 5) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
             CHECK(ezUart_UpdateConfig(&first) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
             CHECK(ezUart_GetConfig(&first, &cfg) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
             CHECK(ezUart_GetConfig(NULL, &cfg) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
-            CHECK(HwInitialize_fake.call_count == 0U);
-            CHECK(cfg == NULL);
-        }
-    }
-
-    WHEN("The driver is bound but not initialized")
-    {
-        REQUIRE(ezUart_RegisterInstance(&first, "uart_mock", OnEvent, NULL) == EZ_DRV_STATUS_OK);
-
-        THEN("The data operations report not-initialized and the HW is not called")
-        {
-            CHECK(ezUart_TransmitAsync(&first, g_buf, 1) == EZ_DRV_STATUS_ERR_NOT_INITIALIZED);
-            CHECK(ezUart_ReceiveAsync(&first, rx, 1) == EZ_DRV_STATUS_ERR_NOT_INITIALIZED);
-            CHECK(ezUart_TransmitSync(&first, g_buf, 1, 5) == EZ_DRV_STATUS_ERR_NOT_INITIALIZED);
-            CHECK(ezUart_ReceiveSync(&first, rx, 1, 5) == EZ_DRV_STATUS_ERR_NOT_INITIALIZED);
             CHECK(HwTransmitAsync_fake.call_count == 0U);
             CHECK(HwReceiveAsync_fake.call_count == 0U);
             CHECK(HwTransmitSync_fake.call_count == 0U);
             CHECK(HwReceiveSync_fake.call_count == 0U);
             CHECK(IsBusy() == false);
+            CHECK(cfg == NULL);
         }
+    }
 
-        THEN("The configuration can still be read and applied")
+    WHEN("The handle was closed")
+    {
+        OpenHandle(&first);
+        REQUIRE(ezUart_Close(&first) == EZ_DRV_STATUS_OK);
+
+        THEN("Operations report driver-not-found again")
+        {
+            CHECK(ezUart_TransmitSync(&first, g_buf, 1, 5) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
+            CHECK(HwTransmitSync_fake.call_count == 0U);
+        }
+    }
+
+    WHEN("The handle is open")
+    {
+        OpenHandle(&first);
+
+        THEN("The configuration can be read and applied")
         {
             HwUpdateConfig_fake.return_val = EZ_DRV_STATUS_OK;
             CHECK(ezUart_GetConfig(&first, &cfg) == EZ_DRV_STATUS_OK);
@@ -426,124 +619,10 @@ TEST_CASE_METHOD(UartTestFixture, "Test operations on an unusable handle", "[hal
 }
 
 
-TEST_CASE_METHOD(UartTestFixture, "Test initialize and deinitialize", "[hal][uart]")
-{
-    REQUIRE(ezUart_RegisterInstance(&first, "uart_mock", OnEvent, NULL) == EZ_DRV_STATUS_OK);
-
-    WHEN("The HW initialization succeeds")
-    {
-        HwInitialize_fake.return_val = EZ_DRV_STATUS_OK;
-
-        THEN("The HW is called with its token, the driver is initialized and idle")
-        {
-            CHECK(ezUart_Initialize(&first) == EZ_DRV_STATUS_OK);
-            CHECK(HwInitialize_fake.call_count == 1U);
-            CHECK(HwInitialize_fake.arg0_val == &g_hw_token);
-            CHECK(g_drv.initialized == true);
-            CHECK(IsBusy() == false);
-        }
-    }
-
-    WHEN("The HW initialization fails")
-    {
-        HwInitialize_fake.return_val = EZ_DRV_STATUS_ERR_GENERIC;
-
-        THEN("The failure is returned and the driver is not initialized")
-        {
-            CHECK(ezUart_Initialize(&first) == EZ_DRV_STATUS_ERR_GENERIC);
-            CHECK(g_drv.initialized == false);
-            CHECK(IsBusy() == false);
-        }
-    }
-
-    WHEN("The HW driver has no initialize function")
-    {
-        g_drv.interface.initialize = NULL;
-
-        THEN("The API reports interface-not-exist")
-        {
-            CHECK(ezUart_Initialize(&first) == EZ_DRV_STATUS_ERR_INF_NOT_EXIST);
-            CHECK(g_drv.initialized == false);
-            CHECK(IsBusy() == false);
-        }
-    }
-
-    WHEN("The driver is initialized and a second initialization fails")
-    {
-        HwInitialize_fake.return_val = EZ_DRV_STATUS_OK;
-        REQUIRE(ezUart_Initialize(&first) == EZ_DRV_STATUS_OK);
-        HwInitialize_fake.return_val = EZ_DRV_STATUS_ERR_GENERIC;
-
-        THEN("The driver is not initialized any more")
-        {
-            CHECK(ezUart_Initialize(&first) == EZ_DRV_STATUS_ERR_GENERIC);
-            CHECK(g_drv.initialized == false);
-            CHECK(ezUart_TransmitSync(&first, g_buf, 1, 5) == EZ_DRV_STATUS_ERR_NOT_INITIALIZED);
-        }
-    }
-
-    WHEN("A transmit is in flight")
-    {
-        BindAndInit(&second);
-        StartAsyncTransmit(&second);
-
-        THEN("Initialize and Deinitialize report busy and the HW is not called")
-        {
-            CHECK(ezUart_Initialize(&first) == EZ_DRV_STATUS_BUSY);
-            CHECK(ezUart_Deinitialize(&first) == EZ_DRV_STATUS_BUSY);
-            CHECK(HwInitialize_fake.call_count == 1U);
-            CHECK(HwDeinitialize_fake.call_count == 0U);
-        }
-    }
-
-    WHEN("The driver is initialized and the HW deinitialization succeeds")
-    {
-        BindAndInit(&second);
-        HwDeinitialize_fake.return_val = EZ_DRV_STATUS_OK;
-
-        THEN("The driver is not initialized any more")
-        {
-            CHECK(ezUart_Deinitialize(&second) == EZ_DRV_STATUS_OK);
-            CHECK(HwDeinitialize_fake.call_count == 1U);
-            CHECK(HwDeinitialize_fake.arg0_val == &g_hw_token);
-            CHECK(g_drv.initialized == false);
-            CHECK(IsBusy() == false);
-            CHECK(ezUart_TransmitSync(&second, g_buf, 1, 5) == EZ_DRV_STATUS_ERR_NOT_INITIALIZED);
-        }
-    }
-
-    WHEN("The driver is initialized and the HW deinitialization fails")
-    {
-        BindAndInit(&second);
-        HwDeinitialize_fake.return_val = EZ_DRV_STATUS_ERR_GENERIC;
-
-        THEN("The failure is returned and the driver stays initialized")
-        {
-            CHECK(ezUart_Deinitialize(&second) == EZ_DRV_STATUS_ERR_GENERIC);
-            CHECK(g_drv.initialized == true);
-            CHECK(IsBusy() == false);
-        }
-    }
-
-    WHEN("The HW driver has no deinitialize function")
-    {
-        BindAndInit(&second);
-        g_drv.interface.deinitialize = NULL;
-
-        THEN("The API reports interface-not-exist and the driver stays initialized")
-        {
-            CHECK(ezUart_Deinitialize(&second) == EZ_DRV_STATUS_ERR_INF_NOT_EXIST);
-            CHECK(g_drv.initialized == true);
-            CHECK(IsBusy() == false);
-        }
-    }
-}
-
-
 TEST_CASE_METHOD(UartTestFixture, "Test configuration", "[hal][uart]")
 {
     struct ezUartConfiguration *cfg = NULL;
-    REQUIRE(ezUart_RegisterInstance(&first, "uart_mock", OnEvent, NULL) == EZ_DRV_STATUS_OK);
+    REQUIRE(ezUart_Open(&first, "uart_mock", OnEvent, NULL) == EZ_DRV_STATUS_OK);
 
     WHEN("The configuration is requested with a NULL pointer")
     {
@@ -601,7 +680,7 @@ TEST_CASE_METHOD(UartTestFixture, "Test configuration", "[hal][uart]")
 
     WHEN("An operation is in flight")
     {
-        BindAndInit(&second);
+        OpenHandle(&second);
         StartAsyncTransmit(&second);
 
         THEN("UpdateConfig reports busy, GetConfig still works")
@@ -617,7 +696,7 @@ TEST_CASE_METHOD(UartTestFixture, "Test configuration", "[hal][uart]")
 TEST_CASE_METHOD(UartTestFixture, "Test sync transmit and receive", "[hal][uart]")
 {
     uint8_t rx[3] = {0};
-    BindAndInit(&first);
+    OpenHandle(&first);
 
     WHEN("A sync transmit succeeds")
     {
@@ -709,7 +788,7 @@ TEST_CASE_METHOD(UartTestFixture, "Test async transmit and receive", "[hal][uart
 {
     int user_ctx = 0;
     uint8_t rx[2] = {0};
-    BindAndInit(&first, OnEvent, &user_ctx);
+    OpenHandle(&first, OnEvent, &user_ctx);
     HwTransmitAsync_fake.return_val = EZ_DRV_STATUS_OK;
     HwReceiveAsync_fake.return_val = EZ_DRV_STATUS_OK;
 
@@ -731,7 +810,7 @@ TEST_CASE_METHOD(UartTestFixture, "Test async transmit and receive", "[hal][uart
             CHECK(ezUart_ReceiveAsync(&first, rx, 1) == EZ_DRV_STATUS_BUSY);
             CHECK(ezUart_TransmitSync(&first, g_buf, 1, 5) == EZ_DRV_STATUS_BUSY);
             CHECK(ezUart_ReceiveSync(&first, rx, 1, 5) == EZ_DRV_STATUS_BUSY);
-            CHECK(ezUart_Initialize(&first) == EZ_DRV_STATUS_BUSY);
+            CHECK(ezUart_Open(&second, "uart_mock", OnEvent, NULL) == EZ_DRV_STATUS_BUSY);
             CHECK(HwTransmitAsync_fake.call_count == 1U);
             CHECK(IsBusy() == true);
         }
@@ -800,7 +879,7 @@ TEST_CASE_METHOD(UartTestFixture, "Test async transmit and receive", "[hal][uart
 
     WHEN("Another handle has an operation in flight")
     {
-        REQUIRE(ezUart_RegisterInstance(&second, "uart_mock", OnEvent, NULL) == EZ_DRV_STATUS_OK);
+        REQUIRE(ezUart_Open(&second, "uart_mock", OnEvent, NULL) == EZ_DRV_STATUS_OK);
         StartAsyncTransmit(&second);
 
         THEN("The API reports busy and the HW is not called again")
@@ -843,7 +922,7 @@ TEST_CASE_METHOD(UartTestFixture, "Test async transmit and receive", "[hal][uart
     {
         ezUartHandle_t quiet;
         memset(&quiet, 0, sizeof(quiet));
-        REQUIRE(ezUart_RegisterInstance(&quiet, "uart_mock", NULL, NULL) == EZ_DRV_STATUS_OK);
+        REQUIRE(ezUart_Open(&quiet, "uart_mock", NULL, NULL) == EZ_DRV_STATUS_OK);
         REQUIRE(ezUart_TransmitAsync(&quiet, g_buf, 1) == EZ_DRV_STATUS_OK);
         SimulateIsrDone(UART_EVENT_TX_ERR);
 
@@ -870,7 +949,7 @@ TEST_CASE_METHOD(UartTestFixture, "Test async transmit and receive", "[hal][uart
 TEST_CASE_METHOD(UartTestFixture, "Test events only belong to async operations", "[hal][uart]")
 {
     int user_ctx = 0;
-    BindAndInit(&first, OnEvent, &user_ctx);
+    OpenHandle(&first, OnEvent, &user_ctx);
 
     WHEN("A sync HW function reports PROGRESS and DONE events")
     {

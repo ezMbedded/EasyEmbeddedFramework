@@ -59,7 +59,6 @@ static struct Node hw_driver_list = EZ_LINKEDLIST_INIT_NODE(hw_driver_list);
 static struct ezUartDriver *ezUart_FindDriver(const char *name);
 
 static EZ_DRV_STATUS ezUart_Begin(ezUartHandle_t *inst,
-                                  bool require_initialized,
                                   bool is_async,
                                   struct ezUartDriver **drv_out);
 
@@ -86,7 +85,7 @@ EZ_DRV_STATUS ezUart_SystemRegisterHwDriver(struct ezUartDriver *hw_uart_driver)
         return EZ_DRV_STATUS_ERR_ARG;
     }
 
-    hw_uart_driver->initialized = false;
+    hw_uart_driver->open_count = 0U;
     hw_uart_driver->base.state = 0U;
     hw_uart_driver->base.user = NULL;
     EZ_LINKEDLIST_ADD_TAIL(&hw_driver_list, &hw_uart_driver->ll_node);
@@ -110,20 +109,26 @@ EZ_DRV_STATUS ezUart_SystemUnregisterHwDriver(struct ezUartDriver *hw_uart_drive
         return EZ_DRV_STATUS_BUSY;
     }
 
-    hw_uart_driver->initialized = false;
+    if(hw_uart_driver->open_count != 0U)
+    {
+        EZERROR("%u handle(s) are still open", (unsigned)hw_uart_driver->open_count);
+        return EZ_DRV_STATUS_BUSY;
+    }
+
     EZ_LINKEDLIST_UNLINK_NODE(&hw_uart_driver->ll_node);
     return EZ_DRV_STATUS_OK;
 }
 
 
-EZ_DRV_STATUS ezUart_RegisterInstance(ezUartHandle_t *inst,
-                                      const char *driver_name,
-                                      ezDrvCallback callback,
-                                      void *ctx)
+EZ_DRV_STATUS ezUart_Open(ezUartHandle_t *inst,
+                         const char *driver_name,
+                         ezDrvCallback callback,
+                         void *ctx)
 {
-    struct ezUartDriver *uart_drv = NULL;
+    EZ_DRV_STATUS status = EZ_DRV_STATUS_OK;
+    struct ezUartDriver *drv = NULL;
 
-    EZTRACE("ezUart_RegisterInstance()");
+    EZTRACE("ezUart_Open()");
     if((inst == NULL) || (driver_name == NULL))
     {
         return EZ_DRV_STATUS_ERR_ARG;
@@ -131,37 +136,70 @@ EZ_DRV_STATUS ezUart_RegisterInstance(ezUartHandle_t *inst,
 
     if(inst->drv_handle.hw != NULL)
     {
-        EZERROR("The handle is already bound, unregister it first");
+        EZERROR("The handle is already open, close it first");
         return EZ_DRV_STATUS_ERR_ARG;
     }
 
-    uart_drv = ezUart_FindDriver(driver_name);
-    if(uart_drv == NULL)
+    drv = ezUart_FindDriver(driver_name);
+    if(drv == NULL)
     {
         return EZ_DRV_STATUS_ERR_DRV_NOT_FOUND;
     }
 
-    EZDEBUG("Found driver!");
-    inst->drv_handle.hw = uart_drv;
+    if(drv->open_count == UINT8_MAX)
+    {
+        EZERROR("Too many open handles on driver %s", drv->base.name);
+        return EZ_DRV_STATUS_ERR_GENERIC;
+    }
+
+    if(!ezDriver_Acquire(&inst->drv_handle, &drv->base, false))
+    {
+        EZERROR("Driver is busy");
+        return EZ_DRV_STATUS_BUSY;
+    }
+
+    if((drv->open_count == 0U) && (drv->interface.initialize != NULL))
+    {
+        status = drv->interface.initialize(drv->interface.driver_h);
+    }
+
+    if(!ezDriver_Release(&inst->drv_handle, &drv->base))
+    {
+        EZDEBUG("Driver was already released");
+    }
+
+    if(status != EZ_DRV_STATUS_OK)
+    {
+        return status;
+    }
+
+    inst->drv_handle.hw = drv;
     inst->drv_handle.on_event = callback;
     inst->drv_handle.ctx = ctx;
+    drv->open_count++;
+    EZDEBUG("Driver %s opened, %u handle(s)", drv->base.name, (unsigned)drv->open_count);
     return EZ_DRV_STATUS_OK;
 }
 
-
-EZ_DRV_STATUS ezUart_UnregisterInstance(ezUartHandle_t *inst)
+EZ_DRV_STATUS ezUart_Close(ezUartHandle_t *inst)
 {
+    EZ_DRV_STATUS status = EZ_DRV_STATUS_OK;
     struct ezUartDriver *drv = NULL;
 
-    EZTRACE("ezUart_UnregisterInstance()");
+    EZTRACE("ezUart_Close()");
     if(inst == NULL)
     {
         return EZ_DRV_STATUS_ERR_ARG;
     }
 
     drv = (struct ezUartDriver*)ezDriver_GetHw(&inst->drv_handle);
-    if((drv != NULL) &&
-       EZ_DRV_STATE_IS_SET(&drv->base, EZ_DRV_STATE_BUSY) &&
+    if(drv == NULL)
+    {
+        /* Never opened: nothing to do */
+        return EZ_DRV_STATUS_OK;
+    }
+
+    if(EZ_DRV_STATE_IS_SET(&drv->base, EZ_DRV_STATE_BUSY) &&
        (drv->base.user == &inst->drv_handle))
     {
         EZERROR("The handle has an operation in flight");
@@ -171,67 +209,23 @@ EZ_DRV_STATUS ezUart_UnregisterInstance(ezUartHandle_t *inst)
     inst->drv_handle.hw = NULL;
     inst->drv_handle.on_event = NULL;
     inst->drv_handle.ctx = NULL;
-    EZDEBUG("unregister success");
-    return EZ_DRV_STATUS_OK;
-}
-
-
-EZ_DRV_STATUS ezUart_Initialize(ezUartHandle_t *inst)
-{
-    EZ_DRV_STATUS status = EZ_DRV_STATUS_ERR_INF_NOT_EXIST;
-    struct ezUartDriver *drv = NULL;
-
-    EZTRACE("ezUart_Initialize()");
-    status = ezUart_Begin(inst, false, false, &drv);
-    if(status != EZ_DRV_STATUS_OK)
+    if(drv->open_count > 0U)
     {
-        return status;
+        drv->open_count--;
     }
 
-    status = EZ_DRV_STATUS_ERR_INF_NOT_EXIST;
-    if(drv->interface.initialize != NULL)
-    {
-        status = drv->interface.initialize(drv->interface.driver_h);
-    }
-    ezUart_End(inst, drv, status, false);
-
-    drv->initialized = (status == EZ_DRV_STATUS_OK);
-    if(drv->initialized)
-    {
-        EZDEBUG("Driver %s initialized", drv->base.name);
-    }
-
-    return status;
-}
-
-
-EZ_DRV_STATUS ezUart_Deinitialize(ezUartHandle_t *inst)
-{
-    EZ_DRV_STATUS status = EZ_DRV_STATUS_ERR_INF_NOT_EXIST;
-    struct ezUartDriver *drv = NULL;
-
-    EZTRACE("ezUart_Deinitialize()");
-    status = ezUart_Begin(inst, false, false, &drv);
-    if(status != EZ_DRV_STATUS_OK)
-    {
-        return status;
-    }
-
-    status = EZ_DRV_STATUS_ERR_INF_NOT_EXIST;
-    if(drv->interface.deinitialize != NULL)
+    if((drv->open_count == 0U) && (drv->interface.deinitialize != NULL))
     {
         status = drv->interface.deinitialize(drv->interface.driver_h);
-    }
-    ezUart_End(inst, drv, status, false);
-
-    if(status == EZ_DRV_STATUS_OK)
-    {
-        drv->initialized = false;
+        if(status != EZ_DRV_STATUS_OK)
+        {
+            EZERROR("deinitialize failed: %d", (int)status);
+        }
     }
 
+    EZDEBUG("Driver %s closed, %u handle(s) left", drv->base.name, (unsigned)drv->open_count);
     return status;
 }
-
 
 EZ_DRV_STATUS ezUart_TransmitAsync(ezUartHandle_t *inst, const uint8_t *tx_buff, uint16_t buff_size)
 {
@@ -239,7 +233,7 @@ EZ_DRV_STATUS ezUart_TransmitAsync(ezUartHandle_t *inst, const uint8_t *tx_buff,
     struct ezUartDriver *drv = NULL;
 
     EZTRACE("ezUart_TransmitAsync()");
-    status = ezUart_Begin(inst, true, true, &drv);
+    status = ezUart_Begin(inst, true, &drv);
     if(status != EZ_DRV_STATUS_OK)
     {
         return status;
@@ -263,7 +257,7 @@ EZ_DRV_STATUS ezUart_ReceiveAsync(ezUartHandle_t *inst, uint8_t *rx_buff, uint16
     struct ezUartDriver *drv = NULL;
 
     EZTRACE("ezUart_ReceiveAsync()");
-    status = ezUart_Begin(inst, true, true, &drv);
+    status = ezUart_Begin(inst, true, &drv);
     if(status != EZ_DRV_STATUS_OK)
     {
         return status;
@@ -287,7 +281,7 @@ EZ_DRV_STATUS ezUart_TransmitSync(ezUartHandle_t *inst, const uint8_t *tx_buff, 
     struct ezUartDriver *drv = NULL;
 
     EZTRACE("ezUart_TransmitSync()");
-    status = ezUart_Begin(inst, true, false, &drv);
+    status = ezUart_Begin(inst, false, &drv);
     if(status != EZ_DRV_STATUS_OK)
     {
         return status;
@@ -312,7 +306,7 @@ EZ_DRV_STATUS ezUart_ReceiveSync(ezUartHandle_t *inst, uint8_t *rx_buff, uint16_
     struct ezUartDriver *drv = NULL;
 
     EZTRACE("ezUart_ReceiveSync()");
-    status = ezUart_Begin(inst, true, false, &drv);
+    status = ezUart_Begin(inst, false, &drv);
     if(status != EZ_DRV_STATUS_OK)
     {
         return status;
@@ -364,7 +358,7 @@ EZ_DRV_STATUS ezUart_UpdateConfig(ezUartHandle_t *inst)
     struct ezUartDriver *drv = NULL;
 
     EZTRACE("ezUart_UpdateConfig()");
-    status = ezUart_Begin(inst, false, false, &drv);
+    status = ezUart_Begin(inst, false, &drv);
     if(status != EZ_DRV_STATUS_OK)
     {
         return status;
@@ -406,7 +400,6 @@ static struct ezUartDriver *ezUart_FindDriver(const char *name)
 /* Find the HW driver of the handle, check it and take it for an operation.
  * On EZ_DRV_STATUS_OK the caller must call ezUart_End(). */
 static EZ_DRV_STATUS ezUart_Begin(ezUartHandle_t *inst,
-                                  bool require_initialized,
                                   bool is_async,
                                   struct ezUartDriver **drv_out)
 {
@@ -423,12 +416,6 @@ static EZ_DRV_STATUS ezUart_Begin(ezUartHandle_t *inst,
     {
         EZERROR("Driver not found");
         return EZ_DRV_STATUS_ERR_DRV_NOT_FOUND;
-    }
-
-    if(require_initialized && !drv->initialized)
-    {
-        EZERROR("Driver is not initialized");
-        return EZ_DRV_STATUS_ERR_NOT_INITIALIZED;
     }
 
     if(!ezDriver_Acquire(&inst->drv_handle, &drv->base, is_async))

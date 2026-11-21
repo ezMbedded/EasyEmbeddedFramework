@@ -39,7 +39,10 @@
 * Module Preprocessor Macros
 *******************************************************************************/
 DEFINE_FFF_GLOBALS;
-FAKE_VALUE_FUNC(EZ_DRV_STATUS, HwInitialize, void *, ezI2cConfig_t *);
+FAKE_VALUE_FUNC(EZ_DRV_STATUS, HwInitialize, void *);
+FAKE_VALUE_FUNC(EZ_DRV_STATUS, HwDeinitialize, void *);
+FAKE_VALUE_FUNC(EZ_DRV_STATUS, HwLock, void *, uint32_t);
+FAKE_VALUE_FUNC(EZ_DRV_STATUS, HwUnlock, void *);
 FAKE_VALUE_FUNC(EZ_DRV_STATUS, HwTransmitSync, void *, uint16_t, const uint8_t *, size_t, bool, uint32_t);
 FAKE_VALUE_FUNC(EZ_DRV_STATUS, HwTransmitAsync, void *, uint16_t, const uint8_t *, size_t, bool);
 FAKE_VALUE_FUNC(EZ_DRV_STATUS, HwReceiveSync, void *, uint16_t, uint8_t *, size_t, bool, uint32_t);
@@ -149,6 +152,9 @@ struct I2cTestFixture
     I2cTestFixture()
     {
         RESET_FAKE(HwInitialize);
+        RESET_FAKE(HwDeinitialize);
+        RESET_FAKE(HwLock);
+        RESET_FAKE(HwUnlock);
         RESET_FAKE(HwTransmitSync);
         RESET_FAKE(HwTransmitAsync);
         RESET_FAKE(HwReceiveSync);
@@ -165,10 +171,11 @@ struct I2cTestFixture
         memset(&g_drv, 0, sizeof(g_drv));
         memset(&first, 0, sizeof(first));
         memset(&second, 0, sizeof(second));
-        memset(&config, 0, sizeof(config));
         g_drv.base.name = "i2c_mock";
         g_drv.interface.driver_h = &g_hw_token;
         g_drv.interface.initialize = HwInitialize;
+        g_drv.interface.deinitialize = HwDeinitialize;
+        /* lock and unlock stay NULL: the bus lock is a try-lock, tests which need the HW lock set them */
         g_drv.interface.transmit_sync = HwTransmitSync;
         g_drv.interface.transmit_async = HwTransmitAsync;
         g_drv.interface.receive_sync = HwReceiveSync;
@@ -188,16 +195,17 @@ struct I2cTestFixture
             OnEvent_fake.custom_fake = NULL;
             g_chain_handle = NULL;
             ezDriver_NotifyEvent(&g_drv.base, EZ_DRV_EVENT_OP_DONE, 0, NULL, NULL);
+            /* Handles left open by a test: the driver must be unregistrable, or it stays in the list */
+            g_drv.open_count = 0U;
+            g_drv.lock_owner = NULL;
             (void)ezI2c_SystemUnregisterHwDriver(&g_drv);
         }
     }
 
-    /* Register a handle and initialize the driver. */
-    void BindAndInit(ezI2cHandle_t *handle, ezDrvCallback cb = OnEvent, void *ctx = NULL)
+    /* Open a handle on the mock driver. */
+    void OpenHandle(ezI2cHandle_t *handle, ezDrvCallback cb = OnEvent, void *ctx = NULL)
     {
-        HwInitialize_fake.return_val = EZ_DRV_STATUS_OK;
-        REQUIRE(ezI2c_RegisterInstance(handle, "i2c_mock", cb, ctx) == EZ_DRV_STATUS_OK);
-        REQUIRE(ezI2c_Initialize(handle, &config) == EZ_DRV_STATUS_OK);
+        REQUIRE(ezI2c_Open(handle, "i2c_mock", cb, ctx) == EZ_DRV_STATUS_OK);
     }
 
     /* Start an async transmit which is accepted by the HW driver. */
@@ -209,7 +217,6 @@ struct I2cTestFixture
 
     ezI2cHandle_t first;
     ezI2cHandle_t second;
-    ezI2cConfig_t config;
     bool driver_registered;
 };
 
@@ -252,42 +259,74 @@ TEST_CASE_METHOD(I2cTestFixture, "Test driver registration", "[hal][i2c]")
 
         THEN("Both can be found by name")
         {
+            other.interface.initialize = HwInitialize;
+            other.interface.deinitialize = HwDeinitialize;
             REQUIRE(ezI2c_SystemRegisterHwDriver(&other) == EZ_DRV_STATUS_OK);
-            CHECK(ezI2c_RegisterInstance(&first, "i2c_other", OnEvent, NULL) == EZ_DRV_STATUS_OK);
+            CHECK(ezI2c_Open(&first, "i2c_other", OnEvent, NULL) == EZ_DRV_STATUS_OK);
             CHECK(first.drv_handle.hw == &other);
-            CHECK(ezI2c_RegisterInstance(&second, "i2c_mock", OnEvent, NULL) == EZ_DRV_STATUS_OK);
+            CHECK(ezI2c_Open(&second, "i2c_mock", OnEvent, NULL) == EZ_DRV_STATUS_OK);
             CHECK(second.drv_handle.hw == &g_drv);
-            CHECK(ezI2c_UnregisterInstance(&first) == EZ_DRV_STATUS_OK);
+            CHECK(ezI2c_Close(&first) == EZ_DRV_STATUS_OK);
             CHECK(ezI2c_SystemUnregisterHwDriver(&other) == EZ_DRV_STATUS_OK);
         }
     }
 
     WHEN("A driver is registered")
     {
-        THEN("It starts idle and not initialized")
+        THEN("It starts idle with no open handle")
         {
-            CHECK(g_drv.initialized == false);
+            CHECK(g_drv.open_count == 0U);
+            CHECK(g_drv.lock_owner == NULL);
             CHECK(g_drv.base.state == 0U);
             CHECK(g_drv.base.user == NULL);
         }
     }
 
+    WHEN("A driver sets only one of the lock and unlock functions")
+    {
+        struct ezI2cDriver half;
+        memset(&half, 0, sizeof(half));
+        half.base.name = "i2c_half";
+
+        THEN("The registration is rejected, and accepted with both or none")
+        {
+            half.interface.lock = HwLock;
+            CHECK(ezI2c_SystemRegisterHwDriver(&half) == EZ_DRV_STATUS_ERR_ARG);
+            half.interface.lock = NULL;
+            half.interface.unlock = HwUnlock;
+            CHECK(ezI2c_SystemRegisterHwDriver(&half) == EZ_DRV_STATUS_ERR_ARG);
+            half.interface.lock = HwLock;
+            CHECK(ezI2c_SystemRegisterHwDriver(&half) == EZ_DRV_STATUS_OK);
+            CHECK(ezI2c_SystemUnregisterHwDriver(&half) == EZ_DRV_STATUS_OK);
+        }
+    }
+
     WHEN("A driver is unregistered")
     {
-        g_drv.initialized = true;
-
-        THEN("It is reset and cannot be found anymore")
+        THEN("It is removed from the list and cannot be found anymore")
         {
             CHECK(ezI2c_SystemUnregisterHwDriver(&g_drv) == EZ_DRV_STATUS_OK);
             driver_registered = false;
-            CHECK(g_drv.initialized == false);
-            CHECK(ezI2c_RegisterInstance(&first, "i2c_mock", OnEvent, NULL) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
+            CHECK(ezI2c_Open(&first, "i2c_mock", OnEvent, NULL) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
+        }
+    }
+
+    WHEN("A driver is unregistered while a handle is open")
+    {
+        OpenHandle(&first);
+
+        THEN("The unregistration is refused until the handle is closed")
+        {
+            CHECK(ezI2c_SystemUnregisterHwDriver(&g_drv) == EZ_DRV_STATUS_BUSY);
+            REQUIRE(ezI2c_Close(&first) == EZ_DRV_STATUS_OK);
+            CHECK(ezI2c_SystemUnregisterHwDriver(&g_drv) == EZ_DRV_STATUS_OK);
+            driver_registered = false;
         }
     }
 
     WHEN("A driver is unregistered while an operation is in flight")
     {
-        BindAndInit(&first);
+        OpenHandle(&first);
         StartAsyncTransmit(&first);
 
         THEN("The unregistration is refused")
@@ -298,251 +337,458 @@ TEST_CASE_METHOD(I2cTestFixture, "Test driver registration", "[hal][i2c]")
 }
 
 
-TEST_CASE_METHOD(I2cTestFixture, "Test instance registration lifecycle", "[hal][i2c]")
+TEST_CASE_METHOD(I2cTestFixture, "Test open and close", "[hal][i2c]")
 {
     WHEN("Invalid arguments are used")
     {
         THEN("The APIs report an argument error")
         {
-            CHECK(ezI2c_RegisterInstance(NULL, "i2c_mock", NULL, NULL) == EZ_DRV_STATUS_ERR_ARG);
-            CHECK(ezI2c_RegisterInstance(&first, NULL, NULL, NULL) == EZ_DRV_STATUS_ERR_ARG);
-            CHECK(ezI2c_UnregisterInstance(NULL) == EZ_DRV_STATUS_ERR_ARG);
+            CHECK(ezI2c_Open(NULL, "i2c_mock", OnEvent, NULL) == EZ_DRV_STATUS_ERR_ARG);
+            CHECK(ezI2c_Open(&first, NULL, OnEvent, NULL) == EZ_DRV_STATUS_ERR_ARG);
+            CHECK(ezI2c_Open(&first, "i2c_mock", OnEvent, NULL) == EZ_DRV_STATUS_OK);
+            CHECK(ezI2c_Open(&first, "i2c_mock", OnEvent, NULL) == EZ_DRV_STATUS_ERR_ARG);
+            CHECK(ezI2c_Close(NULL) == EZ_DRV_STATUS_ERR_ARG);
+        }
+    }
+
+    WHEN("A handle which was never opened is closed")
+    {
+        THEN("The call succeeds, the handle stays empty and the HW is not called")
+        {
+            CHECK(ezI2c_Close(&first) == EZ_DRV_STATUS_OK);
+            CHECK(first.drv_handle.hw == NULL);
+            CHECK(first.drv_handle.on_event == NULL);
+            CHECK(first.drv_handle.ctx == NULL);
+            CHECK(HwDeinitialize_fake.call_count == 0U);
         }
     }
 
     WHEN("The target driver does not exist")
     {
-        THEN("The registration fails with driver-not-found")
+        THEN("The open fails with driver-not-found and the HW is not called")
         {
-            CHECK(ezI2c_RegisterInstance(&first, "unknown", OnEvent, NULL) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
-        }
-    }
-
-    WHEN("A handle which was never bound is unregistered")
-    {
-        THEN("The call succeeds and the handle stays empty")
-        {
-            CHECK(ezI2c_UnregisterInstance(&first) == EZ_DRV_STATUS_OK);
+            CHECK(ezI2c_Open(&first, "unknown", OnEvent, NULL) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
+            CHECK(HwInitialize_fake.call_count == 0U);
             CHECK(first.drv_handle.hw == NULL);
         }
     }
 
-    WHEN("A handle which is already bound is registered again")
+    WHEN("The HW driver has no initialize or deinitialize function (the peripheral is already configured)")
     {
-        int first_ctx = 0;
-        REQUIRE(ezI2c_RegisterInstance(&first, "i2c_mock", OnEvent, &first_ctx) == EZ_DRV_STATUS_OK);
+        g_drv.interface.initialize = NULL;
+        g_drv.interface.deinitialize = NULL;
 
-        THEN("The registration is refused and the binding is unchanged")
+        THEN("The open only binds the handle, and the close only unbinds it")
         {
-            CHECK(ezI2c_RegisterInstance(&first, "i2c_mock", NULL, NULL) == EZ_DRV_STATUS_ERR_ARG);
+            REQUIRE(ezI2c_Open(&first, "i2c_mock", OnEvent, NULL) == EZ_DRV_STATUS_OK);
             CHECK(first.drv_handle.hw == &g_drv);
-            CHECK(first.drv_handle.on_event == OnEvent);
-            CHECK(first.drv_handle.ctx == &first_ctx);
-        }
-
-        THEN("It can be registered again after it is unregistered")
-        {
-            REQUIRE(ezI2c_UnregisterInstance(&first) == EZ_DRV_STATUS_OK);
-            CHECK(ezI2c_RegisterInstance(&first, "i2c_mock", NULL, NULL) == EZ_DRV_STATUS_OK);
-            CHECK(first.drv_handle.on_event == NULL);
+            CHECK(g_drv.open_count == 1U);
+            CHECK(HwInitialize_fake.call_count == 0U);
+            CHECK(ezI2c_Close(&first) == EZ_DRV_STATUS_OK);
+            CHECK(first.drv_handle.hw == NULL);
+            CHECK(g_drv.open_count == 0U);
+            CHECK(HwDeinitialize_fake.call_count == 0U);
         }
     }
 
-    WHEN("A handle with an operation in flight is registered again")
+    WHEN("The HW driver has an initialize function but no deinitialize function")
     {
-        BindAndInit(&first);
-        StartAsyncTransmit(&first);
+        g_drv.interface.deinitialize = NULL;
 
-        THEN("The registration is refused and the operation is not disturbed")
+        THEN("The close succeeds without a HW call")
         {
-            CHECK(ezI2c_RegisterInstance(&first, "i2c_mock", NULL, NULL) == EZ_DRV_STATUS_ERR_ARG);
+            REQUIRE(ezI2c_Open(&first, "i2c_mock", OnEvent, NULL) == EZ_DRV_STATUS_OK);
+            CHECK(HwInitialize_fake.call_count == 1U);
+            CHECK(ezI2c_Close(&first) == EZ_DRV_STATUS_OK);
+            CHECK(HwDeinitialize_fake.call_count == 0U);
+        }
+    }
+
+    WHEN("The handle is opened")
+    {
+        int user_ctx = 0;
+        REQUIRE(ezI2c_Open(&first, "i2c_mock", OnEvent, &user_ctx) == EZ_DRV_STATUS_OK);
+
+        THEN("The HW gets driver_h, once")
+        {
+            CHECK(HwInitialize_fake.call_count == 1U);
+            CHECK(HwInitialize_fake.arg0_val == &g_hw_token);
+        }
+
+        THEN("The handle stores the driver, the callback and the context, and the driver is idle")
+        {
+            CHECK(first.drv_handle.hw == &g_drv);
+            CHECK(first.drv_handle.on_event == OnEvent);
+            CHECK(first.drv_handle.ctx == &user_ctx);
+            CHECK(g_drv.open_count == 1U);
+            CHECK(IsBusy() == false);
+        }
+
+        THEN("Opening it again is refused and the binding is unchanged")
+        {
+            CHECK(ezI2c_Open(&first, "i2c_mock", NULL, NULL) == EZ_DRV_STATUS_ERR_ARG);
+            CHECK(first.drv_handle.on_event == OnEvent);
+            CHECK(first.drv_handle.ctx == &user_ctx);
+            CHECK(HwInitialize_fake.call_count == 1U);
+            CHECK(g_drv.open_count == 1U);
+        }
+    }
+
+    WHEN("The HW initialization fails")
+    {
+        HwInitialize_fake.return_val = EZ_DRV_STATUS_ERR_GENERIC;
+
+        THEN("The status is forwarded and nothing is bound")
+        {
+            CHECK(ezI2c_Open(&first, "i2c_mock", OnEvent, NULL) == EZ_DRV_STATUS_ERR_GENERIC);
+            CHECK(first.drv_handle.hw == NULL);
+            CHECK(g_drv.open_count == 0U);
+            CHECK(IsBusy() == false);
+        }
+
+        THEN("The same handle can be opened again once the failure is gone")
+        {
+            CHECK(ezI2c_Open(&first, "i2c_mock", OnEvent, NULL) == EZ_DRV_STATUS_ERR_GENERIC);
+            HwInitialize_fake.return_val = EZ_DRV_STATUS_OK;
+            CHECK(ezI2c_Open(&first, "i2c_mock", OnEvent, NULL) == EZ_DRV_STATUS_OK);
+            CHECK(HwInitialize_fake.call_count == 2U);
+            CHECK(g_drv.open_count == 1U);
+        }
+    }
+
+    WHEN("A second handle is opened")
+    {
+        OpenHandle(&first);
+        REQUIRE(ezI2c_Open(&second, "i2c_mock", OnEvent, NULL) == EZ_DRV_STATUS_OK);
+
+        THEN("The bus is not initialized again")
+        {
+            CHECK(HwInitialize_fake.call_count == 1U);
+            CHECK(g_drv.open_count == 2U);
+            CHECK(second.drv_handle.hw == &g_drv);
+        }
+    }
+
+    WHEN("A handle is opened while an operation is in flight")
+    {
+        OpenHandle(&first);
+        HwTransmitAsync_fake.return_val = EZ_DRV_STATUS_OK;
+        REQUIRE(ezI2c_TransmitAsync(&first, DEVICE_ADDR, g_buf, 4U, true) == EZ_DRV_STATUS_OK);
+
+        THEN("The open is refused and the operation is not disturbed")
+        {
+            CHECK(ezI2c_Open(&second, "i2c_mock", OnEvent, NULL) == EZ_DRV_STATUS_BUSY);
+            CHECK(second.drv_handle.hw == NULL);
             CHECK(IsBusy() == true);
             SimulateIsrDone(EZ_I2C_EVENT_CMPLT);
             CHECK(OnEvent_fake.call_count == 1U);
         }
     }
 
-    WHEN("A handle is registered")
+    WHEN("The maximum number of handles is open")
     {
-        int user_ctx = 0;
-        REQUIRE(ezI2c_RegisterInstance(&first, "i2c_mock", OnEvent, &user_ctx) == EZ_DRV_STATUS_OK);
+        g_drv.open_count = UINT8_MAX;
 
-        THEN("It stores the driver, the callback and the context")
+        THEN("The open fails and the HW is not called")
         {
-            CHECK(first.drv_handle.hw == &g_drv);
-            CHECK(first.drv_handle.on_event == OnEvent);
-            CHECK(first.drv_handle.ctx == &user_ctx);
+            CHECK(ezI2c_Open(&first, "i2c_mock", OnEvent, NULL) == EZ_DRV_STATUS_ERR_GENERIC);
+            CHECK(HwInitialize_fake.call_count == 0U);
+            CHECK(g_drv.open_count == UINT8_MAX);
         }
+    }
 
-        THEN("Unregistering clears everything")
+    WHEN("The only open handle is closed")
+    {
+        OpenHandle(&first);
+
+        THEN("The bus is released and everything is cleared")
         {
-            CHECK(ezI2c_UnregisterInstance(&first) == EZ_DRV_STATUS_OK);
+            CHECK(ezI2c_Close(&first) == EZ_DRV_STATUS_OK);
+            CHECK(HwDeinitialize_fake.call_count == 1U);
+            CHECK(HwDeinitialize_fake.arg0_val == &g_hw_token);
             CHECK(first.drv_handle.hw == NULL);
             CHECK(first.drv_handle.on_event == NULL);
             CHECK(first.drv_handle.ctx == NULL);
+            CHECK(g_drv.open_count == 0U);
         }
-    }
 
-    WHEN("A handle with an operation in flight is unregistered")
-    {
-        BindAndInit(&first);
-        StartAsyncTransmit(&first);
-
-        THEN("The unregistration is refused until the operation ends")
+        THEN("The bus can be opened again afterwards and is initialized again")
         {
-            CHECK(ezI2c_UnregisterInstance(&first) == EZ_DRV_STATUS_BUSY);
-            CHECK(first.drv_handle.hw == &g_drv);
-            SimulateIsrDone(EZ_I2C_EVENT_CMPLT);
-            CHECK(ezI2c_UnregisterInstance(&first) == EZ_DRV_STATUS_OK);
+            REQUIRE(ezI2c_Close(&first) == EZ_DRV_STATUS_OK);
+            CHECK(ezI2c_Open(&first, "i2c_mock", OnEvent, NULL) == EZ_DRV_STATUS_OK);
+            CHECK(HwInitialize_fake.call_count == 2U);
         }
     }
 
-    WHEN("Another handle is unregistered while a handle has an operation in flight")
+    WHEN("One of two open handles is closed")
     {
-        BindAndInit(&first);
-        REQUIRE(ezI2c_RegisterInstance(&second, "i2c_mock", OnEvent, NULL) == EZ_DRV_STATUS_OK);
-        StartAsyncTransmit(&first);
+        OpenHandle(&first);
+        OpenHandle(&second);
+        REQUIRE(ezI2c_Close(&first) == EZ_DRV_STATUS_OK);
+
+        THEN("The bus stays up and the other handle keeps working")
+        {
+            CHECK(HwDeinitialize_fake.call_count == 0U);
+            CHECK(g_drv.open_count == 1U);
+            HwTransmitSync_fake.return_val = EZ_DRV_STATUS_OK;
+            CHECK(ezI2c_TransmitSync(&second, DEVICE_ADDR, g_buf, 1, true, 5) == EZ_DRV_STATUS_OK);
+        }
+
+        THEN("Closing the other one releases the bus")
+        {
+            CHECK(ezI2c_Close(&second) == EZ_DRV_STATUS_OK);
+            CHECK(HwDeinitialize_fake.call_count == 1U);
+            CHECK(g_drv.open_count == 0U);
+        }
+    }
+
+    WHEN("A handle with an operation in flight is closed")
+    {
+        OpenHandle(&first);
+        HwTransmitAsync_fake.return_val = EZ_DRV_STATUS_OK;
+        REQUIRE(ezI2c_TransmitAsync(&first, DEVICE_ADDR, g_buf, 4U, true) == EZ_DRV_STATUS_OK);
+
+        THEN("The close is refused until the operation ends")
+        {
+            CHECK(ezI2c_Close(&first) == EZ_DRV_STATUS_BUSY);
+            CHECK(first.drv_handle.hw == &g_drv);
+            CHECK(HwDeinitialize_fake.call_count == 0U);
+            SimulateIsrDone(EZ_I2C_EVENT_CMPLT);
+            CHECK(ezI2c_Close(&first) == EZ_DRV_STATUS_OK);
+        }
+    }
+
+    WHEN("Another handle is closed while a handle has an operation in flight")
+    {
+        OpenHandle(&first);
+        OpenHandle(&second);
+        HwTransmitAsync_fake.return_val = EZ_DRV_STATUS_OK;
+        REQUIRE(ezI2c_TransmitAsync(&first, DEVICE_ADDR, g_buf, 4U, true) == EZ_DRV_STATUS_OK);
 
         THEN("It is allowed and does not disturb the operation")
         {
-            CHECK(ezI2c_UnregisterInstance(&second) == EZ_DRV_STATUS_OK);
+            CHECK(ezI2c_Close(&second) == EZ_DRV_STATUS_OK);
             CHECK(IsBusy() == true);
+            CHECK(HwDeinitialize_fake.call_count == 0U);
+        }
+    }
+
+    WHEN("The HW driver fails to release the bus")
+    {
+        OpenHandle(&first);
+        HwDeinitialize_fake.return_val = EZ_DRV_STATUS_ERR_GENERIC;
+
+        THEN("The status is returned and the handle is closed")
+        {
+            CHECK(ezI2c_Close(&first) == EZ_DRV_STATUS_ERR_GENERIC);
+            CHECK(first.drv_handle.hw == NULL);
+            CHECK(g_drv.open_count == 0U);
+        }
+    }
+
+    WHEN("Two handles start async operations one after the other")
+    {
+        int ctx_first = 0;
+        int ctx_second = 0;
+        HwTransmitAsync_fake.return_val = EZ_DRV_STATUS_OK;
+        REQUIRE(ezI2c_Open(&first, "i2c_mock", OnEvent, &ctx_first) == EZ_DRV_STATUS_OK);
+        REQUIRE(ezI2c_Open(&second, "i2c_mock", OnEvent, &ctx_second) == EZ_DRV_STATUS_OK);
+
+        THEN("The end event goes to the callback of the handle which started the operation")
+        {
+            REQUIRE(ezI2c_TransmitAsync(&second, DEVICE_ADDR, g_buf, 1, true) == EZ_DRV_STATUS_OK);
+            SimulateIsrDone(EZ_I2C_EVENT_CMPLT);
+            REQUIRE(OnEvent_fake.call_count == 1U);
+            CHECK(OnEvent_fake.arg0_val == &ctx_second);
         }
     }
 }
 
 
-TEST_CASE_METHOD(I2cTestFixture, "Test initialization", "[hal][i2c]")
+TEST_CASE_METHOD(I2cTestFixture, "Test operations require an open handle", "[hal][i2c]")
 {
-    WHEN("The handle is NULL or not registered")
+    WHEN("The handle was never opened")
     {
-        THEN("The API reports driver-not-found")
+        THEN("Every operation reports driver-not-found and the HW is not called")
         {
-            CHECK(ezI2c_Initialize(NULL, &config) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
-            CHECK(ezI2c_Initialize(&first, &config) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
-        }
-    }
-
-    WHEN("The config is NULL")
-    {
-        REQUIRE(ezI2c_RegisterInstance(&first, "i2c_mock", OnEvent, NULL) == EZ_DRV_STATUS_OK);
-
-        THEN("The API reports an argument error and the HW is not called")
-        {
-            CHECK(ezI2c_Initialize(&first, NULL) == EZ_DRV_STATUS_ERR_ARG);
-            CHECK(HwInitialize_fake.call_count == 0U);
-        }
-    }
-
-    WHEN("The HW driver has no initialize function")
-    {
-        g_drv.interface.initialize = NULL;
-        REQUIRE(ezI2c_RegisterInstance(&first, "i2c_mock", OnEvent, NULL) == EZ_DRV_STATUS_OK);
-
-        THEN("The API reports interface-not-exist and releases the driver")
-        {
-            CHECK(ezI2c_Initialize(&first, &config) == EZ_DRV_STATUS_ERR_INF_NOT_EXIST);
-            CHECK(g_drv.initialized == false);
-            CHECK(IsBusy() == false);
-        }
-    }
-
-    WHEN("The HW initialization fails")
-    {
-        REQUIRE(ezI2c_RegisterInstance(&first, "i2c_mock", OnEvent, NULL) == EZ_DRV_STATUS_OK);
-        HwInitialize_fake.return_val = EZ_DRV_STATUS_ERR_GENERIC;
-
-        THEN("The status is forwarded, the driver stays not initialized and is released")
-        {
-            CHECK(ezI2c_Initialize(&first, &config) == EZ_DRV_STATUS_ERR_GENERIC);
-            CHECK(g_drv.initialized == false);
-            CHECK(IsBusy() == false);
-        }
-    }
-
-    WHEN("The HW initialization succeeds")
-    {
-        REQUIRE(ezI2c_RegisterInstance(&first, "i2c_mock", OnEvent, NULL) == EZ_DRV_STATUS_OK);
-        HwInitialize_fake.return_val = EZ_DRV_STATUS_OK;
-
-        THEN("The HW gets driver_h and the config, and the driver is initialized and idle")
-        {
-            CHECK(ezI2c_Initialize(&first, &config) == EZ_DRV_STATUS_OK);
-            CHECK(HwInitialize_fake.arg0_val == &g_hw_token);
-            CHECK(HwInitialize_fake.arg1_val == &config);
-            CHECK(g_drv.initialized == true);
-            CHECK(IsBusy() == false);
-        }
-    }
-
-    WHEN("The driver is initialized and a second initialization fails")
-    {
-        BindAndInit(&first);
-        HwInitialize_fake.return_val = EZ_DRV_STATUS_ERR_GENERIC;
-
-        THEN("The failure is returned and the driver is not initialized anymore")
-        {
-            CHECK(ezI2c_Initialize(&first, &config) == EZ_DRV_STATUS_ERR_GENERIC);
-            CHECK(g_drv.initialized == false);
-            CHECK(IsBusy() == false);
-            CHECK(ezI2c_Probe(&first, DEVICE_ADDR, 10) == EZ_DRV_STATUS_ERR_NOT_INITIALIZED);
-        }
-    }
-
-    WHEN("The driver is initialized and the HW initialize function is removed")
-    {
-        BindAndInit(&first);
-        g_drv.interface.initialize = NULL;
-
-        THEN("The initialization reports interface-not-exist and the driver is not initialized anymore")
-        {
-            CHECK(ezI2c_Initialize(&first, &config) == EZ_DRV_STATUS_ERR_INF_NOT_EXIST);
-            CHECK(g_drv.initialized == false);
-        }
-    }
-
-    WHEN("The driver is busy with an operation")
-    {
-        BindAndInit(&first);
-        StartAsyncTransmit(&first);
-
-        THEN("The initialization reports busy and the HW is not called again")
-        {
-            CHECK(ezI2c_Initialize(&first, &config) == EZ_DRV_STATUS_BUSY);
-            CHECK(HwInitialize_fake.call_count == 1U);
-        }
-    }
-}
-
-
-TEST_CASE_METHOD(I2cTestFixture, "Test operations require initialization", "[hal][i2c]")
-{
-    REQUIRE(ezI2c_RegisterInstance(&first, "i2c_mock", OnEvent, NULL) == EZ_DRV_STATUS_OK);
-
-    WHEN("The driver is not initialized")
-    {
-        THEN("Every operation reports not-initialized and the HW is not called")
-        {
-            CHECK(ezI2c_TransmitSync(&first, DEVICE_ADDR, g_buf, 1, true, 10) == EZ_DRV_STATUS_ERR_NOT_INITIALIZED);
-            CHECK(ezI2c_TransmitAsync(&first, DEVICE_ADDR, g_buf, 1, true) == EZ_DRV_STATUS_ERR_NOT_INITIALIZED);
-            CHECK(ezI2c_ReceiveSync(&first, DEVICE_ADDR, g_buf, 1, true, 10) == EZ_DRV_STATUS_ERR_NOT_INITIALIZED);
-            CHECK(ezI2c_ReceiveAsync(&first, DEVICE_ADDR, g_buf, 1, true) == EZ_DRV_STATUS_ERR_NOT_INITIALIZED);
-            CHECK(ezI2c_Probe(&first, DEVICE_ADDR, 10) == EZ_DRV_STATUS_ERR_NOT_INITIALIZED);
-            CHECK(HwTransmitSync_fake.call_count == 0U);
+            CHECK(ezI2c_ReceiveSync(&first, DEVICE_ADDR, g_buf, 1, true, 10) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
+            CHECK(ezI2c_ReceiveAsync(&first, DEVICE_ADDR, g_buf, 1, true) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
+            CHECK(ezI2c_TransmitSync(&first, DEVICE_ADDR, g_buf, 1, true, 10) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
+            CHECK(ezI2c_TransmitAsync(&first, DEVICE_ADDR, g_buf, 1, true) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
+            CHECK(ezI2c_ReceiveSync(&first, DEVICE_ADDR, g_buf, 1, true, 10) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
+            CHECK(ezI2c_ReceiveAsync(&first, DEVICE_ADDR, g_buf, 1, true) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
+            CHECK(ezI2c_Probe(&first, DEVICE_ADDR, 10) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
+            CHECK(HwReceiveSync_fake.call_count == 0U);
             CHECK(HwTransmitAsync_fake.call_count == 0U);
             CHECK(HwReceiveSync_fake.call_count == 0U);
-            CHECK(HwReceiveAsync_fake.call_count == 0U);
             CHECK(HwProbe_fake.call_count == 0U);
             CHECK(IsBusy() == false);
         }
     }
 
-    WHEN("The handle is NULL or not registered")
+    WHEN("The handle is NULL")
     {
         THEN("Every operation reports driver-not-found")
         {
-            CHECK(ezI2c_TransmitSync(NULL, DEVICE_ADDR, g_buf, 1, true, 10) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
-            CHECK(ezI2c_Probe(&second, DEVICE_ADDR, 10) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
+            CHECK(ezI2c_ReceiveSync(NULL, DEVICE_ADDR, g_buf, 1, true, 10) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
+            CHECK(ezI2c_TransmitAsync(NULL, DEVICE_ADDR, g_buf, 1, true) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
+        }
+    }
+
+    WHEN("The handle was closed")
+    {
+        OpenHandle(&first);
+        REQUIRE(ezI2c_Close(&first) == EZ_DRV_STATUS_OK);
+
+        THEN("Operations report driver-not-found again")
+        {
+            CHECK(ezI2c_TransmitSync(&first, DEVICE_ADDR, g_buf, 1, true, 10) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
+            CHECK(HwTransmitSync_fake.call_count == 0U);
+        }
+    }
+}
+
+
+TEST_CASE_METHOD(I2cTestFixture, "Test bus lock", "[hal][i2c]")
+{
+    OpenHandle(&first);
+    OpenHandle(&second);
+    HwTransmitSync_fake.return_val = EZ_DRV_STATUS_OK;
+
+    WHEN("The HW driver has no lock functions (no RTOS)")
+    {
+        THEN("The lock is a try-lock which ignores the timeout")
+        {
+            CHECK(ezI2c_LockBus(&first, 1000U) == EZ_DRV_STATUS_OK);
+            CHECK(g_drv.lock_owner == &first.drv_handle);
+            CHECK(ezI2c_LockBus(&second, 1000U) == EZ_DRV_STATUS_BUSY);
+            CHECK(g_drv.lock_owner == &first.drv_handle);
+            CHECK(ezI2c_UnlockBus(&first) == EZ_DRV_STATUS_OK);
+            CHECK(g_drv.lock_owner == NULL);
+            CHECK(ezI2c_LockBus(&second, 0U) == EZ_DRV_STATUS_OK);
+            CHECK(g_drv.lock_owner == &second.drv_handle);
+        }
+    }
+
+    WHEN("The HW driver has lock functions")
+    {
+        g_drv.interface.lock = HwLock;
+        g_drv.interface.unlock = HwUnlock;
+
+        THEN("The HW lock gets the timeout and the handle becomes the owner")
+        {
+            CHECK(ezI2c_LockBus(&first, 25U) == EZ_DRV_STATUS_OK);
+            CHECK(HwLock_fake.call_count == 1U);
+            CHECK(HwLock_fake.arg0_val == &g_hw_token);
+            CHECK(HwLock_fake.arg1_val == 25U);
+            CHECK(g_drv.lock_owner == &first.drv_handle);
+        }
+
+        THEN("A timeout is forwarded and nobody owns the bus")
+        {
+            HwLock_fake.return_val = EZ_DRV_STATUS_TIMEOUT;
+            CHECK(ezI2c_LockBus(&second, 25U) == EZ_DRV_STATUS_TIMEOUT);
+            CHECK(g_drv.lock_owner == NULL);
+        }
+
+        THEN("The unlock frees the bus, then calls the HW unlock")
+        {
+            REQUIRE(ezI2c_LockBus(&first, 25U) == EZ_DRV_STATUS_OK);
+            CHECK(ezI2c_UnlockBus(&first) == EZ_DRV_STATUS_OK);
+            CHECK(HwUnlock_fake.call_count == 1U);
+            CHECK(HwUnlock_fake.arg0_val == &g_hw_token);
+            CHECK(g_drv.lock_owner == NULL);
+        }
+
+        THEN("A failing HW unlock is forwarded, the bus is free anyway")
+        {
+            REQUIRE(ezI2c_LockBus(&first, 25U) == EZ_DRV_STATUS_OK);
+            HwUnlock_fake.return_val = EZ_DRV_STATUS_ERR_GENERIC;
+            CHECK(ezI2c_UnlockBus(&first) == EZ_DRV_STATUS_ERR_GENERIC);
+            CHECK(g_drv.lock_owner == NULL);
+        }
+
+        THEN("Closing the holder unlocks the bus")
+        {
+            REQUIRE(ezI2c_LockBus(&first, 25U) == EZ_DRV_STATUS_OK);
+            CHECK(ezI2c_Close(&first) == EZ_DRV_STATUS_OK);
+            CHECK(HwUnlock_fake.call_count == 1U);
+            CHECK(g_drv.lock_owner == NULL);
+        }
+
+        THEN("A failing HW unlock on close is logged and the close still succeeds")
+        {
+            REQUIRE(ezI2c_LockBus(&first, 25U) == EZ_DRV_STATUS_OK);
+            HwUnlock_fake.return_val = EZ_DRV_STATUS_ERR_GENERIC;
+            CHECK(ezI2c_Close(&first) == EZ_DRV_STATUS_OK);
+            CHECK(first.drv_handle.hw == NULL);
+        }
+    }
+
+    WHEN("The lock is used wrongly")
+    {
+        THEN("The APIs report the matching error")
+        {
+            CHECK(ezI2c_LockBus(NULL, 10U) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
+            CHECK(ezI2c_UnlockBus(NULL) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
+            ezI2cHandle_t never_opened;
+            memset(&never_opened, 0, sizeof(never_opened));
+            CHECK(ezI2c_LockBus(&never_opened, 10U) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
+            CHECK(ezI2c_UnlockBus(&never_opened) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
+
+            CHECK(ezI2c_UnlockBus(&first) == EZ_DRV_STATUS_ERR_ARG);
+            REQUIRE(ezI2c_LockBus(&first, 10U) == EZ_DRV_STATUS_OK);
+            CHECK(ezI2c_LockBus(&first, 10U) == EZ_DRV_STATUS_ERR_ARG);
+            CHECK(ezI2c_UnlockBus(&second) == EZ_DRV_STATUS_ERR_ARG);
+            CHECK(g_drv.lock_owner == &first.drv_handle);
+        }
+    }
+
+    WHEN("A handle holds the bus")
+    {
+        REQUIRE(ezI2c_LockBus(&first, 10U) == EZ_DRV_STATUS_OK);
+
+        THEN("Transfers of another handle report busy and the HW is not called")
+        {
+            CHECK(ezI2c_TransmitSync(&second, DEVICE_ADDR, g_buf, 1, true, 5) == EZ_DRV_STATUS_BUSY);
+            CHECK(ezI2c_TransmitAsync(&second, DEVICE_ADDR, g_buf, 1, true) == EZ_DRV_STATUS_BUSY);
+            CHECK(ezI2c_ReceiveSync(&second, DEVICE_ADDR, g_buf, 1, true, 5) == EZ_DRV_STATUS_BUSY);
+            CHECK(ezI2c_ReceiveSync(&second, DEVICE_ADDR, g_buf, 1, true, 5) == EZ_DRV_STATUS_BUSY);
+            CHECK(ezI2c_Probe(&second, DEVICE_ADDR, 5) == EZ_DRV_STATUS_BUSY);
+            CHECK(HwTransmitSync_fake.call_count == 0U);
+            CHECK(HwTransmitAsync_fake.call_count == 0U);
+            CHECK(HwReceiveSync_fake.call_count == 0U);
+            CHECK(HwProbe_fake.call_count == 0U);
+            CHECK(IsBusy() == false);
+        }
+
+        THEN("The holder can transfer as many times as it wants")
+        {
+            CHECK(ezI2c_TransmitSync(&first, DEVICE_ADDR, g_buf, 1, true, 5) == EZ_DRV_STATUS_OK);
+            CHECK(ezI2c_TransmitSync(&first, DEVICE_ADDR, g_buf, 1, true, 5) == EZ_DRV_STATUS_OK);
+            CHECK(HwTransmitSync_fake.call_count == 2U);
+        }
+
+        THEN("The other handle can transfer after the unlock")
+        {
+            REQUIRE(ezI2c_UnlockBus(&first) == EZ_DRV_STATUS_OK);
+            CHECK(ezI2c_TransmitSync(&second, DEVICE_ADDR, g_buf, 1, true, 5) == EZ_DRV_STATUS_OK);
+        }
+
+        THEN("The lock survives an async operation of the holder")
+        {
+            HwTransmitAsync_fake.return_val = EZ_DRV_STATUS_OK;
+            REQUIRE(ezI2c_TransmitAsync(&first, DEVICE_ADDR, g_buf, 1, true) == EZ_DRV_STATUS_OK);
+            SimulateIsrDone(EZ_I2C_EVENT_CMPLT);
+            CHECK(g_drv.lock_owner == &first.drv_handle);
+            CHECK(ezI2c_TransmitSync(&second, DEVICE_ADDR, g_buf, 1, true, 5) == EZ_DRV_STATUS_BUSY);
+        }
+
+        THEN("Closing the holder frees the bus also without HW lock functions")
+        {
+            CHECK(ezI2c_Close(&first) == EZ_DRV_STATUS_OK);
+            CHECK(g_drv.lock_owner == NULL);
+            CHECK(ezI2c_TransmitSync(&second, DEVICE_ADDR, g_buf, 1, true, 5) == EZ_DRV_STATUS_OK);
         }
     }
 }
@@ -550,7 +796,7 @@ TEST_CASE_METHOD(I2cTestFixture, "Test operations require initialization", "[hal
 
 TEST_CASE_METHOD(I2cTestFixture, "Test sync transmit", "[hal][i2c]")
 {
-    BindAndInit(&first);
+    OpenHandle(&first);
 
     WHEN("The HW transmit succeeds")
     {
@@ -595,7 +841,7 @@ TEST_CASE_METHOD(I2cTestFixture, "Test sync transmit", "[hal][i2c]")
 
     WHEN("Another handle has an operation in flight")
     {
-        REQUIRE(ezI2c_RegisterInstance(&second, "i2c_mock", OnEvent, NULL) == EZ_DRV_STATUS_OK);
+        REQUIRE(ezI2c_Open(&second, "i2c_mock", OnEvent, NULL) == EZ_DRV_STATUS_OK);
         StartAsyncTransmit(&second);
 
         THEN("The API reports busy and the HW is not called")
@@ -610,7 +856,7 @@ TEST_CASE_METHOD(I2cTestFixture, "Test sync transmit", "[hal][i2c]")
 
 TEST_CASE_METHOD(I2cTestFixture, "Test sync receive", "[hal][i2c]")
 {
-    BindAndInit(&first);
+    OpenHandle(&first);
 
     WHEN("The HW receive succeeds")
     {
@@ -654,7 +900,7 @@ TEST_CASE_METHOD(I2cTestFixture, "Test sync receive", "[hal][i2c]")
 
     WHEN("Another handle has an operation in flight")
     {
-        REQUIRE(ezI2c_RegisterInstance(&second, "i2c_mock", OnEvent, NULL) == EZ_DRV_STATUS_OK);
+        REQUIRE(ezI2c_Open(&second, "i2c_mock", OnEvent, NULL) == EZ_DRV_STATUS_OK);
         StartAsyncTransmit(&second);
 
         THEN("The API reports busy and the HW is not called")
@@ -668,7 +914,7 @@ TEST_CASE_METHOD(I2cTestFixture, "Test sync receive", "[hal][i2c]")
 
 TEST_CASE_METHOD(I2cTestFixture, "Test probe", "[hal][i2c]")
 {
-    BindAndInit(&first);
+    OpenHandle(&first);
 
     WHEN("The HW probe succeeds")
     {
@@ -708,7 +954,7 @@ TEST_CASE_METHOD(I2cTestFixture, "Test probe", "[hal][i2c]")
 
     WHEN("Another handle has an operation in flight")
     {
-        REQUIRE(ezI2c_RegisterInstance(&second, "i2c_mock", OnEvent, NULL) == EZ_DRV_STATUS_OK);
+        REQUIRE(ezI2c_Open(&second, "i2c_mock", OnEvent, NULL) == EZ_DRV_STATUS_OK);
         StartAsyncTransmit(&second);
 
         THEN("The API reports busy and the HW is not called")
@@ -737,7 +983,7 @@ TEST_CASE_METHOD(I2cTestFixture, "Test probe", "[hal][i2c]")
 TEST_CASE_METHOD(I2cTestFixture, "Test async transmit", "[hal][i2c]")
 {
     int user_ctx = 0;
-    BindAndInit(&first, OnEvent, &user_ctx);
+    OpenHandle(&first, OnEvent, &user_ctx);
     HwTransmitAsync_fake.return_val = EZ_DRV_STATUS_OK;
 
     WHEN("The transmit is started successfully")
@@ -810,7 +1056,7 @@ TEST_CASE_METHOD(I2cTestFixture, "Test async transmit", "[hal][i2c]")
 
     WHEN("Another handle has an operation in flight")
     {
-        REQUIRE(ezI2c_RegisterInstance(&second, "i2c_mock", OnEvent, NULL) == EZ_DRV_STATUS_OK);
+        REQUIRE(ezI2c_Open(&second, "i2c_mock", OnEvent, NULL) == EZ_DRV_STATUS_OK);
         StartAsyncTransmit(&second);
 
         THEN("The API reports busy and the HW is not called again")
@@ -853,7 +1099,7 @@ TEST_CASE_METHOD(I2cTestFixture, "Test async transmit", "[hal][i2c]")
     {
         ezI2cHandle_t quiet;
         memset(&quiet, 0, sizeof(quiet));
-        REQUIRE(ezI2c_RegisterInstance(&quiet, "i2c_mock", NULL, NULL) == EZ_DRV_STATUS_OK);
+        REQUIRE(ezI2c_Open(&quiet, "i2c_mock", NULL, NULL) == EZ_DRV_STATUS_OK);
         REQUIRE(ezI2c_TransmitAsync(&quiet, DEVICE_ADDR, g_buf, 1, true) == EZ_DRV_STATUS_OK);
         SimulateIsrDone(EZ_I2C_EVENT_ERR);
 
@@ -880,7 +1126,7 @@ TEST_CASE_METHOD(I2cTestFixture, "Test async transmit", "[hal][i2c]")
 TEST_CASE_METHOD(I2cTestFixture, "Test async receive", "[hal][i2c]")
 {
     int user_ctx = 0;
-    BindAndInit(&first, OnEvent, &user_ctx);
+    OpenHandle(&first, OnEvent, &user_ctx);
     HwReceiveAsync_fake.return_val = EZ_DRV_STATUS_OK;
 
     WHEN("The receive is started successfully")
@@ -936,7 +1182,7 @@ TEST_CASE_METHOD(I2cTestFixture, "Test async receive", "[hal][i2c]")
 
     WHEN("Another handle has an operation in flight")
     {
-        REQUIRE(ezI2c_RegisterInstance(&second, "i2c_mock", OnEvent, NULL) == EZ_DRV_STATUS_OK);
+        REQUIRE(ezI2c_Open(&second, "i2c_mock", OnEvent, NULL) == EZ_DRV_STATUS_OK);
         StartAsyncTransmit(&second);
 
         THEN("The API reports busy and the HW is not called")
@@ -950,7 +1196,7 @@ TEST_CASE_METHOD(I2cTestFixture, "Test async receive", "[hal][i2c]")
 TEST_CASE_METHOD(I2cTestFixture, "Test events only belong to async operations", "[hal][i2c]")
 {
     int user_ctx = 0;
-    BindAndInit(&first, OnEvent, &user_ctx);
+    OpenHandle(&first, OnEvent, &user_ctx);
 
     WHEN("A sync HW function reports DONE and the callback would start an async operation")
     {

@@ -4,7 +4,9 @@
 
 Hardware Abstraction Layer for UART communication.
 
-The user binds an ezUartHandle_t to a HW driver by name. All the operations of a handle go through the HW driver registered with ezUart_SystemRegisterHwDriver(). The HW driver implements the functions of ezHwUartInterface, which this component calls.
+A HW driver is one UART port. A handle is one user of it. The user opens a handle with ezUart_Open(), which binds it to the HW driver by name and makes the UART ready in one step, and closes it with ezUart_Close(). All the operations of a handle go through the HW driver registered with ezUart_SystemRegisterHwDriver(). The HW driver implements the functions of ezHwUartInterface, which this component calls.
+
+Lifecycle: several handles can be open on the same HW driver. The UART is initialized by the first ezUart_Open() and released by the last ezUart_Close(). The component counts the open handles. A port whose UART is already configured (for example by a generated start-up code) has no initialize and deinitialize function: ezUart_Open() then only binds the handle. An ezUart_Open() which fails leaves nothing behind, so the call can simply be repeated.
 
 Concurrency: this component does not provide mutual exclusion. The caller must serialize the calls on the same HW driver (mutex or semaphore of the upper layer). A call made while another operation is in flight returns EZ_DRV_STATUS_BUSY.
 
@@ -12,13 +14,11 @@ Sync operations (ezUart_TransmitSync(), ezUart_ReceiveSync()) return when the HW
 
 No function of this component is ISR-safe. From an ISR, the HW driver only calls ezDriver_NotifyEvent().
 
-Argument checking: this component checks the handle, the driver name, the config pointer of ezUart_GetConfig() and the initialized state of the driver for the transmit and receive functions. The buffers, buffer sizes and timeouts are passed as they are to the HW driver, which is responsible for validating them.
+Argument checking: this component checks the handle, the driver name and the config pointer of ezUart_GetConfig(). The buffers, buffer sizes and timeouts are passed as they are to the HW driver, which is responsible for validating them. Every operation requires an open handle.
 
-Initialization: ezUart_Initialize() must succeed before the transmit and receive functions, sync or async. Otherwise they return EZ_DRV_STATUS_ERR_NOT_INITIALIZED. ezUart_UpdateConfig(), ezUart_GetConfig() and ezUart_Deinitialize() do not require it.
+Configuration: the configuration belongs to the port. The HW driver implementation stores it in the HW driver (ezUartDriver::config) before it registers the driver, and applies it in its initialize function. It is not an argument of ezUart_Open(). Read it with ezUart_GetConfig(), which makes no HW call, and apply a change with ezUart_UpdateConfig(), which calls the HW driver.
 
-Configuration: the configuration is stored in the HW driver (ezUartDriver::config). Read it with ezUart_GetConfig(), which makes no HW call, and apply it with ezUart_UpdateConfig(), which calls the HW driver.
-
-Completion: this component does not subscribe to the driver, so EZ_DRV_EVENT_ASYNC events are not delivered to a handle. The end of an async operation is delivered through the callback given to ezUart_RegisterInstance().
+Completion: this component does not subscribe to the driver, so EZ_DRV_EVENT_ASYNC events are not delivered to a handle. The end of an async operation is delivered through the callback given to ezUart_Open().
 
 ## Types and macros
 
@@ -57,12 +57,12 @@ UART number of stop bits.
 ```c
 typedef EZ_DRV_STATUS(* ezHwUart_Initialize) (void *driver_h)
 ```
-Initialize the HW UART. Called by ezUart_Initialize().
+Initialize the HW UART. Called by ezUart_Open() for the first open handle.
 
 ```c
 typedef EZ_DRV_STATUS(* ezHwUart_Deinitialize) (void *driver_h)
 ```
-Deinitialize the HW UART. Called by ezUart_Deinitialize().
+Deinitialize the HW UART. Called by ezUart_Close() for the last open handle.
 
 ```c
 typedef EZ_DRV_STATUS(* ezHwUart_TransmitAsync) (void *driver_h, const uint8_t *tx_buff, uint16_t buff_size)
@@ -104,18 +104,18 @@ Member of ezUartDriver (config). ezUart_GetConfig() returns a pointer to it. The
 
 ```c
 typedef struct {
-  struct ezDrvHandle drv_handle;  /* Common handle, bound to a HW driver. Filled by ezUart_RegisterInstance() */
+  struct ezDrvHandle drv_handle;  /* Common handle, bound to a HW driver. Filled by ezUart_Open() */
 } ezUartHandle_t;
 ```
 UART handle. Held by the user and bound to a HW driver.
 
-Must be zero-initialized (static storage, or memset) before the first ezUart_RegisterInstance(), because that call checks drv_handle.hw to see whether the handle is already bound. Bind it with ezUart_RegisterInstance() before use. The driver keeps a pointer to the handle in base.user while an operation is in flight, so the handle must stay valid until ezUart_UnregisterInstance() returns EZ_DRV_STATUS_OK.
+Must be zero-initialized (static storage, or memset) before the first ezUart_Open(), because that call checks drv_handle.hw to see whether the handle is already open. Open it with ezUart_Open() before use. The driver keeps a pointer to the handle in base.user while an operation is in flight, so the handle must stay valid until ezUart_Close() returns EZ_DRV_STATUS_OK.
 
 ```c
 struct ezHwUartInterface {
   void* driver_h;  /* Opaque pointer of the HW driver, passed to every function below */
-  ezHwUart_Initialize initialize;  /* Initialize the UART peripheral (synchronous) */
-  ezHwUart_Deinitialize deinitialize;  /* Deinitialize the UART peripheral (synchronous) */
+  ezHwUart_Initialize initialize;  /* Initialize the UART peripheral, for the first open handle (synchronous). NULL: already configured */
+  ezHwUart_Deinitialize deinitialize;  /* Deinitialize the UART peripheral, for the last closed handle (synchronous). NULL: nothing to release */
   ezHwUart_TransmitAsync transmit_async;  /* Transmit data (asynchronous) */
   ezHwUart_ReceiveAsync receive_async;  /* Receive data (asynchronous) */
   ezHwUart_TransmitSync transmit_sync;  /* Transmit data (synchronous) */
@@ -125,7 +125,7 @@ struct ezHwUartInterface {
 ```
 HW API provided by the HW driver. Every function is optional.
 
-A NULL function makes the matching ezUart_xxx() return EZ_DRV_STATUS_ERR_INF_NOT_EXIST. Each function is called with driver_h as its first argument. The buffer pointers and sizes are not checked by the UART component: each HW function validates them and returns an error status, which the component forwards unchanged.
+A NULL function makes the matching ezUart_xxx() return EZ_DRV_STATUS_ERR_INF_NOT_EXIST, except initialize and deinitialize: without them the UART is considered ready (already configured) and nothing is released. Each function is called with driver_h as its first argument. The buffer pointers and sizes are not checked by the UART component: each HW function validates them and returns an error status, which the component forwards unchanged.
 
 An async function returns EZ_DRV_STATUS_OK only if the transfer is started. The HW driver must then call ezDriver_NotifyEvent() with EZ_DRV_EVENT_OP_DONE exactly once when it ends.
 
@@ -133,14 +133,14 @@ An async function returns EZ_DRV_STATUS_OK only if the transfer is started. The 
 struct ezUartDriver {
   struct Node ll_node;  /* Node to link to the list of HW drivers */
   struct ezDrvBase base;  /* Common data of driver: name, state and the handle in use */
-  struct ezUartConfiguration config;  /* Uart related configuration */
+  struct ezUartConfiguration config;  /* Uart related configuration, filled by the HW driver implementation before registration */
   struct ezHwUartInterface interface;  /* HW API, see ezHwUartInterface */
-  bool initialized;  /* true after ezUart_Initialize() succeeded. Reset to false on register, unregister, when the HW initialize function fails or is missing in ezUart_Initialize(), and when ezUart_Deinitialize() succeeds. Unchanged when a call is refused before the HW call (handle not bound, driver busy) */
+  uint8_t open_count;  /* Number of handles open on this driver. The UART is initialized while it is not 0. Reset to 0 on register */
 };
 ```
 HW UART driver. Provided by the HW driver implementation.
 
-base.name must be set before ezUart_SystemRegisterHwDriver(). The driver is linked into the list of registered drivers, so its memory (static storage, no malloc) must stay valid while it is registered. ezUart_SystemRegisterHwDriver() resets base.state, base.user and initialized.
+base.name must be set before ezUart_SystemRegisterHwDriver(). The driver is linked into the list of registered drivers, so its memory (static storage, no malloc) must stay valid while it is registered. config must be filled before ezUart_SystemRegisterHwDriver(), which resets base.state, base.user and open_count and keeps config.
 
 ## Functions
 
@@ -152,7 +152,7 @@ EZ_DRV_STATUS ezUart_SystemRegisterHwDriver(struct ezUartDriver *hw_uart_driver)
 
 Register a HW UART driver to the UART component.
 
-Called by the HW driver implementation, not by the application. The driver is reset to the idle, not-initialized state: initialized is false, base.state is 0 and base.user is NULL. It is then added to the list of HW drivers. base.name is compared with the names of the drivers already registered.
+Called by the HW driver implementation, not by the application. The driver is reset to the idle, closed state: open_count is 0, base.state is 0 and base.user is NULL. config is kept. It is then added to the list of HW drivers. base.name is compared with the names of the drivers already registered.
 
 **Parameters**
 
@@ -160,7 +160,7 @@ Called by the HW driver implementation, not by the application. The driver is re
 
 **Returns:** EZ_DRV_STATUS_OK on success, EZ_DRV_STATUS_ERR_ARG if hw_uart_driver or its name is NULL, or the name is already registered.
 
-- **Post:** base.state is 0, base.user is NULL and initialized is false
+- **Post:** base.state is 0, base.user is NULL and open_count is 0
 - **Warning:** The driver list is changed without a lock. Do not call it while another UART call can run.
 - **See:** ezUart_SystemUnregisterHwDriver, ezHwUartInterface
 - ISR-safe: no
@@ -206,18 +206,17 @@ EZ_DRV_STATUS ezUart_SystemUnregisterHwDriver(struct ezUartDriver *hw_uart_drive
 
 Unregister a HW UART driver from the UART component.
 
-Called by the HW driver implementation. The driver is removed from the list of HW drivers and initialized is set to false. base.state and base.user are not changed. The code does not check the handles: a handle still bound to the driver keeps its pointer to it.
+Called by the HW driver implementation. The driver is removed from the list of HW drivers. base.state and base.user are not changed. The driver is refused while a handle is open on it, so no handle keeps a pointer to a driver which is gone.
 
 **Parameters**
 
 - `hw_uart_driver`: HW driver registered earlier.
 
-**Returns:** EZ_DRV_STATUS_OK on success, EZ_DRV_STATUS_ERR_ARG if hw_uart_driver is NULL, EZ_DRV_STATUS_BUSY if an operation is in flight on the driver.
+**Returns:** EZ_DRV_STATUS_OK on success, EZ_DRV_STATUS_ERR_ARG if hw_uart_driver is NULL, EZ_DRV_STATUS_BUSY if an operation is in flight on the driver, or a handle is still open on it (open_count is not 0).
 
-- **Pre:** Every handle bound to the driver has been unregistered with ezUart_UnregisterInstance(). Not checked by the code.
-- **Post:** On EZ_DRV_STATUS_OK initialized is false and the driver is not in the list
+- **Post:** On EZ_DRV_STATUS_OK the driver is not in the list
 - **Warning:** The driver list is changed without a lock. Do not call it while another UART call can run.
-- **See:** ezUart_SystemRegisterHwDriver, ezUart_UnregisterInstance
+- **See:** ezUart_SystemRegisterHwDriver, ezUart_Close
 - ISR-safe: no
 - Blocking: no
 
@@ -231,145 +230,75 @@ if(status != EZ_DRV_STATUS_OK)
 }
 ```
 
-### `ezUart_RegisterInstance`
+### `ezUart_Open`
 
 ```c
-EZ_DRV_STATUS ezUart_RegisterInstance(ezUartHandle_t *inst, const char *driver_name, ezDrvCallback callback, void *ctx);
+EZ_DRV_STATUS ezUart_Open(ezUartHandle_t *inst, const char *driver_name, ezDrvCallback callback, void *ctx);
 ```
 
-Bind a handle to a registered HW UART driver.
+Bind a handle to a registered HW driver and make the UART ready.
 
-Stores the HW driver, the callback and the context in the handle. The driver is not marked busy by this call. A handle which is already bound is refused: call ezUart_UnregisterInstance() first. The handle and the driver name are checked before the driver is looked up.
+One call replaces "bind the handle" and "initialize the UART". The driver is taken for the call and released after it. If no handle is open on the driver yet and the HW driver has an initialize function, it is called. The UART is initialized with the configuration of the HW driver (ezUartDriver::config). If a handle is already open, the UART is already initialized and the HW driver is not called. Then the HW driver, the callback and the context are stored in the handle and the handle is counted as open.
+
+If the HW initialization fails, the handle is left unbound, so the call can simply be repeated.
+
+Whether it blocks depends on the HW driver. The UART component adds no wait, but the HW function is synchronous, so it may block.
 
 **Parameters**
 
-- `inst`: Handle owned by the caller. Zero-initialized and not bound. Must stay valid while bound.
+- `inst`: Handle owned by the caller. Zero-initialized and not open. Must stay valid while open.
 - `driver_name`: Name of the HW driver (base.name).
-- `callback`: Called when an async operation ends. Can be NULL, then the end of the operation is not reported. Runs in the context of the HW driver, usually an ISR.
+- `callback`: Called when an async operation of this handle ends. Can be NULL, then the end of the operation is not reported. Runs in the context of the HW driver, usually an ISR.
 - `ctx`: User context, passed to callback as first argument. Can be NULL.
 
-**Returns:** EZ_DRV_STATUS_OK on success, EZ_DRV_STATUS_ERR_ARG if inst or driver_name is NULL, or the handle is already bound, EZ_DRV_STATUS_ERR_DRV_NOT_FOUND if no HW driver has the name.
+**Returns:** EZ_DRV_STATUS_OK on success, EZ_DRV_STATUS_ERR_ARG if inst or driver_name is NULL, or the handle is already open, EZ_DRV_STATUS_ERR_DRV_NOT_FOUND if no HW driver has the name, EZ_DRV_STATUS_BUSY if an operation is in flight on the driver, EZ_DRV_STATUS_ERR_GENERIC if the maximum number of open handles (255) is reached, or the HW driver status otherwise.
 
-- **Pre:** ezUart_SystemRegisterHwDriver() succeeded for the driver with driver_name
-- **Post:** None
+- **Post:** On EZ_DRV_STATUS_OK the handle is open, the UART is initialized and the driver is idle. Otherwise the handle is not bound and the open count is unchanged.
 - **Warning:** The callback runs inside ezDriver_NotifyEvent(), in the context of the HW driver, usually an ISR. It must not block.
-- **See:** ezUart_SystemRegisterHwDriver, ezUart_UnregisterInstance, ezDrvCallback
+- **Warning:** The UART component is not a lock. Call it from one task, or let the upper layer serialize the calls on the same HW driver.
+- **See:** ezUart_Close, ezUartDriver, ezHwUartInterface, ezDrvCallback
 - ISR-safe: no
-- Blocking: no
+- Blocking: yes
 
 **Example**
 
 ```c
-static ezUartHandle_t uart0_handle;  // Static: the handle must stay valid while bound
+static ezUartHandle_t uart0_handle;   // Static: must stay valid while open
 
-EZ_DRV_STATUS BindUart0(void)
+EZ_DRV_STATUS OpenUart0(void)
 {
-    EZ_DRV_STATUS status = ezUart_RegisterInstance(&uart0_handle, "uart0", OnUartEvent, NULL);
+    EZ_DRV_STATUS status = ezUart_Open(&uart0_handle, "uart0", OnUartEvent, NULL);
     if(status != EZ_DRV_STATUS_OK)
     {
-        return status;
+        return status;               // Nothing is left bound: the call can be repeated
     }
     return EZ_DRV_STATUS_OK;
 }
 ```
 
-### `ezUart_UnregisterInstance`
+### `ezUart_Close`
 
 ```c
-EZ_DRV_STATUS ezUart_UnregisterInstance(ezUartHandle_t *inst);
+EZ_DRV_STATUS ezUart_Close(ezUartHandle_t *inst);
 ```
 
-Unbind a handle from its HW UART driver.
+Unbind a handle from its HW driver.
 
-Clears hw, on_event and ctx of the handle. Refused only when this handle has an operation in flight. An operation of another handle does not block it. A handle which was never bound is accepted and stays empty.
+Clears hw, on_event and ctx of the handle and counts the handle as closed. When it was the last open handle of the driver, the deinitialize function of the HW driver is called, if it has one. Refused only when this handle has an operation in flight. An operation of another handle does not block it.
+
+The handle is unbound even if the HW driver reports an error. The error is returned after the cleanup is finished. A handle which is not open is accepted and stays empty.
 
 **Parameters**
 
-- `inst`: Handle to unbind. Registered with ezUart_RegisterInstance(), or never bound.
+- `inst`: Handle opened with ezUart_Open(), or never opened.
 
-**Returns:** EZ_DRV_STATUS_OK on success, EZ_DRV_STATUS_ERR_ARG if inst is NULL, EZ_DRV_STATUS_BUSY if this handle has an operation in flight.
+**Returns:** EZ_DRV_STATUS_OK on success, EZ_DRV_STATUS_ERR_ARG if inst is NULL, EZ_DRV_STATUS_BUSY if this handle has an operation in flight, or the HW driver status of deinitialize otherwise.
 
-- **Pre:** None
-- **Post:** On EZ_DRV_STATUS_OK hw, on_event and ctx of the handle are NULL
-- **See:** ezUart_RegisterInstance
-- ISR-safe: no
-- Blocking: no
-
-**Example**
-
-```c
-EZ_DRV_STATUS status = ezUart_UnregisterInstance(&uart0_handle);
-if(status != EZ_DRV_STATUS_OK)
-{
-    return status;
-}
-```
-
-### `ezUart_Initialize`
-
-```c
-EZ_DRV_STATUS ezUart_Initialize(ezUartHandle_t *inst);
-```
-
-Initialize the HW UART of the driver.
-
-Calls the initialize function of the HW driver with driver_h. The driver is taken for the call and released after it. It is marked initialized only when the HW function returns EZ_DRV_STATUS_OK, and that status is returned. A failed HW call, or a HW driver without an initialize function, marks the driver as not initialized, also when it was initialized before. A call refused before the HW call (handle not bound, driver busy) does not change it. Calling it again on an initialized driver calls the HW function again.
-
-Transmit and receive functions require a successful call of this function. Whether it blocks depends on the HW driver: the HW initialize function is synchronous, and the UART component adds no wait.
-
-**Parameters**
-
-- `inst`: Registered handle.
-
-**Returns:** EZ_DRV_STATUS_OK on success, EZ_DRV_STATUS_ERR_DRV_NOT_FOUND if inst is NULL or not bound, EZ_DRV_STATUS_BUSY if an operation is in flight on the driver, EZ_DRV_STATUS_ERR_INF_NOT_EXIST if the HW driver has no initialize function, or the HW driver status otherwise.
-
-- **Pre:** ezUart_RegisterInstance() succeeded for inst.
-- **Post:** On EZ_DRV_STATUS_OK the driver is initialized and idle.
-- **See:** ezUart_Deinitialize, ezUart_RegisterInstance, ezHwUart_Initialize
+- **Post:** On EZ_DRV_STATUS_OK, and on a HW error, the handle is not open.
+- **Warning:** The UART component is not a lock. Call it from one task, or let the upper layer serialize the calls on the same HW driver.
+- **See:** ezUart_Open
 - ISR-safe: no
 - Blocking: yes
-
-**Example**
-
-```c
-EZ_DRV_STATUS status = ezUart_Initialize(&uart0_handle);
-if(status != EZ_DRV_STATUS_OK)
-{
-    return status;
-}
-```
-
-### `ezUart_Deinitialize`
-
-```c
-EZ_DRV_STATUS ezUart_Deinitialize(ezUartHandle_t *inst);
-```
-
-Deinitialize the HW UART of the driver.
-
-Calls the deinitialize function of the HW driver with driver_h. It is called even when the driver is not initialized. The driver is taken for the call and released after it. The driver is marked not initialized only when the HW function returns EZ_DRV_STATUS_OK. On any other status the initialized state is kept. A call refused before the HW call (handle not bound, driver busy) does not change it.
-
-**Parameters**
-
-- `inst`: Registered handle.
-
-**Returns:** EZ_DRV_STATUS_OK on success, EZ_DRV_STATUS_ERR_DRV_NOT_FOUND if inst is NULL or not bound, EZ_DRV_STATUS_BUSY if an operation is in flight on the driver, EZ_DRV_STATUS_ERR_INF_NOT_EXIST if the HW driver has no deinitialize function, or the HW driver status otherwise.
-
-- **Pre:** ezUart_RegisterInstance() succeeded for inst.
-- **Post:** On EZ_DRV_STATUS_OK the driver is not initialized and idle.
-- **See:** ezUart_Initialize, ezUart_RegisterInstance, ezHwUart_Deinitialize
-- ISR-safe: no
-- Blocking: yes
-
-**Example**
-
-```c
-EZ_DRV_STATUS status = ezUart_Deinitialize(&uart0_handle);
-if(status != EZ_DRV_STATUS_OK)
-{
-    return status;
-}
-```
 
 ### `ezUart_TransmitAsync`
 
@@ -379,25 +308,25 @@ EZ_DRV_STATUS ezUart_TransmitAsync(ezUartHandle_t *inst, const uint8_t *tx_buff,
 
 Start to transmit data. Return as soon as the transfer is started or refused.
 
-Returns as soon as the HW driver has started, or refused, the transfer. The driver must be initialized (see ezUart_Initialize). On EZ_DRV_STATUS_OK the transfer is running and the driver stays busy. The HW driver must then call ezDriver_NotifyEvent() with EZ_DRV_EVENT_OP_DONE and an EZ_UART_EVENT code exactly once when the transfer ends. The callback of the handle is then called with that event_code. The driver is released before the callback runs, so the callback may start the next operation.
+Returns as soon as the HW driver has started, or refused, the transfer. The handle must be open (see ezUart_Open). On EZ_DRV_STATUS_OK the transfer is running and the driver stays busy. The HW driver must then call ezDriver_NotifyEvent() with EZ_DRV_EVENT_OP_DONE and an EZ_UART_EVENT code exactly once when the transfer ends. The callback of the handle is then called with that event_code. The driver is released before the callback runs, so the callback may start the next operation.
 
 On any other status this call did not start a transfer, so no callback comes for it. The driver is released by this call.
 
 **Parameters**
 
-- `inst`: Registered handle.
+- `inst`: Open handle.
 - `tx_buff`: Data to transmit. Must stay valid until the end event.
 - `buff_size`: Number of bytes to transmit. Not checked by this component.
 
-**Returns:** EZ_DRV_STATUS_OK if the transfer is started, EZ_DRV_STATUS_ERR_DRV_NOT_FOUND if inst is NULL or not bound, EZ_DRV_STATUS_ERR_NOT_INITIALIZED if ezUart_Initialize() has not succeeded, EZ_DRV_STATUS_BUSY if an operation is in flight on the driver, EZ_DRV_STATUS_ERR_INF_NOT_EXIST if the HW driver has no transmit_async function, or the HW driver status otherwise.
+**Returns:** EZ_DRV_STATUS_OK if the transfer is started, EZ_DRV_STATUS_ERR_DRV_NOT_FOUND if inst is NULL or not open, EZ_DRV_STATUS_BUSY if an operation is in flight on the driver, EZ_DRV_STATUS_ERR_INF_NOT_EXIST if the HW driver has no transmit_async function, or the HW driver status otherwise.
 
-- **Pre:** ezUart_Initialize() succeeded for the driver of inst.
+- **Pre:** ezUart_Open() succeeded for inst.
 - **Post:** On EZ_DRV_STATUS_OK the driver is busy until the end event is reported
 - **Warning:** tx_buff must stay valid until the end event is reported. The UART component does not copy it.
 - **Warning:** The callback runs in the context of the HW driver, usually an ISR. It must not block.
 - **Warning:** The UART component is not a lock. The caller must serialize the calls on the same HW driver.
 - **Note:** The buffer and its size are not checked by this component, the HW driver validates them. See ezHwUartInterface.
-- **See:** ezUart_ReceiveAsync, ezUart_RegisterInstance, ezDriver_NotifyEvent, ezHwUartInterface
+- **See:** ezUart_ReceiveAsync, ezUart_Open, ezDriver_NotifyEvent, ezHwUartInterface
 - ISR-safe: no
 - Blocking: no
 
@@ -425,17 +354,17 @@ EZ_DRV_STATUS ezUart_ReceiveAsync(ezUartHandle_t *inst, uint8_t *rx_buff, uint16
 
 Start to receive data. Return as soon as the transfer is started or refused.
 
-Same rules as ezUart_TransmitAsync(), with receive data instead of transmit data: the driver stays busy on EZ_DRV_STATUS_OK until the HW driver reports EZ_DRV_EVENT_OP_DONE, and the callback then gets the event code (for example UART_EVENT_RX_CMPLT or UART_EVENT_RX_ERR). The driver must be initialized (see ezUart_Initialize).
+Same rules as ezUart_TransmitAsync(), with receive data instead of transmit data: the driver stays busy on EZ_DRV_STATUS_OK until the HW driver reports EZ_DRV_EVENT_OP_DONE, and the callback then gets the event code (for example UART_EVENT_RX_CMPLT or UART_EVENT_RX_ERR). The handle must be open (see ezUart_Open).
 
 **Parameters**
 
-- `inst`: Registered handle.
+- `inst`: Open handle.
 - `rx_buff`: Buffer for the received data. Must stay valid until the end event.
 - `buff_size`: Number of bytes to receive. Not checked by this component.
 
 **Returns:** Same as ezUart_TransmitAsync().
 
-- **Pre:** ezUart_Initialize() succeeded for the driver of inst.
+- **Pre:** ezUart_Open() succeeded for inst.
 - **Post:** On EZ_DRV_STATUS_OK the driver is busy until the end event is reported
 - **Warning:** rx_buff must stay valid until the end event is reported. The UART component does not copy it.
 - **Warning:** The callback runs in the context of the HW driver, usually an ISR. It must not block.
@@ -469,21 +398,21 @@ EZ_DRV_STATUS ezUart_TransmitSync(ezUartHandle_t *inst, const uint8_t *tx_buff, 
 
 Transmit data to the HW. Return when done.
 
-Blocks the caller until the HW driver returns. timeout_millis is passed unchanged to the HW driver. The driver is taken for the call and released after the HW call returns, whatever the status. The driver must be initialized (see ezUart_Initialize). A sync operation reports no callback: its result is only the return value.
+Blocks the caller until the HW driver returns. timeout_millis is passed unchanged to the HW driver. The driver is taken for the call and released after the HW call returns, whatever the status. The driver must be open (see ezUart_Open). A sync operation reports no callback: its result is only the return value.
 
 **Parameters**
 
-- `inst`: Registered handle.
+- `inst`: Open handle.
 - `tx_buff`: Data to transmit. Not checked by this component.
 - `buff_size`: Number of bytes to transmit. Not checked by this component.
 - `timeout_millis`: Timeout in milliseconds, passed to the HW driver.
 
-**Returns:** EZ_DRV_STATUS_OK if success, EZ_DRV_STATUS_ERR_DRV_NOT_FOUND if inst is NULL or not bound, EZ_DRV_STATUS_ERR_NOT_INITIALIZED if ezUart_Initialize() has not succeeded, EZ_DRV_STATUS_BUSY if an operation is in flight on the driver, EZ_DRV_STATUS_ERR_INF_NOT_EXIST if the HW driver has no transmit_sync function, or the HW driver status otherwise (passed through unchanged, e.g. EZ_DRV_STATUS_TIMEOUT).
+**Returns:** EZ_DRV_STATUS_OK if success, EZ_DRV_STATUS_ERR_DRV_NOT_FOUND if inst is NULL or not open, EZ_DRV_STATUS_BUSY if an operation is in flight on the driver, EZ_DRV_STATUS_ERR_INF_NOT_EXIST if the HW driver has no transmit_sync function, or the HW driver status otherwise (passed through unchanged, e.g. EZ_DRV_STATUS_TIMEOUT).
 
-- **Pre:** ezUart_Initialize() succeeded for the driver of inst.
+- **Pre:** ezUart_Open() succeeded for inst.
 - **Warning:** The UART component is not a lock. The caller must serialize the calls on the same HW driver.
 - **Note:** The buffer and its size are not checked by this component, the HW driver validates them. See ezHwUartInterface.
-- **See:** ezUart_TransmitAsync, ezUart_Initialize, ezHwUartInterface
+- **See:** ezUart_TransmitAsync, ezUart_Open, ezHwUartInterface
 - ISR-safe: no
 - Blocking: yes
 
@@ -510,14 +439,14 @@ Same rules as ezUart_TransmitSync(), with receive data instead of transmit data.
 
 **Parameters**
 
-- `inst`: Registered handle.
+- `inst`: Open handle.
 - `rx_buff`: Buffer for the received data. Not checked by this component.
 - `buff_size`: Number of bytes to receive. Not checked by this component.
 - `timeout_millis`: Timeout in milliseconds, passed to the HW driver.
 
 **Returns:** Same as ezUart_TransmitSync(), with receive_sync instead of transmit_sync.
 
-- **Pre:** ezUart_Initialize() succeeded for the driver of inst.
+- **Pre:** ezUart_Open() succeeded for inst.
 - **Warning:** The UART component is not a lock. The caller must serialize the calls on the same HW driver.
 - **Note:** The buffer and its size are not checked by this component, the HW driver validates them. See ezHwUartInterface.
 - **See:** ezUart_ReceiveAsync, ezUart_TransmitSync, ezHwUartInterface
@@ -543,18 +472,18 @@ EZ_DRV_STATUS ezUart_GetConfig(ezUartHandle_t *inst, struct ezUartConfiguration 
 
 Get the configuration of the HW UART driver.
 
-Returns a pointer to the configuration stored in the driver (ezUartDriver::config). No HW call is made, and the call does not check the busy state or the initialized state. It works before ezUart_Initialize(). The values are applied to the HW by ezUart_UpdateConfig(). The pointer refers to the driver object, so it stays valid while the driver is registered.
+Returns a pointer to the configuration stored in the driver (ezUartDriver::config). No HW call is made, and the call does not check the busy state. The values are applied to the HW by ezUart_UpdateConfig(). The pointer refers to the driver object, so it stays valid while the driver is registered.
 
 **Parameters**
 
-- `inst`: Registered handle.
+- `inst`: Open handle.
 - `config`: Receives the pointer to the configuration. Must not be NULL.
 
-**Returns:** EZ_DRV_STATUS_OK on success, EZ_DRV_STATUS_ERR_DRV_NOT_FOUND if inst is NULL or not bound, EZ_DRV_STATUS_ERR_ARG if config is NULL.
+**Returns:** EZ_DRV_STATUS_OK on success, EZ_DRV_STATUS_ERR_DRV_NOT_FOUND if inst is NULL or not open, EZ_DRV_STATUS_ERR_ARG if config is NULL.
 
-- **Pre:** ezUart_RegisterInstance() succeeded for inst.
+- **Pre:** ezUart_Open() succeeded for inst.
 - **Post:** None
-- **See:** ezUart_UpdateConfig, ezUart_RegisterInstance, ezUartConfiguration
+- **See:** ezUart_UpdateConfig, ezUart_Open, ezUartConfiguration
 - ISR-safe: no
 - Blocking: no
 
@@ -577,15 +506,15 @@ EZ_DRV_STATUS ezUart_UpdateConfig(ezUartHandle_t *inst);
 
 Apply the configuration of the driver to the HW UART.
 
-The configuration is read with ezUart_GetConfig(), changed by the caller, and applied by this call. The driver is taken for the HW call and released after it, whatever the status. The HW function receives only driver_h. The call does not require ezUart_Initialize() and does not change the initialized state.
+The configuration is read with ezUart_GetConfig(), changed by the caller, and applied by this call. The driver is taken for the HW call and released after it, whatever the status. The HW function receives only driver_h.
 
 **Parameters**
 
-- `inst`: Registered handle.
+- `inst`: Open handle.
 
-**Returns:** EZ_DRV_STATUS_OK on success, EZ_DRV_STATUS_ERR_DRV_NOT_FOUND if inst is NULL or not bound, EZ_DRV_STATUS_BUSY if an operation is in flight on the driver, EZ_DRV_STATUS_ERR_INF_NOT_EXIST if the HW driver has no update_conf function, or the HW driver status otherwise.
+**Returns:** EZ_DRV_STATUS_OK on success, EZ_DRV_STATUS_ERR_DRV_NOT_FOUND if inst is NULL or not open, EZ_DRV_STATUS_BUSY if an operation is in flight on the driver, EZ_DRV_STATUS_ERR_INF_NOT_EXIST if the HW driver has no update_conf function, or the HW driver status otherwise.
 
-- **Pre:** ezUart_RegisterInstance() succeeded for inst.
+- **Pre:** ezUart_Open() succeeded for inst.
 - **Post:** None
 - **See:** ezUart_GetConfig, ezUartConfiguration, ezHwUart_UpdateConfig
 - ISR-safe: no

@@ -4,25 +4,30 @@
 
 Hardware Abstraction Layer for GPIO pins.
 
-The user binds an ezGpioHandle_t to a HW driver by name. All the operations of a handle go through the HW driver registered with ezGpio_SystemRegisterHwDriver().
+A HW driver is one GPIO port. A handle is one user of it, for example one module. The user opens a handle with ezGpio_Open(), which binds it to the HW driver by name, and closes it with ezGpio_Close(). All the operations of a handle go through the HW driver registered with ezGpio_SystemRegisterHwDriver(). Several handles can be open on the same HW driver: each module configures and uses its own pins.
 
-Concurrency: this component does not provide mutual exclusion. The caller must serialize the calls on the same HW driver (mutex or semaphore of the upper layer). A pin operation made while another operation is in flight, or while another handle listens to pin events, is refused with EZ_DRV_STATUS_BUSY (ezGpio_ReadPin() returns EZ_GPIO_PIN_ERROR).
+Concurrency: this component does not provide mutual exclusion. The caller must serialize the calls on the same HW driver (mutex or semaphore of the upper layer). A pin operation made while another operation is in flight is refused with EZ_DRV_STATUS_BUSY (ezGpio_ReadPin() returns EZ_GPIO_PIN_ERROR).
 
 All pin operations are synchronous: the result is returned through the return value of the function. There is no async operation. The HW driver must NOT call ezDriver_NotifyEvent() with an EZ_DRV_EVENT_OP_* kind. The only event it reports is a pin interrupt, see below.
 
-Pin interrupts: when ezGpio_Initialize() is called with an intr_mode other than EZ_INTERRUPT_NONE, the handle listens to the pin events of its HW driver. It starts listening before the HW init function is called, so the HW driver may arm the interrupt inside it. The HW driver reports them, usually from its ISR, with ezDriver_NotifyEvent(&hw_driver->base, EZ_DRV_EVENT_ASYNC, EZ_GPIO_EVENT_PIN_INTERRUPT, &pin_index, NULL). The callback given to ezGpio_RegisterInstance() is then called in the context of the HW driver. While a handle listens, every other handle is refused with EZ_DRV_STATUS_BUSY. Fan-out to several consumers is the job of the upper layer. The subscription ends with ezGpio_UnregisterInstance().
+Pin interrupts: the subscription is per pin. When ezGpio_Initialize() is called with an intr_mode other than EZ_INTERRUPT_NONE, the handle listens to the interrupt of that pin. It starts listening before the HW init function is called, so the HW driver may arm the interrupt inside it. The HW driver reports an interrupt from its ISR with ezGpio_NotifyPinEvent(). The callback given to ezGpio_Open() is then called in the context of the HW driver, with the pin index and the level of the pin. Handles which listen to different pins, and handles which listen to nothing, work side by side. A pin has one listener. The subscriptions of a handle end with ezGpio_Close().
 
-No function of this component is ISR-safe. From an ISR, the HW driver only calls ezDriver_NotifyEvent().
+No function of this component is ISR-safe, except ezGpio_NotifyPinEvent(), which is made for the HW driver.
 
 Argument checking: this component checks the handle, the config pointer of ezGpio_Initialize() and the driver name. The pin index and the pin state are passed as they are to the HW driver, which is responsible for validating them.
 
-Initialization: ezGpio_ReadPin(), ezGpio_WritePin() and ezGpio_TogglePin() require that ezGpio_Initialize() has succeeded first. The initialized flag belongs to the HW driver, not to the pin: it is set by a successful ezGpio_Initialize() of any pin.
+Every pin operation requires an open handle. Whether a pin is configured is decided by the HW driver.
 
 ## Types and macros
 
 ```c
+#define EZ_GPIO_MAX_LISTENERS
+```
+Maximum number of pins of one HW driver which handles can listen to at the same time.
+
+```c
 enum EZ_GPIO_EVENT {
-  EZ_GPIO_EVENT_PIN_INTERRUPT,  /* A pin interrupt fired. param1 is a pointer to the uint16_t pin index, valid during the callback. param2 is passed as given by the HW driver */
+  EZ_GPIO_EVENT_PIN_INTERRUPT,  /* A pin interrupt fired. param1 is the pin index (uint16_t, passed by value as a pointer-sized integer), param2 is the level of the pin (EZ_GPIO_PIN_STATE, by value) */
   EZ_GPIO_NUM_EVENTS  /* Number of event codes. Not an event */
 }
 ```
@@ -91,23 +96,26 @@ Toggle the state of a pin. Called by ezGpio_TogglePin().
 
 ```c
 typedef struct {
-  struct ezDrvHandle drv_handle;  /* Common handle, bound to a HW driver. Filled by ezGpio_RegisterInstance() */
+  struct ezDrvHandle drv_handle;  /* Common handle, bound to a HW driver. Filled by ezGpio_Open() */
 } ezGpioHandle_t;
 ```
 GPIO handle. Held by the user, bound to a HW driver.
 
-Must be zero-initialized (static storage, or memset) before the first ezGpio_RegisterInstance(), which refuses a handle whose hw field is not NULL. Bind it with ezGpio_RegisterInstance() before use. The HW driver keeps a pointer to the handle while the handle listens to pin events or an operation is in flight, so the handle must stay valid until ezGpio_UnregisterInstance() returns EZ_DRV_STATUS_OK.
+Must be zero-initialized (static storage, or memset) before the first ezGpio_Open(). Open it with ezGpio_Open() before use. The HW driver keeps a pointer to the handle while an operation is in flight and while the handle listens to pin events, so the handle must stay valid until ezGpio_Close() returns EZ_DRV_STATUS_OK.
 
 ```c
 struct ezHwGpioConfig {
   EZ_GPIO_MODE mode;  /* mode of the GPIO pin */
   EZ_GPIO_PULL pull;  /* pull mode of the GPIO pin */
   EZ_INTERRUPT_MODE intr_mode;  /* interrupt mode of the GPIO pin */
+  EZ_GPIO_PIN_STATE initial_state;  /* level of an output pin before the output is enabled: EZ_GPIO_PIN_LOW or EZ_GPIO_PIN_HIGH. Ignored for an input. The HW driver validates it */
 };
 ```
 Configuration to initialize a pin.
 
 Passed by pointer to the HW initialize function, unchanged. The GPIO component does not copy the structure and does not check the values. It reads intr_mode after the HW call returns, so the HW driver must not change it.
+
+initial_state is the level of an output pin before the output is enabled. The HW driver sets the level first and enables the output after, so the pin never shows a wrong level, for example a chip select which must stay high or an active-low enable which must stay off. It is ignored for an input. The last member is zero (EZ_GPIO_PIN_LOW) when an initializer leaves it out.
 
 ```c
 struct ezHwGpioInterface {
@@ -124,21 +132,60 @@ A NULL function makes the matching ezGpio_xxx() fail: ezGpio_Initialize(), ezGpi
 
 The pin indexes and pin states are not checked by the GPIO component. Each HW function must validate them and return an error status when they are not valid. The component forwards that status unchanged (ezGpio_ReadPin() forwards its state unchanged too).
 
-All the HW functions are synchronous. The HW driver must not call ezDriver_NotifyEvent() with an EZ_DRV_EVENT_OP_* kind from them: such events are dropped. The only event of the HW driver is the pin interrupt, reported from its ISR with EZ_DRV_EVENT_ASYNC and EZ_GPIO_EVENT_PIN_INTERRUPT. See the file description.
+All the HW functions are synchronous. The HW driver must not call ezDriver_NotifyEvent() with an EZ_DRV_EVENT_OP_* kind from them: such events are dropped. The only event of the HW driver is the pin interrupt, reported from its ISR with ezGpio_NotifyPinEvent(). See the file description.
+
+```c
+struct ezGpioListener {
+  ezDrvHandle_t* volatile handle;  /* Handle which listens to the pin, NULL if the entry is free */
+  uint16_t pin;  /* Pin index */
+};
+```
+One pin interrupt subscription: the pin and the handle which listens to it.
+
+Not for the user. Managed by ezGpio_Initialize(), ezGpio_Close() and read by ezGpio_NotifyPinEvent(). The entry is used while handle is not NULL.
 
 ```c
 struct ezGpioDriver {
   struct Node ll_node;  /* Node to link to the list of HW drivers */
   struct ezDrvBase base;  /* Common data of driver: name, state and the handle in use */
   struct ezHwGpioInterface interface;  /* HW API, see ezHwGpioInterface */
-  bool initialized;  /* true after ezGpio_Initialize() succeeded for at least one pin. Reset to false on register and unregister. Set by ezGpio_Initialize() to the result of its init call: a failure (HW error, or no init_pin function) clears it for all pins. A call refused before the driver is taken (ERR_ARG, DRV_NOT_FOUND, BUSY) leaves it unchanged */
+  uint8_t open_count;  /* Number of handles open on this driver. Reset to 0 on register */
+  struct ezGpioListener listeners[EZ_GPIO_MAX_LISTENERS];  /* Pin interrupt subscriptions, see ezGpio_Initialize() */
 };
 ```
 GPIO HW driver. Provided by the HW driver implementation.
 
-base.name and interface must be set before ezGpio_SystemRegisterHwDriver(). The driver is linked into the list of registered drivers, so its memory (static storage, no malloc) must stay valid while it is registered. ezGpio_SystemRegisterHwDriver() resets base.state, base.user and initialized.
+base.name and interface must be set before ezGpio_SystemRegisterHwDriver(). The driver is linked into the list of registered drivers, so its memory (static storage, no malloc) must stay valid while it is registered. ezGpio_SystemRegisterHwDriver() resets base.state, base.user, open_count and listeners.
 
 ## Functions
+
+### `ezGpio_NotifyPinEvent`
+
+```c
+static void ezGpio_NotifyPinEvent(struct ezGpioDriver *drv, uint16_t pin, EZ_GPIO_PIN_STATE level);
+```
+
+Report a pin interrupt of the HW driver to the handle which listens to the pin.
+
+Called by the HW driver implementation from its ISR, instead of ezDriver_NotifyEvent(). It looks up the subscription of the pin and calls the callback of that handle with EZ_GPIO_EVENT_PIN_INTERRUPT. A pin which nobody listens to, and a handle without callback, are ignored. The subscription table is only read, so this function never blocks. The table is written by the task side in an order which keeps it consistent for the ISR on a single core.
+
+**Parameters**
+
+- `drv`: The HW driver (the object registered with ezGpio_SystemRegisterHwDriver()).
+- `pin`: Index of the pin which fired.
+- `level`: Level of the pin seen by the HW driver, EZ_GPIO_PIN_LOW or EZ_GPIO_PIN_HIGH. It is passed to the callback as param2.
+
+- **Warning:** The callback runs inside this call, in the same context. If the call is made from an ISR, the callback must be ISR-safe. It must not block.
+- **See:** ezGpio_Initialize, EZ_GPIO_EVENT
+- ISR-safe: yes
+- Blocking: no
+
+**Example**
+
+```c
+// In the ISR of the GPIO port, when a pin interrupt fires
+ezGpio_NotifyPinEvent(&gpio0_drv, 7U, EZ_GPIO_PIN_LOW);
+```
 
 ### `ezGpio_SystemRegisterHwDriver`
 
@@ -148,7 +195,7 @@ EZ_DRV_STATUS ezGpio_SystemRegisterHwDriver(struct ezGpioDriver *hw_gpio_driver)
 
 Register a HW driver to the GPIO component.
 
-Called by the HW driver implementation, not by the application. The driver is reset to the idle, not-initialized state: initialized is false, base.state is 0 and base.user is NULL. It is then added to the list of HW drivers. base.name is compared with the names of the drivers already registered.
+Called by the HW driver implementation, not by the application. The driver is reset to the idle, closed state: open_count is 0, the subscription table is empty, base.state is 0 and base.user is NULL. It is then added to the list of HW drivers. base.name is compared with the names of the drivers already registered.
 
 **Parameters**
 
@@ -156,7 +203,7 @@ Called by the HW driver implementation, not by the application. The driver is re
 
 **Returns:** EZ_DRV_STATUS_OK on success, EZ_DRV_STATUS_ERR_ARG if hw_gpio_driver or its name is NULL, or the name is already registered.
 
-- **Post:** base.state is 0, base.user is NULL and initialized is false
+- **Post:** base.state is 0, base.user is NULL, open_count is 0 and no pin is listened to
 - **Warning:** The driver list is changed without a lock. Do not call it while another GPIO call can run.
 - **See:** ezGpio_SystemUnregisterHwDriver, ezHwGpioInterface
 - ISR-safe: no
@@ -188,8 +235,7 @@ EZ_DRV_STATUS RegisterGpio0(void)
 }
 
 // In the ISR of the GPIO port, when a pin interrupt fires
-uint16_t pin = 7U;
-ezDriver_NotifyEvent(&gpio0_drv.base, EZ_DRV_EVENT_ASYNC, EZ_GPIO_EVENT_PIN_INTERRUPT, &pin, NULL);
+ezGpio_NotifyPinEvent(&gpio0_drv, 7U, EZ_GPIO_PIN_LOW);
 ```
 
 ### `ezGpio_SystemUnregisterHwDriver`
@@ -200,54 +246,56 @@ EZ_DRV_STATUS ezGpio_SystemUnregisterHwDriver(struct ezGpioDriver *hw_gpio_drive
 
 Unregister a HW driver from the GPIO component.
 
-Called by the HW driver implementation. The driver is removed from the list of HW drivers, initialized is set to false and base.state is set to 0. That clears the listening state: a handle which listened to pin events stops receiving them. base.user and the handles still bound to the driver are not changed, and the code does not check them.
+Called by the HW driver implementation. The driver is removed from the list of HW drivers. base.state and base.user are not changed. The driver is refused while a handle is open on it, so no handle keeps a pointer to a driver which is gone.
 
 **Parameters**
 
 - `hw_gpio_driver`: HW driver registered earlier.
 
-**Returns:** EZ_DRV_STATUS_OK on success, EZ_DRV_STATUS_ERR_ARG if hw_gpio_driver is NULL, EZ_DRV_STATUS_BUSY if an operation is in flight on the driver.
+**Returns:** EZ_DRV_STATUS_OK on success, EZ_DRV_STATUS_ERR_ARG if hw_gpio_driver is NULL, EZ_DRV_STATUS_BUSY if an operation is in flight on the driver, or a handle is still open on it (open_count is not 0).
 
 - **Pre:** hw_gpio_driver was registered with ezGpio_SystemRegisterHwDriver() and is not unregistered yet. Not checked by the code: the unlink dereferences the list pointers of the driver, which are NULL for a driver never registered.
 - **Warning:** The driver list is changed without a lock. Do not call it while another GPIO call can run.
-- **Note:** Not checked by the code: the handles bound to the driver. Unregister them with ezGpio_UnregisterInstance() first, otherwise they keep a pointer to the driver.
-- **See:** ezGpio_SystemRegisterHwDriver, ezGpio_UnregisterInstance
+- **See:** ezGpio_SystemRegisterHwDriver, ezGpio_Close
 - ISR-safe: no
 - Blocking: no
 
-### `ezGpio_RegisterInstance`
+### `ezGpio_Open`
 
 ```c
-EZ_DRV_STATUS ezGpio_RegisterInstance(ezGpioHandle_t *inst, const char *driver_name, ezDrvCallback callback, void *ctx);
+EZ_DRV_STATUS ezGpio_Open(ezGpioHandle_t *inst, const char *driver_name, ezDrvCallback callback, void *ctx);
 ```
 
 Bind a handle to a registered HW driver.
 
-Stores the HW driver, the callback and the context in the handle. The driver is not marked busy by this call, and its initialized flag is not changed. A handle which is already bound is refused: call ezGpio_UnregisterInstance() first. The handle and the driver name are checked before the driver is looked up. The driver is looked up by name, so the handle does not need the driver to be initialized.
+Stores the HW driver, the callback and the context in the handle and counts the handle as open. The HW driver is not called and the driver is not marked busy. A handle which is already open is refused: call ezGpio_Close() first. The handle and the driver name are checked before the driver is looked up.
+
+Several handles can be open on the same HW driver, for example one per module. Each handle configures its own pins with ezGpio_Initialize() and listens to the interrupts of its own pins only.
 
 **Parameters**
 
-- `inst`: Handle owned by the caller. Zero-initialized and not bound. Must stay valid while bound.
+- `inst`: Handle owned by the caller. Zero-initialized and not open. Must stay valid while open.
 - `driver_name`: Name of the HW driver (base.name).
-- `callback`: Called for the pin events of the handle, see ezGpio_Initialize(). Can be NULL, then the events are not reported. Runs in the context of the HW driver, usually an ISR.
+- `callback`: Called for the pin events of the pins which this handle listens to, see ezGpio_Initialize(). Can be NULL, then the events are not reported. Runs in the context of the HW driver, usually an ISR.
 - `ctx`: User context, passed to callback as first argument. Can be NULL.
 
-**Returns:** EZ_DRV_STATUS_OK on success, EZ_DRV_STATUS_ERR_ARG if inst or driver_name is NULL, or the handle is already bound, EZ_DRV_STATUS_ERR_DRV_NOT_FOUND if no HW driver has the name.
+**Returns:** EZ_DRV_STATUS_OK on success, EZ_DRV_STATUS_ERR_ARG if inst or driver_name is NULL, or the handle is already open, EZ_DRV_STATUS_ERR_DRV_NOT_FOUND if no HW driver has the name, EZ_DRV_STATUS_ERR_GENERIC if the maximum number of open handles (255) is reached.
 
-- **Warning:** The callback runs inside ezDriver_NotifyEvent(), in the context of the HW driver, usually an ISR. It must not block.
-- **See:** ezGpio_UnregisterInstance, ezDrvCallback, ezGpio_Initialize
+- **Post:** On EZ_DRV_STATUS_OK the handle is open.
+- **Warning:** The callback runs inside ezGpio_NotifyPinEvent(), in the context of the HW driver, usually an ISR. It must not block.
+- **See:** ezGpio_Close, ezDrvCallback, ezGpio_Initialize
 - ISR-safe: no
 - Blocking: no
 
 **Example**
 
 ```c
-static ezGpioHandle_t gpio0_handle;  // Static: the handle must stay valid while bound
+static ezGpioHandle_t gpio0_handle;  // Static: the handle must stay valid while open
 static AppGpioCtx_t app_ctx;         // Passed to the callback, see ezGpio_Initialize()
 
-EZ_DRV_STATUS BindGpio0(void)
+EZ_DRV_STATUS OpenGpio0(void)
 {
-    EZ_DRV_STATUS status = ezGpio_RegisterInstance(&gpio0_handle, "gpio0", OnGpioEvent, &app_ctx);
+    EZ_DRV_STATUS status = ezGpio_Open(&gpio0_handle, "gpio0", OnGpioEvent, &app_ctx);
     if(status != EZ_DRV_STATUS_OK)
     {
         return status;
@@ -256,23 +304,26 @@ EZ_DRV_STATUS BindGpio0(void)
 }
 ```
 
-### `ezGpio_UnregisterInstance`
+### `ezGpio_Close`
 
 ```c
-EZ_DRV_STATUS ezGpio_UnregisterInstance(ezGpioHandle_t *inst);
+EZ_DRV_STATUS ezGpio_Close(ezGpioHandle_t *inst);
 ```
 
 Unbind a handle from its HW driver.
 
-Ends the pin event subscription of the handle, if it has one, and clears hw, on_event and ctx of the handle. Refused only when this handle has an operation in flight. An operation of another handle does not block it. Since all pin operations are synchronous, this happens when the call is made from a HW function of the same handle while the operation runs. A handle which was never bound is accepted and stays empty.
+Ends the pin event subscriptions of all the pins of the handle, clears hw, on_event and ctx of the handle and counts it as closed. The subscriptions of other handles are not touched. Refused only when this handle has an operation in flight. An operation of another handle does not block it. Since all pin operations are synchronous, this happens when the call is made from a HW function of the same handle while the operation runs. A handle which was never opened is accepted and stays empty.
+
+The HW pins are not changed: an interrupt which the HW driver armed stays armed, but it is no longer reported to anyone.
 
 **Parameters**
 
-- `inst`: Handle to unbind. Registered with ezGpio_RegisterInstance(), or never bound.
+- `inst`: Handle to close. Opened with ezGpio_Open(), or never opened.
 
 **Returns:** EZ_DRV_STATUS_OK on success, EZ_DRV_STATUS_ERR_ARG if inst is NULL, EZ_DRV_STATUS_BUSY if this handle has an operation in flight.
 
-- **See:** ezGpio_RegisterInstance, ezGpio_Initialize
+- **Post:** On EZ_DRV_STATUS_OK the handle is not open and listens to no pin.
+- **See:** ezGpio_Open, ezGpio_Initialize
 - ISR-safe: no
 - Blocking: no
 
@@ -284,25 +335,25 @@ EZ_DRV_STATUS ezGpio_Initialize(ezGpioHandle_t *inst, uint16_t pin_index, ezHwGp
 
 Initialize a pin of the HW driver.
 
-Checks config first, then finds the HW driver of the handle and takes it for the call. The init_pin function of the HW driver is called with driver_h, pin_index and config. The driver is released after the call and the HW status is returned. config is passed as is, the GPIO component does not copy or check it, and it reads intr_mode after the HW call returns.
+Checks config first, then finds the HW driver of the handle and takes it for the call. The init_pin function of the HW driver is called with driver_h, pin_index and config. The driver is released after the call and the HW status is returned. config is passed as is, the GPIO component does not copy or check it.
 
-The initialized flag of the driver is set to the result of the HW call, so it is true only on EZ_DRV_STATUS_OK. The flag belongs to the driver: a failure for any pin clears it for all pins, and a call refused before the driver is taken leaves it unchanged. Calling it again on an initialized driver calls the HW function again.
+With config->intr_mode other than EZ_INTERRUPT_NONE, the handle subscribes to the interrupt of this pin BEFORE the HW function is called. The HW driver may therefore arm the interrupt inside its init_pin function, and an interrupt which fires there is delivered to the callback during this call, in the context of the HW driver, while the pin may be only partly configured. The callback cannot call another GPIO function for that time: the driver is held and they return EZ_DRV_STATUS_BUSY. If the HW call fails, a subscription made by this call is removed again, and a subscription which existed before is kept. On success the subscription of the pin is kept until the pin is initialized again with EZ_INTERRUPT_NONE by the same handle, or the handle is closed. Calling it again for a pin which the handle already listens to calls the HW function again and does not use a second subscription.
 
-With config->intr_mode other than EZ_INTERRUPT_NONE, the handle subscribes to the pin events of the driver BEFORE the HW function is called. The HW driver may therefore arm the interrupt inside its init_pin function, and an interrupt which fires there is delivered to the callback during this call, in the context of the HW driver, while the pin may be only partly configured. The callback cannot call another GPIO function for that time: the driver is held and they return EZ_DRV_STATUS_BUSY. If the HW call fails, a subscription made by this call is removed again, and a subscription which existed before is kept. On success the subscription is kept until ezGpio_UnregisterInstance(), also when a later call uses EZ_INTERRUPT_NONE. If another handle listens, the call returns EZ_DRV_STATUS_BUSY and the HW driver is not called.
+The subscriptions are per pin: handles which listen to different pins do not disturb each other, and a handle without interrupts can use its pins while another handle listens. A pin is listened to by one handle at a time. At most EZ_GPIO_MAX_LISTENERS pins of the driver can be listened to at the same time.
 
 Whether the call blocks depends on the HW driver. The GPIO component adds no wait.
 
 **Parameters**
 
-- `inst`: Registered handle.
+- `inst`: Open handle.
 - `pin_index`: Index of the pin. Passed unchanged to the HW driver, not checked.
 - `config`: Pin configuration. Passed to the HW driver as is.
 
-**Returns:** EZ_DRV_STATUS_OK on success, EZ_DRV_STATUS_ERR_ARG if config is NULL, EZ_DRV_STATUS_ERR_DRV_NOT_FOUND if inst is NULL or not bound, EZ_DRV_STATUS_BUSY if an operation is in flight, or another handle listens to pin events, EZ_DRV_STATUS_ERR_INF_NOT_EXIST if the HW driver has no init_pin function, or the HW driver status otherwise.
+**Returns:** EZ_DRV_STATUS_OK on success, EZ_DRV_STATUS_ERR_ARG if config is NULL, EZ_DRV_STATUS_ERR_DRV_NOT_FOUND if inst is NULL or not open, EZ_DRV_STATUS_BUSY if an operation is in flight, or another handle listens to this pin, EZ_DRV_STATUS_ERR_GENERIC if all the EZ_GPIO_MAX_LISTENERS subscriptions are used, EZ_DRV_STATUS_ERR_INF_NOT_EXIST if the HW driver has no init_pin function, or the HW driver status otherwise.
 
-- **Pre:** ezGpio_RegisterInstance() succeeded for inst.
-- **Post:** On EZ_DRV_STATUS_OK the driver is initialized and idle. If config->intr_mode is not EZ_INTERRUPT_NONE, the handle listens to the pin events.
-- **See:** ezHwGpioConfig_t, ezHwGpio_Initialize, ezGpio_UnregisterInstance
+- **Pre:** ezGpio_Open() succeeded for inst.
+- **Post:** On EZ_DRV_STATUS_OK the pin is initialized. If config->intr_mode is not EZ_INTERRUPT_NONE, the handle listens to the interrupt of the pin.
+- **See:** ezHwGpioConfig_t, ezHwGpio_Initialize, ezGpio_Close
 - ISR-safe: no
 - Blocking: no
 
@@ -334,18 +385,18 @@ EZ_GPIO_PIN_STATE ezGpio_ReadPin(ezGpioHandle_t *inst, uint16_t pin_index);
 
 Read the state of a pin.
 
-Synchronous. Refused unless the driver is initialized. The driver is taken for the call, the read_pin function of the HW driver is called with driver_h and pin_index, and the driver is released. The state returned by the HW function is returned unchanged. The HW driver may return EZ_GPIO_PIN_ERROR itself.
+Synchronous. The driver is taken for the call, the read_pin function of the HW driver is called with driver_h and pin_index, and the driver is released. The state returned by the HW function is returned unchanged. The HW driver may return EZ_GPIO_PIN_ERROR itself.
 
-The checks run in this order: handle bound, driver initialized, driver free. ReadPin has no status, so every failure returns EZ_GPIO_PIN_ERROR and the reason is not reported. Use ezGpio_WritePin() or ezGpio_TogglePin() to get a status.
+The checks run in this order: handle open, driver free. ReadPin has no status, so every failure returns EZ_GPIO_PIN_ERROR and the reason is not reported. Use ezGpio_WritePin() or ezGpio_TogglePin() to get a status.
 
 **Parameters**
 
-- `inst`: Registered handle.
+- `inst`: Open handle.
 - `pin_index`: Index of the pin. Passed unchanged to the HW driver, not checked.
 
-**Returns:** EZ_GPIO_PIN_LOW or EZ_GPIO_PIN_HIGH, the state of the pin, or EZ_GPIO_PIN_ERROR if inst is NULL or not bound, the driver is not initialized, an operation is in flight or another handle listens to pin events, or the HW driver has no read_pin function.
+**Returns:** EZ_GPIO_PIN_LOW or EZ_GPIO_PIN_HIGH, the state of the pin, or EZ_GPIO_PIN_ERROR if inst is NULL or not open, an operation is in flight, or the HW driver has no read_pin function.
 
-- **Pre:** ezGpio_Initialize() succeeded for the driver of inst.
+- **Pre:** ezGpio_Open() succeeded for inst.
 - **Note:** The pin index is not checked by this component, the HW driver validates it. See ezHwGpioInterface.
 - **See:** ezGpio_WritePin, ezGpio_Initialize, ezHwGpio_ReadPin
 - ISR-safe: no
@@ -359,7 +410,7 @@ EZ_GPIO_PIN_STATE ReadGpio0Pin(void)
     EZ_GPIO_PIN_STATE state = ezGpio_ReadPin(&gpio0_handle, 7U);
     if(state == EZ_GPIO_PIN_ERROR)
     {
-        return EZ_GPIO_PIN_ERROR;    // Not bound, not initialized, busy or no HW function
+        return EZ_GPIO_PIN_ERROR;    // Not open, busy or no HW function
     }
     return state;
 }
@@ -375,17 +426,17 @@ Write the state of a pin.
 
 Synchronous. The driver is taken for the call, the write_pin function of the HW driver is called with driver_h, pin_index and state, and the driver is released. The status returned by the HW function is returned unchanged, whatever it is. pin_index and state are not checked by this component.
 
-The checks run in this order: handle bound, driver initialized, driver free. A failed check does not call the HW function.
+The checks run in this order: handle open, driver free. A failed check does not call the HW function.
 
 **Parameters**
 
-- `inst`: Registered handle.
+- `inst`: Open handle.
 - `pin_index`: Index of the pin. Passed unchanged to the HW driver, not checked.
 - `state`: State to write. Passed unchanged to the HW driver, not checked.
 
-**Returns:** EZ_DRV_STATUS_OK on success, EZ_DRV_STATUS_ERR_DRV_NOT_FOUND if inst is NULL or not bound, EZ_DRV_STATUS_ERR_NOT_INITIALIZED if ezGpio_Initialize() has not succeeded, EZ_DRV_STATUS_BUSY if an operation is in flight, or another handle listens to pin events, EZ_DRV_STATUS_ERR_INF_NOT_EXIST if the HW driver has no write_pin function, or the HW driver status otherwise.
+**Returns:** EZ_DRV_STATUS_OK on success, EZ_DRV_STATUS_ERR_DRV_NOT_FOUND if inst is NULL or not open, EZ_DRV_STATUS_BUSY if an operation is in flight, EZ_DRV_STATUS_ERR_INF_NOT_EXIST if the HW driver has no write_pin function, or the HW driver status otherwise.
 
-- **Pre:** ezGpio_Initialize() succeeded for the driver of inst.
+- **Pre:** ezGpio_Open() succeeded for inst.
 - **Note:** The pin index and the state are not checked by this component, the HW driver validates them. See ezHwGpioInterface.
 - **See:** ezGpio_ReadPin, ezGpio_TogglePin, ezHwGpio_WritePin
 - ISR-safe: no
@@ -415,16 +466,16 @@ Toggle the state of a pin.
 
 Synchronous. The driver is taken for the call, the toggle_pin function of the HW driver is called with driver_h and pin_index, and the driver is released. The status returned by the HW function is returned unchanged, whatever it is. pin_index is not checked by this component.
 
-The checks run in this order: handle bound, driver initialized, driver free. A failed check does not call the HW function.
+The checks run in this order: handle open, driver free. A failed check does not call the HW function.
 
 **Parameters**
 
-- `inst`: Registered handle.
+- `inst`: Open handle.
 - `pin_index`: Index of the pin. Passed unchanged to the HW driver, not checked.
 
-**Returns:** EZ_DRV_STATUS_OK on success, EZ_DRV_STATUS_ERR_DRV_NOT_FOUND if inst is NULL or not bound, EZ_DRV_STATUS_ERR_NOT_INITIALIZED if ezGpio_Initialize() has not succeeded, EZ_DRV_STATUS_BUSY if an operation is in flight, or another handle listens to pin events, EZ_DRV_STATUS_ERR_INF_NOT_EXIST if the HW driver has no toggle_pin function, or the HW driver status otherwise.
+**Returns:** EZ_DRV_STATUS_OK on success, EZ_DRV_STATUS_ERR_DRV_NOT_FOUND if inst is NULL or not open, EZ_DRV_STATUS_BUSY if an operation is in flight, EZ_DRV_STATUS_ERR_INF_NOT_EXIST if the HW driver has no toggle_pin function, or the HW driver status otherwise.
 
-- **Pre:** ezGpio_Initialize() succeeded for the driver of inst.
+- **Pre:** ezGpio_Open() succeeded for inst.
 - **Note:** The pin index is not checked by this component, the HW driver validates it. See ezHwGpioInterface.
 - **See:** ezGpio_WritePin, ezGpio_ReadPin, ezHwGpio_TogglePin
 - ISR-safe: no

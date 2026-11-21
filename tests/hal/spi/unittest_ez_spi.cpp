@@ -39,14 +39,16 @@
 * Module Preprocessor Macros
 *******************************************************************************/
 DEFINE_FFF_GLOBALS;
-FAKE_VALUE_FUNC(EZ_DRV_STATUS, HwInitialize, void *, ezSpiConfig_t *);
+FAKE_VALUE_FUNC(EZ_DRV_STATUS, HwInitialize, void *);
+FAKE_VALUE_FUNC(EZ_DRV_STATUS, HwDeinitialize, void *);
+FAKE_VALUE_FUNC(EZ_DRV_STATUS, HwLock, void *, uint32_t);
+FAKE_VALUE_FUNC(EZ_DRV_STATUS, HwUnlock, void *);
 FAKE_VALUE_FUNC(EZ_DRV_STATUS, HwTransferSync, void *, const uint8_t *, size_t, uint8_t *, size_t, uint32_t);
 FAKE_VALUE_FUNC(EZ_DRV_STATUS, HwTransferAsync, void *, const uint8_t *, size_t, uint8_t *, size_t);
 FAKE_VALUE_FUNC(EZ_DRV_STATUS, HwTransmitSync, void *, const uint8_t *, size_t, uint32_t);
 FAKE_VALUE_FUNC(EZ_DRV_STATUS, HwTransmitAsync, void *, const uint8_t *, size_t);
 FAKE_VALUE_FUNC(EZ_DRV_STATUS, HwReceiveSync, void *, uint8_t *, size_t, uint32_t);
 FAKE_VALUE_FUNC(EZ_DRV_STATUS, HwReceiveAsync, void *, uint8_t *, size_t);
-FAKE_VALUE_FUNC(EZ_DRV_STATUS, HwChipSelect, void *, bool);
 FAKE_VOID_FUNC(OnEvent, void *, uint8_t, void *, void *);
 
 
@@ -146,13 +148,15 @@ struct SpiTestFixture
     SpiTestFixture()
     {
         RESET_FAKE(HwInitialize);
+        RESET_FAKE(HwDeinitialize);
+        RESET_FAKE(HwLock);
+        RESET_FAKE(HwUnlock);
         RESET_FAKE(HwTransferSync);
         RESET_FAKE(HwTransferAsync);
         RESET_FAKE(HwTransmitSync);
         RESET_FAKE(HwTransmitAsync);
         RESET_FAKE(HwReceiveSync);
         RESET_FAKE(HwReceiveAsync);
-        RESET_FAKE(HwChipSelect);
         RESET_FAKE(OnEvent);
         FFF_RESET_HISTORY();
 
@@ -164,17 +168,17 @@ struct SpiTestFixture
         memset(&g_drv, 0, sizeof(g_drv));
         memset(&first, 0, sizeof(first));
         memset(&second, 0, sizeof(second));
-        memset(&config, 0, sizeof(config));
         g_drv.base.name = "spi_mock";
         g_drv.interface.driver_h = &g_hw_token;
         g_drv.interface.initialize = HwInitialize;
+        g_drv.interface.deinitialize = HwDeinitialize;
+        /* lock and unlock stay NULL: the bus lock is a try-lock, tests which need the HW lock set them */
         g_drv.interface.transfer_sync = HwTransferSync;
         g_drv.interface.transfer_async = HwTransferAsync;
         g_drv.interface.transmit_sync = HwTransmitSync;
         g_drv.interface.transmit_async = HwTransmitAsync;
         g_drv.interface.receive_sync = HwReceiveSync;
         g_drv.interface.receive_async = HwReceiveAsync;
-        g_drv.interface.chip_select = HwChipSelect;
 
         REQUIRE(ezSpi_SystemRegisterHwDriver(&g_drv) == EZ_DRV_STATUS_OK);
         driver_registered = true;
@@ -189,21 +193,21 @@ struct SpiTestFixture
             OnEvent_fake.custom_fake = NULL;
             g_chain_handle = NULL;
             ezDriver_NotifyEvent(&g_drv.base, EZ_DRV_EVENT_OP_DONE, 0, NULL, NULL);
+            /* Handles left open by a test: the driver must be unregistrable, or it stays in the list */
+            g_drv.open_count = 0U;
+            g_drv.lock_owner = NULL;
             (void)ezSpi_SystemUnregisterHwDriver(&g_drv);
         }
     }
 
-    /* Register a handle and initialize the driver. */
-    void BindAndInit(ezSpiHandle_t *handle, ezDrvCallback cb = OnEvent, void *ctx = NULL)
+    /* Open a handle on the mock driver. */
+    void OpenHandle(ezSpiHandle_t *handle, ezDrvCallback cb = OnEvent, void *ctx = NULL)
     {
-        HwInitialize_fake.return_val = EZ_DRV_STATUS_OK;
-        REQUIRE(ezSpi_RegisterInstance(handle, "spi_mock", cb, ctx) == EZ_DRV_STATUS_OK);
-        REQUIRE(ezSpi_Initialize(handle, &config) == EZ_DRV_STATUS_OK);
+        REQUIRE(ezSpi_Open(handle, "spi_mock", cb, ctx) == EZ_DRV_STATUS_OK);
     }
 
     ezSpiHandle_t first;
     ezSpiHandle_t second;
-    ezSpiConfig_t config;
     bool driver_registered;
 };
 
@@ -240,30 +244,67 @@ TEST_CASE_METHOD(SpiTestFixture, "Test HW driver registration", "[hal][spi]")
 
     WHEN("A driver is registered")
     {
-        THEN("It starts idle and not initialized")
+        THEN("It starts idle with no open handle")
         {
-            CHECK(g_drv.initialized == false);
+            CHECK(g_drv.open_count == 0U);
             CHECK(g_drv.base.state == 0U);
             CHECK(g_drv.base.user == NULL);
         }
     }
 
+    WHEN("A driver sets only one of the lock and unlock functions")
+    {
+        struct ezSpiDriver half;
+        memset(&half, 0, sizeof(half));
+        half.base.name = "spi_half";
+
+        THEN("The registration is rejected, and accepted with both or none")
+        {
+            half.interface.lock = HwLock;
+            CHECK(ezSpi_SystemRegisterHwDriver(&half) == EZ_DRV_STATUS_ERR_ARG);
+            half.interface.lock = NULL;
+            half.interface.unlock = HwUnlock;
+            CHECK(ezSpi_SystemRegisterHwDriver(&half) == EZ_DRV_STATUS_ERR_ARG);
+            half.interface.lock = HwLock;
+            CHECK(ezSpi_SystemRegisterHwDriver(&half) == EZ_DRV_STATUS_OK);
+            CHECK(ezSpi_SystemUnregisterHwDriver(&half) == EZ_DRV_STATUS_OK);
+        }
+    }
+
+    WHEN("A driver is registered")
+    {
+        THEN("It starts with no bus lock owner")
+        {
+            CHECK(g_drv.lock_owner == NULL);
+        }
+    }
+
     WHEN("A driver is unregistered")
     {
-        g_drv.initialized = true;
-
-        THEN("It is reset")
+        THEN("It is removed from the list")
         {
             CHECK(ezSpi_SystemUnregisterHwDriver(&g_drv) == EZ_DRV_STATUS_OK);
             driver_registered = false;
-            CHECK(g_drv.initialized == false);
-            CHECK(ezSpi_RegisterInstance(&first, "spi_mock", OnEvent, NULL) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
+            CHECK(ezSpi_Open(&first, "spi_mock", OnEvent, NULL) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
+        }
+    }
+
+    WHEN("A driver is unregistered while a handle is open")
+    {
+        OpenHandle(&first);
+
+        THEN("The unregistration is refused until the handle is closed")
+        {
+            CHECK(ezSpi_SystemUnregisterHwDriver(&g_drv) == EZ_DRV_STATUS_BUSY);
+            REQUIRE(ezSpi_Close(&first) == EZ_DRV_STATUS_OK);
+            CHECK(ezSpi_SystemUnregisterHwDriver(&g_drv) == EZ_DRV_STATUS_OK);
+            driver_registered = false;
         }
     }
 
     WHEN("A driver is unregistered while an operation is in flight")
     {
-        BindAndInit(&first);
+        OpenHandle(&first);
         HwTransmitAsync_fake.return_val = EZ_DRV_STATUS_OK;
         REQUIRE(ezSpi_TransmitAsync(&first, g_buf, sizeof(g_buf)) == EZ_DRV_STATUS_OK);
 
@@ -275,246 +316,452 @@ TEST_CASE_METHOD(SpiTestFixture, "Test HW driver registration", "[hal][spi]")
 }
 
 
-TEST_CASE_METHOD(SpiTestFixture, "Test instance registration lifecycle", "[hal][spi]")
+TEST_CASE_METHOD(SpiTestFixture, "Test open and close", "[hal][spi]")
 {
     WHEN("Invalid arguments are used")
     {
         THEN("The APIs report an argument error")
         {
-            CHECK(ezSpi_RegisterInstance(NULL, "spi_mock", NULL, NULL) == EZ_DRV_STATUS_ERR_ARG);
-            CHECK(ezSpi_RegisterInstance(&first, NULL, NULL, NULL) == EZ_DRV_STATUS_ERR_ARG);
-            CHECK(ezSpi_UnregisterInstance(NULL) == EZ_DRV_STATUS_ERR_ARG);
+            CHECK(ezSpi_Open(NULL, "spi_mock", OnEvent, NULL) == EZ_DRV_STATUS_ERR_ARG);
+            CHECK(ezSpi_Open(&first, NULL, OnEvent, NULL) == EZ_DRV_STATUS_ERR_ARG);
+            CHECK(ezSpi_Open(&first, "spi_mock", OnEvent, NULL) == EZ_DRV_STATUS_OK);
+            CHECK(ezSpi_Open(&first, "spi_mock", OnEvent, NULL) == EZ_DRV_STATUS_ERR_ARG);
+            CHECK(ezSpi_Close(NULL) == EZ_DRV_STATUS_ERR_ARG);
         }
     }
 
-    WHEN("A handle which was never bound is unregistered")
+    WHEN("A handle which was never opened is closed")
     {
-        THEN("The call succeeds and the handle stays unbound")
+        THEN("The call succeeds, the handle stays empty and the HW is not called")
         {
-            CHECK(ezSpi_UnregisterInstance(&first) == EZ_DRV_STATUS_OK);
+            CHECK(ezSpi_Close(&first) == EZ_DRV_STATUS_OK);
             CHECK(first.drv_handle.hw == NULL);
             CHECK(first.drv_handle.on_event == NULL);
             CHECK(first.drv_handle.ctx == NULL);
+            CHECK(HwDeinitialize_fake.call_count == 0U);
         }
     }
 
     WHEN("The target driver does not exist")
     {
-        THEN("The registration fails with driver-not-found")
+        THEN("The open fails with driver-not-found and the HW is not called")
         {
-            CHECK(ezSpi_RegisterInstance(&first, "unknown", OnEvent, NULL) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
+            CHECK(ezSpi_Open(&first, "unknown", OnEvent, NULL) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
+            CHECK(HwInitialize_fake.call_count == 0U);
+            CHECK(first.drv_handle.hw == NULL);
         }
     }
 
-    WHEN("A handle which is already bound is registered again")
+    WHEN("The HW driver has no initialize or deinitialize function (the peripheral is already configured)")
     {
-        int first_ctx = 0;
-        REQUIRE(ezSpi_RegisterInstance(&first, "spi_mock", OnEvent, &first_ctx) == EZ_DRV_STATUS_OK);
+        g_drv.interface.initialize = NULL;
+        g_drv.interface.deinitialize = NULL;
 
-        THEN("The registration is refused and the binding is unchanged")
+        THEN("The open only binds the handle, and the close only unbinds it")
         {
-            CHECK(ezSpi_RegisterInstance(&first, "spi_mock", NULL, NULL) == EZ_DRV_STATUS_ERR_ARG);
+            REQUIRE(ezSpi_Open(&first, "spi_mock", OnEvent, NULL) == EZ_DRV_STATUS_OK);
+            CHECK(first.drv_handle.hw == &g_drv);
+            CHECK(g_drv.open_count == 1U);
+            CHECK(HwInitialize_fake.call_count == 0U);
+            CHECK(ezSpi_Close(&first) == EZ_DRV_STATUS_OK);
+            CHECK(first.drv_handle.hw == NULL);
+            CHECK(g_drv.open_count == 0U);
+            CHECK(HwDeinitialize_fake.call_count == 0U);
+        }
+    }
+
+    WHEN("The HW driver has an initialize function but no deinitialize function")
+    {
+        g_drv.interface.deinitialize = NULL;
+
+        THEN("The close succeeds without a HW call")
+        {
+            REQUIRE(ezSpi_Open(&first, "spi_mock", OnEvent, NULL) == EZ_DRV_STATUS_OK);
+            CHECK(HwInitialize_fake.call_count == 1U);
+            CHECK(ezSpi_Close(&first) == EZ_DRV_STATUS_OK);
+            CHECK(HwDeinitialize_fake.call_count == 0U);
+        }
+    }
+
+    WHEN("The handle is opened")
+    {
+        int user_ctx = 0;
+        REQUIRE(ezSpi_Open(&first, "spi_mock", OnEvent, &user_ctx) == EZ_DRV_STATUS_OK);
+
+        THEN("The HW gets driver_h, once")
+        {
+            CHECK(HwInitialize_fake.call_count == 1U);
+            CHECK(HwInitialize_fake.arg0_val == &g_hw_token);
+        }
+
+        THEN("The handle stores the driver, the callback and the context, and the driver is idle")
+        {
             CHECK(first.drv_handle.hw == &g_drv);
             CHECK(first.drv_handle.on_event == OnEvent);
-            CHECK(first.drv_handle.ctx == &first_ctx);
+            CHECK(first.drv_handle.ctx == &user_ctx);
+            CHECK(g_drv.open_count == 1U);
+            CHECK(IsBusy() == false);
         }
 
-        THEN("It can be registered again after it is unregistered")
+        THEN("Opening it again is refused and the binding is unchanged")
         {
-            REQUIRE(ezSpi_UnregisterInstance(&first) == EZ_DRV_STATUS_OK);
-            CHECK(ezSpi_RegisterInstance(&first, "spi_mock", NULL, NULL) == EZ_DRV_STATUS_OK);
-            CHECK(first.drv_handle.on_event == NULL);
+            CHECK(ezSpi_Open(&first, "spi_mock", NULL, NULL) == EZ_DRV_STATUS_ERR_ARG);
+            CHECK(first.drv_handle.on_event == OnEvent);
+            CHECK(first.drv_handle.ctx == &user_ctx);
+            CHECK(HwInitialize_fake.call_count == 1U);
+            CHECK(g_drv.open_count == 1U);
         }
     }
 
-    WHEN("A handle with an operation in flight is registered again")
+    WHEN("The HW initialization fails")
     {
-        BindAndInit(&first);
+        HwInitialize_fake.return_val = EZ_DRV_STATUS_ERR_GENERIC;
+
+        THEN("The status is forwarded and nothing is bound")
+        {
+            CHECK(ezSpi_Open(&first, "spi_mock", OnEvent, NULL) == EZ_DRV_STATUS_ERR_GENERIC);
+            CHECK(first.drv_handle.hw == NULL);
+            CHECK(g_drv.open_count == 0U);
+            CHECK(IsBusy() == false);
+        }
+
+        THEN("The same handle can be opened again once the failure is gone")
+        {
+            CHECK(ezSpi_Open(&first, "spi_mock", OnEvent, NULL) == EZ_DRV_STATUS_ERR_GENERIC);
+            HwInitialize_fake.return_val = EZ_DRV_STATUS_OK;
+            CHECK(ezSpi_Open(&first, "spi_mock", OnEvent, NULL) == EZ_DRV_STATUS_OK);
+            CHECK(HwInitialize_fake.call_count == 2U);
+            CHECK(g_drv.open_count == 1U);
+        }
+    }
+
+    WHEN("A second handle is opened")
+    {
+        OpenHandle(&first);
+        REQUIRE(ezSpi_Open(&second, "spi_mock", OnEvent, NULL) == EZ_DRV_STATUS_OK);
+
+        THEN("The bus is not initialized again")
+        {
+            CHECK(HwInitialize_fake.call_count == 1U);
+            CHECK(g_drv.open_count == 2U);
+            CHECK(second.drv_handle.hw == &g_drv);
+        }
+    }
+
+    WHEN("A handle is opened while an operation is in flight")
+    {
+        OpenHandle(&first);
         HwTransmitAsync_fake.return_val = EZ_DRV_STATUS_OK;
         REQUIRE(ezSpi_TransmitAsync(&first, g_buf, sizeof(g_buf)) == EZ_DRV_STATUS_OK);
 
-        THEN("The registration is refused and the operation is not disturbed")
+        THEN("The open is refused and the operation is not disturbed")
         {
-            CHECK(ezSpi_RegisterInstance(&first, "spi_mock", NULL, NULL) == EZ_DRV_STATUS_ERR_ARG);
+            CHECK(ezSpi_Open(&second, "spi_mock", OnEvent, NULL) == EZ_DRV_STATUS_BUSY);
+            CHECK(second.drv_handle.hw == NULL);
             CHECK(IsBusy() == true);
             SimulateIsrDone(EZ_SPI_EVENT_CMPLT);
             CHECK(OnEvent_fake.call_count == 1U);
         }
     }
 
-    WHEN("A handle is registered")
+    WHEN("The maximum number of handles is open")
     {
-        int user_ctx = 0;
-        REQUIRE(ezSpi_RegisterInstance(&first, "spi_mock", OnEvent, &user_ctx) == EZ_DRV_STATUS_OK);
+        g_drv.open_count = UINT8_MAX;
 
-        THEN("It stores the driver, the callback and the context")
+        THEN("The open fails and the HW is not called")
         {
-            CHECK(first.drv_handle.hw == &g_drv);
-            CHECK(first.drv_handle.on_event == OnEvent);
-            CHECK(first.drv_handle.ctx == &user_ctx);
-        }
-
-        AND_WHEN("It is unregistered")
-        {
-            THEN("Everything is cleared")
-            {
-                CHECK(ezSpi_UnregisterInstance(&first) == EZ_DRV_STATUS_OK);
-                CHECK(first.drv_handle.hw == NULL);
-                CHECK(first.drv_handle.on_event == NULL);
-                CHECK(first.drv_handle.ctx == NULL);
-            }
+            CHECK(ezSpi_Open(&first, "spi_mock", OnEvent, NULL) == EZ_DRV_STATUS_ERR_GENERIC);
+            CHECK(HwInitialize_fake.call_count == 0U);
+            CHECK(g_drv.open_count == UINT8_MAX);
         }
     }
 
-    WHEN("A handle with an operation in flight is unregistered")
+    WHEN("The only open handle is closed")
     {
-        BindAndInit(&first);
+        OpenHandle(&first);
+
+        THEN("The bus is released and everything is cleared")
+        {
+            CHECK(ezSpi_Close(&first) == EZ_DRV_STATUS_OK);
+            CHECK(HwDeinitialize_fake.call_count == 1U);
+            CHECK(HwDeinitialize_fake.arg0_val == &g_hw_token);
+            CHECK(first.drv_handle.hw == NULL);
+            CHECK(first.drv_handle.on_event == NULL);
+            CHECK(first.drv_handle.ctx == NULL);
+            CHECK(g_drv.open_count == 0U);
+        }
+
+        THEN("The bus can be opened again afterwards and is initialized again")
+        {
+            REQUIRE(ezSpi_Close(&first) == EZ_DRV_STATUS_OK);
+            CHECK(ezSpi_Open(&first, "spi_mock", OnEvent, NULL) == EZ_DRV_STATUS_OK);
+            CHECK(HwInitialize_fake.call_count == 2U);
+        }
+    }
+
+    WHEN("One of two open handles is closed")
+    {
+        OpenHandle(&first);
+        OpenHandle(&second);
+        REQUIRE(ezSpi_Close(&first) == EZ_DRV_STATUS_OK);
+
+        THEN("The bus stays up and the other handle keeps working")
+        {
+            CHECK(HwDeinitialize_fake.call_count == 0U);
+            CHECK(g_drv.open_count == 1U);
+            HwTransmitSync_fake.return_val = EZ_DRV_STATUS_OK;
+            CHECK(ezSpi_TransmitSync(&second, g_buf, 1, 5) == EZ_DRV_STATUS_OK);
+        }
+
+        THEN("Closing the other one releases the bus")
+        {
+            CHECK(ezSpi_Close(&second) == EZ_DRV_STATUS_OK);
+            CHECK(HwDeinitialize_fake.call_count == 1U);
+            CHECK(g_drv.open_count == 0U);
+        }
+    }
+
+    WHEN("A handle with an operation in flight is closed")
+    {
+        OpenHandle(&first);
         HwTransmitAsync_fake.return_val = EZ_DRV_STATUS_OK;
         REQUIRE(ezSpi_TransmitAsync(&first, g_buf, sizeof(g_buf)) == EZ_DRV_STATUS_OK);
 
-        THEN("The unregistration is refused until the operation ends")
+        THEN("The close is refused until the operation ends")
         {
-            CHECK(ezSpi_UnregisterInstance(&first) == EZ_DRV_STATUS_BUSY);
+            CHECK(ezSpi_Close(&first) == EZ_DRV_STATUS_BUSY);
             CHECK(first.drv_handle.hw == &g_drv);
+            CHECK(HwDeinitialize_fake.call_count == 0U);
             SimulateIsrDone(EZ_SPI_EVENT_CMPLT);
-            CHECK(ezSpi_UnregisterInstance(&first) == EZ_DRV_STATUS_OK);
+            CHECK(ezSpi_Close(&first) == EZ_DRV_STATUS_OK);
         }
     }
 
-    WHEN("Another handle is unregistered while a handle has an operation in flight")
+    WHEN("Another handle is closed while a handle has an operation in flight")
     {
-        BindAndInit(&first);
-        REQUIRE(ezSpi_RegisterInstance(&second, "spi_mock", OnEvent, NULL) == EZ_DRV_STATUS_OK);
+        OpenHandle(&first);
+        OpenHandle(&second);
         HwTransmitAsync_fake.return_val = EZ_DRV_STATUS_OK;
         REQUIRE(ezSpi_TransmitAsync(&first, g_buf, sizeof(g_buf)) == EZ_DRV_STATUS_OK);
 
         THEN("It is allowed and does not disturb the operation")
         {
-            CHECK(ezSpi_UnregisterInstance(&second) == EZ_DRV_STATUS_OK);
+            CHECK(ezSpi_Close(&second) == EZ_DRV_STATUS_OK);
             CHECK(IsBusy() == true);
+            CHECK(HwDeinitialize_fake.call_count == 0U);
+        }
+    }
+
+    WHEN("The HW driver fails to release the bus")
+    {
+        OpenHandle(&first);
+        HwDeinitialize_fake.return_val = EZ_DRV_STATUS_ERR_GENERIC;
+
+        THEN("The status is returned and the handle is closed")
+        {
+            CHECK(ezSpi_Close(&first) == EZ_DRV_STATUS_ERR_GENERIC);
+            CHECK(first.drv_handle.hw == NULL);
+            CHECK(g_drv.open_count == 0U);
+        }
+    }
+
+    WHEN("Two handles start async operations one after the other")
+    {
+        int ctx_first = 0;
+        int ctx_second = 0;
+        HwTransmitAsync_fake.return_val = EZ_DRV_STATUS_OK;
+        REQUIRE(ezSpi_Open(&first, "spi_mock", OnEvent, &ctx_first) == EZ_DRV_STATUS_OK);
+        REQUIRE(ezSpi_Open(&second, "spi_mock", OnEvent, &ctx_second) == EZ_DRV_STATUS_OK);
+
+        THEN("The end event goes to the callback of the handle which started the operation")
+        {
+            REQUIRE(ezSpi_TransmitAsync(&second, g_buf, 1) == EZ_DRV_STATUS_OK);
+            SimulateIsrDone(EZ_SPI_EVENT_CMPLT);
+            REQUIRE(OnEvent_fake.call_count == 1U);
+            CHECK(OnEvent_fake.arg0_val == &ctx_second);
         }
     }
 }
 
 
-TEST_CASE_METHOD(SpiTestFixture, "Test initialization", "[hal][spi]")
+TEST_CASE_METHOD(SpiTestFixture, "Test operations require an open handle", "[hal][spi]")
 {
-    WHEN("The handle is NULL or not registered")
+    WHEN("The handle was never opened")
     {
-        THEN("The API reports driver-not-found")
+        THEN("Every operation reports driver-not-found and the HW is not called")
         {
-            CHECK(ezSpi_Initialize(NULL, &config) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
-            CHECK(ezSpi_Initialize(&first, &config) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
-        }
-    }
-
-    WHEN("The config is NULL")
-    {
-        REQUIRE(ezSpi_RegisterInstance(&first, "spi_mock", OnEvent, NULL) == EZ_DRV_STATUS_OK);
-
-        THEN("The API reports an argument error and the HW is not called")
-        {
-            CHECK(ezSpi_Initialize(&first, NULL) == EZ_DRV_STATUS_ERR_ARG);
-            CHECK(HwInitialize_fake.call_count == 0U);
-        }
-    }
-
-    WHEN("The HW driver has no initialize function")
-    {
-        g_drv.interface.initialize = NULL;
-        REQUIRE(ezSpi_RegisterInstance(&first, "spi_mock", OnEvent, NULL) == EZ_DRV_STATUS_OK);
-
-        THEN("The API reports interface-not-exist and releases the driver")
-        {
-            CHECK(ezSpi_Initialize(&first, &config) == EZ_DRV_STATUS_ERR_INF_NOT_EXIST);
-            CHECK(g_drv.initialized == false);
-            CHECK(IsBusy() == false);
-        }
-    }
-
-    WHEN("The HW initialization fails")
-    {
-        REQUIRE(ezSpi_RegisterInstance(&first, "spi_mock", OnEvent, NULL) == EZ_DRV_STATUS_OK);
-        HwInitialize_fake.return_val = EZ_DRV_STATUS_ERR_GENERIC;
-
-        THEN("The status is forwarded, the driver stays not initialized and is released")
-        {
-            CHECK(ezSpi_Initialize(&first, &config) == EZ_DRV_STATUS_ERR_GENERIC);
-            CHECK(g_drv.initialized == false);
-            CHECK(IsBusy() == false);
-        }
-    }
-
-    WHEN("The HW initialization succeeds")
-    {
-        REQUIRE(ezSpi_RegisterInstance(&first, "spi_mock", OnEvent, NULL) == EZ_DRV_STATUS_OK);
-        HwInitialize_fake.return_val = EZ_DRV_STATUS_OK;
-
-        THEN("The HW gets driver_h and the config, and the driver is initialized and idle")
-        {
-            CHECK(ezSpi_Initialize(&first, &config) == EZ_DRV_STATUS_OK);
-            CHECK(HwInitialize_fake.arg0_val == &g_hw_token);
-            CHECK(HwInitialize_fake.arg1_val == &config);
-            CHECK(g_drv.initialized == true);
-            CHECK(IsBusy() == false);
-        }
-    }
-
-    WHEN("The driver is initialized and a second initialization fails")
-    {
-        BindAndInit(&first);
-        HwInitialize_fake.return_val = EZ_DRV_STATUS_ERR_GENERIC;
-
-        THEN("The failure is returned and the driver is not initialized anymore")
-        {
-            CHECK(ezSpi_Initialize(&first, &config) == EZ_DRV_STATUS_ERR_GENERIC);
-            CHECK(g_drv.initialized == false);
-            CHECK(IsBusy() == false);
-            CHECK(ezSpi_ChipSelect(&first, true) == EZ_DRV_STATUS_ERR_NOT_INITIALIZED);
-        }
-    }
-
-    WHEN("The driver is initialized and the HW initialize function is removed")
-    {
-        BindAndInit(&first);
-        g_drv.interface.initialize = NULL;
-
-        THEN("The initialization reports interface-not-exist and the driver is not initialized anymore")
-        {
-            CHECK(ezSpi_Initialize(&first, &config) == EZ_DRV_STATUS_ERR_INF_NOT_EXIST);
-            CHECK(g_drv.initialized == false);
-        }
-    }
-}
-
-
-TEST_CASE_METHOD(SpiTestFixture, "Test operations require initialization", "[hal][spi]")
-{
-    REQUIRE(ezSpi_RegisterInstance(&first, "spi_mock", OnEvent, NULL) == EZ_DRV_STATUS_OK);
-
-    WHEN("The driver is not initialized")
-    {
-        THEN("Every operation reports not-initialized and the HW is not called")
-        {
-            CHECK(ezSpi_TransferSync(&first, g_buf, 1, g_buf, 1, 10) == EZ_DRV_STATUS_ERR_NOT_INITIALIZED);
-            CHECK(ezSpi_TransferAsync(&first, g_buf, 1, g_buf, 1) == EZ_DRV_STATUS_ERR_NOT_INITIALIZED);
-            CHECK(ezSpi_TransmitSync(&first, g_buf, 1, 10) == EZ_DRV_STATUS_ERR_NOT_INITIALIZED);
-            CHECK(ezSpi_TransmitAsync(&first, g_buf, 1) == EZ_DRV_STATUS_ERR_NOT_INITIALIZED);
-            CHECK(ezSpi_ReceiveSync(&first, g_buf, 1, 10) == EZ_DRV_STATUS_ERR_NOT_INITIALIZED);
-            CHECK(ezSpi_ReceiveAsync(&first, g_buf, 1) == EZ_DRV_STATUS_ERR_NOT_INITIALIZED);
-            CHECK(ezSpi_ChipSelect(&first, true) == EZ_DRV_STATUS_ERR_NOT_INITIALIZED);
+            CHECK(ezSpi_TransferSync(&first, g_buf, 1, g_buf, 1, 10) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
+            CHECK(ezSpi_TransferAsync(&first, g_buf, 1, g_buf, 1) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
+            CHECK(ezSpi_TransmitSync(&first, g_buf, 1, 10) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
+            CHECK(ezSpi_TransmitAsync(&first, g_buf, 1) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
+            CHECK(ezSpi_ReceiveSync(&first, g_buf, 1, 10) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
+            CHECK(ezSpi_ReceiveAsync(&first, g_buf, 1) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
             CHECK(HwTransferSync_fake.call_count == 0U);
             CHECK(HwTransmitAsync_fake.call_count == 0U);
             CHECK(IsBusy() == false);
         }
     }
 
-    WHEN("The handle is NULL or not registered")
+    WHEN("The handle is NULL")
     {
         THEN("Every operation reports driver-not-found")
         {
             CHECK(ezSpi_TransferSync(NULL, g_buf, 1, g_buf, 1, 10) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
-            CHECK(ezSpi_ChipSelect(&second, true) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
+            CHECK(ezSpi_TransmitAsync(NULL, g_buf, 1) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
+        }
+    }
+
+    WHEN("The handle was closed")
+    {
+        OpenHandle(&first);
+        REQUIRE(ezSpi_Close(&first) == EZ_DRV_STATUS_OK);
+
+        THEN("Operations report driver-not-found again")
+        {
+            CHECK(ezSpi_TransmitSync(&first, g_buf, 1, 10) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
+            CHECK(HwTransmitSync_fake.call_count == 0U);
+        }
+    }
+}
+
+
+TEST_CASE_METHOD(SpiTestFixture, "Test bus lock", "[hal][spi]")
+{
+    OpenHandle(&first);
+    OpenHandle(&second);
+    HwTransmitSync_fake.return_val = EZ_DRV_STATUS_OK;
+
+    WHEN("The HW driver has no lock functions (no RTOS)")
+    {
+        THEN("The lock is a try-lock which ignores the timeout")
+        {
+            CHECK(ezSpi_LockBus(&first, 1000U) == EZ_DRV_STATUS_OK);
+            CHECK(g_drv.lock_owner == &first.drv_handle);
+            CHECK(ezSpi_LockBus(&second, 1000U) == EZ_DRV_STATUS_BUSY);
+            CHECK(g_drv.lock_owner == &first.drv_handle);
+            CHECK(ezSpi_UnlockBus(&first) == EZ_DRV_STATUS_OK);
+            CHECK(g_drv.lock_owner == NULL);
+            CHECK(ezSpi_LockBus(&second, 0U) == EZ_DRV_STATUS_OK);
+            CHECK(g_drv.lock_owner == &second.drv_handle);
+        }
+    }
+
+    WHEN("The HW driver has lock functions")
+    {
+        g_drv.interface.lock = HwLock;
+        g_drv.interface.unlock = HwUnlock;
+
+        THEN("The HW lock gets the timeout and the handle becomes the owner")
+        {
+            CHECK(ezSpi_LockBus(&first, 25U) == EZ_DRV_STATUS_OK);
+            CHECK(HwLock_fake.call_count == 1U);
+            CHECK(HwLock_fake.arg0_val == &g_hw_token);
+            CHECK(HwLock_fake.arg1_val == 25U);
+            CHECK(g_drv.lock_owner == &first.drv_handle);
+        }
+
+        THEN("A timeout is forwarded and nobody owns the bus")
+        {
+            HwLock_fake.return_val = EZ_DRV_STATUS_TIMEOUT;
+            CHECK(ezSpi_LockBus(&second, 25U) == EZ_DRV_STATUS_TIMEOUT);
+            CHECK(g_drv.lock_owner == NULL);
+        }
+
+        THEN("The unlock frees the bus, then calls the HW unlock")
+        {
+            REQUIRE(ezSpi_LockBus(&first, 25U) == EZ_DRV_STATUS_OK);
+            CHECK(ezSpi_UnlockBus(&first) == EZ_DRV_STATUS_OK);
+            CHECK(HwUnlock_fake.call_count == 1U);
+            CHECK(HwUnlock_fake.arg0_val == &g_hw_token);
+            CHECK(g_drv.lock_owner == NULL);
+        }
+
+        THEN("A failing HW unlock is forwarded, the bus is free anyway")
+        {
+            REQUIRE(ezSpi_LockBus(&first, 25U) == EZ_DRV_STATUS_OK);
+            HwUnlock_fake.return_val = EZ_DRV_STATUS_ERR_GENERIC;
+            CHECK(ezSpi_UnlockBus(&first) == EZ_DRV_STATUS_ERR_GENERIC);
+            CHECK(g_drv.lock_owner == NULL);
+        }
+
+        THEN("Closing the holder unlocks the bus")
+        {
+            REQUIRE(ezSpi_LockBus(&first, 25U) == EZ_DRV_STATUS_OK);
+            CHECK(ezSpi_Close(&first) == EZ_DRV_STATUS_OK);
+            CHECK(HwUnlock_fake.call_count == 1U);
+            CHECK(g_drv.lock_owner == NULL);
+        }
+
+        THEN("A failing HW unlock on close is logged and the close still succeeds")
+        {
+            REQUIRE(ezSpi_LockBus(&first, 25U) == EZ_DRV_STATUS_OK);
+            HwUnlock_fake.return_val = EZ_DRV_STATUS_ERR_GENERIC;
+            CHECK(ezSpi_Close(&first) == EZ_DRV_STATUS_OK);
+            CHECK(first.drv_handle.hw == NULL);
+        }
+    }
+
+    WHEN("The lock is used wrongly")
+    {
+        THEN("The APIs report the matching error")
+        {
+            CHECK(ezSpi_LockBus(NULL, 10U) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
+            CHECK(ezSpi_UnlockBus(NULL) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
+            ezSpiHandle_t never_opened;
+            memset(&never_opened, 0, sizeof(never_opened));
+            CHECK(ezSpi_LockBus(&never_opened, 10U) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
+            CHECK(ezSpi_UnlockBus(&never_opened) == EZ_DRV_STATUS_ERR_DRV_NOT_FOUND);
+
+            CHECK(ezSpi_UnlockBus(&first) == EZ_DRV_STATUS_ERR_ARG);
+            REQUIRE(ezSpi_LockBus(&first, 10U) == EZ_DRV_STATUS_OK);
+            CHECK(ezSpi_LockBus(&first, 10U) == EZ_DRV_STATUS_ERR_ARG);
+            CHECK(ezSpi_UnlockBus(&second) == EZ_DRV_STATUS_ERR_ARG);
+            CHECK(g_drv.lock_owner == &first.drv_handle);
+        }
+    }
+
+    WHEN("A handle holds the bus")
+    {
+        REQUIRE(ezSpi_LockBus(&first, 10U) == EZ_DRV_STATUS_OK);
+
+        THEN("Transfers of another handle report busy and the HW is not called")
+        {
+            CHECK(ezSpi_TransmitSync(&second, g_buf, 1, 5) == EZ_DRV_STATUS_BUSY);
+            CHECK(ezSpi_TransmitAsync(&second, g_buf, 1) == EZ_DRV_STATUS_BUSY);
+            CHECK(ezSpi_TransferSync(&second, g_buf, 1, g_buf, 1, 5) == EZ_DRV_STATUS_BUSY);
+            CHECK(ezSpi_ReceiveSync(&second, g_buf, 1, 5) == EZ_DRV_STATUS_BUSY);
+            CHECK(HwTransmitSync_fake.call_count == 0U);
+            CHECK(HwTransmitAsync_fake.call_count == 0U);
+            CHECK(IsBusy() == false);
+        }
+
+        THEN("The holder can transfer as many times as it wants")
+        {
+            CHECK(ezSpi_TransmitSync(&first, g_buf, 1, 5) == EZ_DRV_STATUS_OK);
+            CHECK(ezSpi_TransmitSync(&first, g_buf, 1, 5) == EZ_DRV_STATUS_OK);
+            CHECK(HwTransmitSync_fake.call_count == 2U);
+        }
+
+        THEN("The other handle can transfer after the unlock")
+        {
+            REQUIRE(ezSpi_UnlockBus(&first) == EZ_DRV_STATUS_OK);
+            CHECK(ezSpi_TransmitSync(&second, g_buf, 1, 5) == EZ_DRV_STATUS_OK);
+        }
+
+        THEN("The lock survives an async operation of the holder")
+        {
+            HwTransmitAsync_fake.return_val = EZ_DRV_STATUS_OK;
+            REQUIRE(ezSpi_TransmitAsync(&first, g_buf, 1) == EZ_DRV_STATUS_OK);
+            SimulateIsrDone(EZ_SPI_EVENT_CMPLT);
+            CHECK(g_drv.lock_owner == &first.drv_handle);
+            CHECK(ezSpi_TransmitSync(&second, g_buf, 1, 5) == EZ_DRV_STATUS_BUSY);
+        }
+
+        THEN("Closing the holder frees the bus also without HW lock functions")
+        {
+            CHECK(ezSpi_Close(&first) == EZ_DRV_STATUS_OK);
+            CHECK(g_drv.lock_owner == NULL);
+            CHECK(ezSpi_TransmitSync(&second, g_buf, 1, 5) == EZ_DRV_STATUS_OK);
         }
     }
 }
@@ -522,7 +769,7 @@ TEST_CASE_METHOD(SpiTestFixture, "Test operations require initialization", "[hal
 
 TEST_CASE_METHOD(SpiTestFixture, "Test sync operations", "[hal][spi]")
 {
-    BindAndInit(&first);
+    OpenHandle(&first);
 
     WHEN("TransferSync is called")
     {
@@ -543,11 +790,10 @@ TEST_CASE_METHOD(SpiTestFixture, "Test sync operations", "[hal][spi]")
         }
     }
 
-    WHEN("TransmitSync, ReceiveSync and ChipSelect are called")
+    WHEN("TransmitSync and ReceiveSync are called")
     {
         HwTransmitSync_fake.return_val = EZ_DRV_STATUS_OK;
         HwReceiveSync_fake.return_val = EZ_DRV_STATUS_OK;
-        HwChipSelect_fake.return_val = EZ_DRV_STATUS_OK;
 
         THEN("The arguments are forwarded and the driver is released each time")
         {
@@ -561,10 +807,6 @@ TEST_CASE_METHOD(SpiTestFixture, "Test sync operations", "[hal][spi]")
             CHECK(HwReceiveSync_fake.arg1_val == g_buf);
             CHECK(HwReceiveSync_fake.arg2_val == 2U);
             CHECK(HwReceiveSync_fake.arg3_val == 30U);
-            CHECK(IsBusy() == false);
-
-            CHECK(ezSpi_ChipSelect(&first, true) == EZ_DRV_STATUS_OK);
-            CHECK(HwChipSelect_fake.arg1_val == true);
             CHECK(IsBusy() == false);
         }
     }
@@ -585,7 +827,7 @@ TEST_CASE_METHOD(SpiTestFixture, "Test sync operations", "[hal][spi]")
 
     WHEN("Another handle has an operation in flight")
     {
-        REQUIRE(ezSpi_RegisterInstance(&second, "spi_mock", OnEvent, NULL) == EZ_DRV_STATUS_OK);
+        OpenHandle(&second);
         HwTransmitAsync_fake.return_val = EZ_DRV_STATUS_OK;
         REQUIRE(ezSpi_TransmitAsync(&second, g_buf, 1) == EZ_DRV_STATUS_OK);
 
@@ -602,7 +844,7 @@ TEST_CASE_METHOD(SpiTestFixture, "Test sync operations", "[hal][spi]")
 TEST_CASE_METHOD(SpiTestFixture, "Test async operations", "[hal][spi]")
 {
     int user_ctx = 0;
-    BindAndInit(&first, OnEvent, &user_ctx);
+    OpenHandle(&first, OnEvent, &user_ctx);
     HwTransferAsync_fake.return_val = EZ_DRV_STATUS_OK;
     HwTransmitAsync_fake.return_val = EZ_DRV_STATUS_OK;
     HwReceiveAsync_fake.return_val = EZ_DRV_STATUS_OK;
@@ -627,8 +869,7 @@ TEST_CASE_METHOD(SpiTestFixture, "Test async operations", "[hal][spi]")
             CHECK(ezSpi_TransmitAsync(&first, g_buf, 1) == EZ_DRV_STATUS_BUSY);
             CHECK(ezSpi_ReceiveAsync(&first, g_buf, 1) == EZ_DRV_STATUS_BUSY);
             CHECK(ezSpi_TransferSync(&first, g_buf, 1, g_buf, 1, 5) == EZ_DRV_STATUS_BUSY);
-            CHECK(ezSpi_ChipSelect(&first, true) == EZ_DRV_STATUS_BUSY);
-            CHECK(ezSpi_Initialize(&first, &config) == EZ_DRV_STATUS_BUSY);
+            CHECK(ezSpi_Open(&second, "spi_mock", OnEvent, NULL) == EZ_DRV_STATUS_BUSY);
             CHECK(HwTransmitAsync_fake.call_count == 0U);
             CHECK(IsBusy() == true);
         }
@@ -700,7 +941,7 @@ TEST_CASE_METHOD(SpiTestFixture, "Test async operations", "[hal][spi]")
     {
         ezSpiHandle_t quiet;
         memset(&quiet, 0, sizeof(quiet));
-        REQUIRE(ezSpi_RegisterInstance(&quiet, "spi_mock", NULL, NULL) == EZ_DRV_STATUS_OK);
+        REQUIRE(ezSpi_Open(&quiet, "spi_mock", NULL, NULL) == EZ_DRV_STATUS_OK);
         REQUIRE(ezSpi_TransmitAsync(&quiet, g_buf, 1) == EZ_DRV_STATUS_OK);
         SimulateIsrDone(EZ_SPI_EVENT_ERR);
 
@@ -726,9 +967,7 @@ TEST_CASE_METHOD(SpiTestFixture, "Test async operations", "[hal][spi]")
 TEST_CASE_METHOD(SpiTestFixture, "Test events only belong to async operations", "[hal][spi]")
 {
     int user_ctx = 0;
-    REQUIRE(ezSpi_RegisterInstance(&first, "spi_mock", OnEvent, &user_ctx) == EZ_DRV_STATUS_OK);
-    HwInitialize_fake.return_val = EZ_DRV_STATUS_OK;
-    REQUIRE(ezSpi_Initialize(&first, &config) == EZ_DRV_STATUS_OK);
+    REQUIRE(ezSpi_Open(&first, "spi_mock", OnEvent, &user_ctx) == EZ_DRV_STATUS_OK);
 
     WHEN("A sync HW function reports PROGRESS and DONE events")
     {

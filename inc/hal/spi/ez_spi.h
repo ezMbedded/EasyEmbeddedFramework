@@ -17,15 +17,37 @@
  *  @date   24.08.2025
  *  @brief  Hardware Abstraction Layer for SPI communication
  *
- *  @details The user binds an ezSpiHandle_t to a HW driver by name. All the
- *           operations of a handle go through the HW driver registered with
+ *  @details A HW driver is one SPI bus. A handle is one user of that bus, for
+ *           example the driver of one device. The user opens a handle with
+ *           ezSpi_Open(), which binds it to the HW driver by name and makes the bus
+ *           ready in one step, and closes it with ezSpi_Close(). All the operations
+ *           of a handle go through the HW driver registered with
  *           ezSpi_SystemRegisterHwDriver().
  *
- *           Concurrency: this component does not provide mutual exclusion.
- *           The caller must serialize the calls on the same HW driver (mutex
- *           or semaphore of the upper layer). A call made while another
- *           operation is in flight returns EZ_DRV_STATUS_BUSY.
- *
+ *           Shared bus: several handles can be open on the same HW driver, for
+ *           example one per device on the bus. They all share the configuration of
+ *           the bus (clock, mode, bit order, frame size), which belongs to the board
+ *           and not to the devices: the HW driver implementation puts it in
+ *           ezSpiDriver::config before it registers the driver, and applies it in its
+ *           initialize function. A port whose peripheral is already configured (for
+ *           example by a generated start-up code) has no initialize function: an
+ *           ezSpi_Open() then only binds the handle. The bus is initialized by the
+ *           first ezSpi_Open() and released by the last ezSpi_Close(). The component
+ *           counts the open handles. An ezSpi_Open() which fails leaves nothing
+ *           behind, so the call can simply be repeated. The chip select of a device
+ *           is not part of this component: the device driver controls it, for example
+ *           with the GPIO component.
+
+ *           Concurrency: this component does not provide mutual exclusion for
+ *           its calls. The caller must serialize the calls on the same HW driver.
+ *           A call made while any handle of the same HW driver has an operation
+ *           in flight returns EZ_DRV_STATUS_BUSY. A device which needs several
+ *           transfers in a row (chip select low, command, data, chip select high)
+ *           reserves the bus for the whole sequence with ezSpi_LockBus() and
+ *           ezSpi_UnlockBus(), so that the handles of other tasks or modules
+ *           cannot transfer in between. The HW driver provides the waiting (for
+ *           example an RTOS mutex). Without an RTOS the lock is a try-lock.
+
  *           Sync operations return when the transfer is done. Async
  *           operations return as soon as the transfer is started. The HW
  *           driver reports the end of an async operation by calling
@@ -128,11 +150,14 @@ typedef enum
 } EZ_SPI_EVENT;
 
 
-/** @brief SPI configuration
+/** @brief SPI bus configuration
  *
- *  @details Passed by pointer to the HW initialize function, unchanged. The
- *           SPI component does not check the values or copy the structure.
- *           The HW driver decides which values it supports.
+ *  @details Member of ezSpiDriver (config). The HW driver implementation fills it
+ *           before ezSpi_SystemRegisterHwDriver() and applies it in its initialize
+ *           function. The SPI component does not read, check or copy it. All
+ *           handles open on the same HW driver share it. The HW driver decides
+ *           which values it supports, and may ignore the structure when the
+ *           peripheral is configured elsewhere.
  */
 typedef struct
 {
@@ -144,14 +169,39 @@ typedef struct
 } ezSpiConfig_t;
 
 
-/** @brief Initialize the SPI peripheral. Called by ezSpi_Initialize().
+/** @brief Initialize the bus of the HW driver. Called by ezSpi_Open() for the first open handle.
  *
- *  @details Synchronous: the returned status is passed back to the caller.
- *           The SPI component adds no wait. Whether the function blocks is up
- *           to the HW driver. The driver is marked initialized only when the
- *           function returns EZ_DRV_STATUS_OK.
+ *  @details Optional: without it, the peripheral is considered ready and
+ *           ezSpi_Open() only binds the handle. Synchronous: the returned status is
+ *           passed back to the caller. The SPI component adds no wait. Whether the
+ *           function blocks is up to the HW driver. Not called again until every
+ *           handle is closed. The HW driver reads the configuration from its own
+ *           ezSpiDriver::config.
  */
-typedef EZ_DRV_STATUS (*ezHwSpi_Initialize)(void *driver_h, ezSpiConfig_t *config);
+typedef EZ_DRV_STATUS (*ezHwSpi_Initialize)(void *driver_h);
+
+/** @brief Release the bus of the HW driver. Called by ezSpi_Close() for the last open handle.
+ *
+ *  @details Optional: without it, nothing is released. Synchronous: the returned
+ *           status is passed back to the caller.
+ */
+typedef EZ_DRV_STATUS (*ezHwSpi_Deinitialize)(void *driver_h);
+
+/** @brief Take the bus for the caller. Called by ezSpi_LockBus().
+ *
+ *  @details Blocking, task context only. The HW driver waits up to
+ *           timeout_millis until the bus is free, for example on an RTOS mutex.
+ *           Return EZ_DRV_STATUS_OK when the bus is taken, EZ_DRV_STATUS_TIMEOUT
+ *           when it was not free in time. A HW driver without an RTOS leaves lock
+ *           and unlock NULL, see ezSpi_LockBus().
+ */
+typedef EZ_DRV_STATUS (*ezHwSpi_Lock)(void *driver_h, uint32_t timeout_millis);
+
+/** @brief Give the bus back. Called by ezSpi_UnlockBus().
+ *
+ *  @details Synchronous. It is called from the task which took the bus.
+ */
+typedef EZ_DRV_STATUS (*ezHwSpi_Unlock)(void *driver_h);
 
 /** @brief Transmit and receive at the same time, return when done. Called by ezSpi_TransferSync().
  *
@@ -216,19 +266,15 @@ typedef EZ_DRV_STATUS (*ezHwSpi_ReceiveAsync)(void *driver_h,
                                               uint8_t *rx_data,
                                               size_t length);
 
-/** @brief Control the chip select line, return when done. Called by ezSpi_ChipSelect().
- *
- *  @details Synchronous: return the final status. select is true to select
- *           the device, false to deselect it.
- */
-typedef EZ_DRV_STATUS (*ezHwSpi_ChipSelect)(void *driver_h,
-                                            bool select);
-
 
 /** @brief HW API provided by the HW driver. Unused functions can be NULL.
  *
  *  @details A NULL function makes the matching ezSpi_xxx() return
- *           EZ_DRV_STATUS_ERR_INF_NOT_EXIST. The HW functions are called with
+ *           EZ_DRV_STATUS_ERR_INF_NOT_EXIST, except initialize, deinitialize, lock and
+ *           unlock, which are optional: without initialize and deinitialize the
+ *           peripheral is considered ready (already configured) and
+ *           ezSpi_Open() only binds the handle. lock and unlock come as a pair, see
+ *           ezSpi_SystemRegisterHwDriver(). The HW functions are called with
  *           driver_h as the first argument.
  *
  *           The buffer pointers and lengths are not checked by the SPI
@@ -245,14 +291,16 @@ typedef EZ_DRV_STATUS (*ezHwSpi_ChipSelect)(void *driver_h,
 struct ezHwSpiInterface
 {
     void                   *driver_h;       /**< Opaque pointer of the HW driver, passed to every function below */
-    ezHwSpi_Initialize     initialize;      /**< Initialize the SPI peripheral (synchronous) */
+    ezHwSpi_Initialize     initialize;      /**< Initialize the bus, for the first open handle (synchronous). NULL: already configured */
+    ezHwSpi_Deinitialize   deinitialize;    /**< Release the bus, for the last closed handle (synchronous). NULL: nothing to release */
+    ezHwSpi_Lock           lock;            /**< Take the bus, waits (blocking). NULL: no RTOS, ezSpi_LockBus() is a try-lock */
+    ezHwSpi_Unlock         unlock;          /**< Give the bus back. NULL together with lock */
     ezHwSpi_TransferSync   transfer_sync;   /**< Transmit and receive at the same time (synchronous) */
     ezHwSpi_TransferAsync  transfer_async;  /**< Transmit and receive at the same time (asynchronous) */
     ezHwSpi_TransmitSync   transmit_sync;   /**< Transmit (synchronous) */
     ezHwSpi_TransmitAsync  transmit_async;  /**< Transmit (asynchronous) */
     ezHwSpi_ReceiveSync    receive_sync;    /**< Receive (synchronous) */
     ezHwSpi_ReceiveAsync   receive_async;   /**< Receive (asynchronous) */
-    ezHwSpi_ChipSelect     chip_select;     /**< Control the chip select line (synchronous) */
 };
 
 
@@ -261,30 +309,32 @@ struct ezHwSpiInterface
  *  @details base.name must be set before ezSpi_SystemRegisterHwDriver().
  *           The driver is linked into the list of registered drivers, so its
  *           memory (static storage, no malloc) must stay valid while it is
- *           registered. ezSpi_SystemRegisterHwDriver() resets base.state,
- *           base.user and initialized.
+ *           registered. config must be filled before ezSpi_SystemRegisterHwDriver().
+ *           ezSpi_SystemRegisterHwDriver() resets base.state, base.user, open_count
+ *           and lock_owner, and keeps config.
  */
 struct ezSpiDriver
 {
     struct Node                 ll_node;     /**< Node to link to the list of HW drivers */
     struct ezDrvBase            base;        /**< Common data of driver: name, state and the handle in use */
     struct ezHwSpiInterface     interface;   /**< HW API, see ezHwSpiInterface */
-    bool                        initialized; /**< true after ezSpi_Initialize() succeeded. Reset to false on register, unregister and when ezSpi_Initialize() fails */
+    ezSpiConfig_t               config;      /**< Configuration of the bus, filled by the HW driver implementation before registration. Not used by the SPI component */
+    uint8_t                     open_count;  /**< Number of handles open on this bus. The bus is initialized while it is not 0. Reset to 0 on register */
+    struct ezDrvHandle * volatile lock_owner; /**< Handle which holds the bus lock, NULL if free. Reset to NULL on register */
 };
 
 
-/** @brief SPI handle. Held by the user.
+/** @brief SPI handle. Held by the user, one per user of the bus.
  *
  *  @details Must be zero-initialized (static storage, or memset) before the
- *           first ezSpi_RegisterInstance(). Bind it with
- *           ezSpi_RegisterInstance() before use. The driver keeps
- *           a pointer to the handle in base.user while an operation is in
- *           flight, so the handle must stay valid until
- *           ezSpi_UnregisterInstance() returns EZ_DRV_STATUS_OK.
+ *           first ezSpi_Open(). Open it with ezSpi_Open() before use. The driver
+ *           keeps a pointer to the handle in base.user while an operation is in
+ *           flight and in lock_owner while the handle holds the bus, so the
+ *           handle must stay valid until ezSpi_Close() returns EZ_DRV_STATUS_OK.
  */
 typedef struct
 {
-    struct ezDrvHandle  drv_handle;     /**< Common handle, bound to a HW driver. Filled by ezSpi_RegisterInstance() */
+    struct ezDrvHandle  drv_handle;     /**< Common handle, bound to a HW driver. Filled by ezSpi_Open() */
 } ezSpiHandle_t;
 
 
@@ -303,17 +353,18 @@ typedef struct
 * @brief Register a HW driver to the SPI component.
 *
 * @details Called by the HW driver implementation, not by the application. The
-*          driver is reset to the idle, not-initialized state: initialized is
-*          false, base.state is 0 and base.user is NULL. It is then added to the
+*          driver is reset to the idle, closed state: open_count is 0,
+*          base.state is 0 and base.user is NULL. It is then added to the
 *          list of HW drivers. base.name is compared with the names of the
 *          drivers already registered.
 *
 * @param[in]    hw_driver: HW driver. base.name must be set and unique.
 * @return       EZ_DRV_STATUS_OK on success,
-*               EZ_DRV_STATUS_ERR_ARG if hw_driver or its name is NULL, or the
-*               name is already registered.
+*               EZ_DRV_STATUS_ERR_ARG if hw_driver or its name is NULL, the
+*               name is already registered, or only one of the lock and unlock
+*               functions is set.
 *
-* @post base.state is 0, base.user is NULL and initialized is false
+* @post base.state is 0, base.user is NULL and open_count is 0
 * @see ezSpi_SystemUnregisterHwDriver, ezHwSpiInterface
 * @warning The driver list is changed without a lock. Call it from task
 *          context only, and not while another SPI call runs.
@@ -332,14 +383,21 @@ typedef struct
 *
 *     spi0_drv.base.name = "spi0";                      // Must be unique
 *     spi0_drv.interface.driver_h = &spi0_regs;         // Given to every HW function
-*     spi0_drv.interface.initialize = Spi0_Initialize;
+*     spi0_drv.config.mode = EZ_SPI_MODE_MASTER;        // Bus configuration, applied by Spi0_Initialize()
+*     spi0_drv.config.clock_mode = EZ_SPI_CPOL0_CPHA0;
+*     spi0_drv.config.bit_order = EZ_SPI_BIT_ORDER_MSB_FIRST;
+*     spi0_drv.config.clock_frequency = 1000000U;
+*     spi0_drv.config.data_size = 8U;
+*     spi0_drv.interface.initialize = Spi0_Initialize;  // NULL if the peripheral is already configured
+*     spi0_drv.interface.deinitialize = Spi0_Deinitialize;
+*     spi0_drv.interface.lock = Spi0_Lock;              // Without an RTOS: NULL for lock and unlock
+*     spi0_drv.interface.unlock = Spi0_Unlock;
 *     spi0_drv.interface.transfer_sync = Spi0_TransferSync;
 *     spi0_drv.interface.transfer_async = Spi0_TransferAsync;
 *     spi0_drv.interface.transmit_sync = NULL;          // Unused: ezSpi_TransmitSync() returns EZ_DRV_STATUS_ERR_INF_NOT_EXIST
 *     spi0_drv.interface.transmit_async = NULL;
 *     spi0_drv.interface.receive_sync = NULL;
 *     spi0_drv.interface.receive_async = NULL;
-*     spi0_drv.interface.chip_select = NULL;
 *
 *     status = ezSpi_SystemRegisterHwDriver(&spi0_drv);
 *     if(status != EZ_DRV_STATUS_OK)
@@ -363,18 +421,17 @@ EZ_DRV_STATUS ezSpi_SystemRegisterHwDriver(struct ezSpiDriver *hw_driver);
 * @brief Unregister a HW driver from the SPI component.
 *
 * @details Called by the HW driver implementation. The driver is removed from
-*          the list of HW drivers and initialized is set to false. base.state and
-*          base.user are not changed. The code does not check the handles: a
-*          handle still bound to the driver keeps its pointer to it.
+*          the list of HW drivers. base.state and base.user are not changed. The
+*          driver is refused while a handle is open on it, so no handle keeps a
+*          pointer to a driver which is gone.
 *
 * @param[in]    hw_driver: HW driver registered earlier.
 * @return       EZ_DRV_STATUS_OK on success,
 *               EZ_DRV_STATUS_ERR_ARG if hw_driver is NULL,
-*               EZ_DRV_STATUS_BUSY if an operation is in flight on the driver.
+*               EZ_DRV_STATUS_BUSY if an operation is in flight on the driver, or a
+*               handle is still open on it (open_count is not 0).
 *
-* @pre Every handle bound to the driver has been unregistered with
-*      ezSpi_UnregisterInstance(). Not checked by the code.
-* @see ezSpi_SystemRegisterHwDriver, ezSpi_UnregisterInstance
+* @see ezSpi_SystemRegisterHwDriver, ezSpi_Close
 * @warning The driver list is changed without a lock. Call it from task
 *          context only, and not while another SPI call runs.
 *
@@ -386,137 +443,192 @@ EZ_DRV_STATUS ezSpi_SystemUnregisterHwDriver(struct ezSpiDriver *hw_driver);
 
 
 /*****************************************************************************
-* Function: ezSpi_RegisterInstance
+* Function: ezSpi_Open
 *//**
-* @brief Bind a handle to a registered HW driver.
+* @brief Bind a handle to a registered HW driver and make the bus ready.
 *
-* @details Stores the HW driver, the callback and the context in the handle.
-*          The driver is not marked busy by this call. A handle which is
-*          already bound is refused: call ezSpi_UnregisterInstance() first.
-*          The handle must be zero-initialized before the first call.
+* @details One call replaces "bind the handle" and "initialize the bus". The
+*          driver is taken for the call and released after it.
+*          - If no handle is open on the driver yet and the HW driver has an
+*            initialize function, it is called. The bus is initialized with the
+*            configuration of the HW driver (ezSpiDriver::config). The caller does
+*            not pass a configuration: all users of one bus share it.
+*          - If a handle is already open, the bus is already initialized and the
+*            HW driver is not called.
+*          Then the HW driver, the callback and the context are stored in the
+*          handle and the handle is counted as open.
 *
-* @param[in]    inst: Handle owned by the caller. Zero-initialized and not
-*                      bound. Must stay valid while bound.
+*          If the HW initialization fails, the handle is left unbound, so the
+*          call can simply be repeated.
+*
+*          Whether it blocks depends on the HW driver. The SPI component adds no
+*          wait, but the HW function is synchronous, so it may block.
+*
+* @param[in]    inst: Handle owned by the caller. Zero-initialized and not open.
+*                     Must stay valid while open.
 * @param[in]    driver_name: Name of the HW driver (base.name).
-* @param[in]    callback: Called when an async operation ends. Can be NULL,
-*                         then the end of the operation is not reported.
+* @param[in]    callback: Called when an async operation of this handle ends. Can be
+*                         NULL, then the end of the operation is not reported.
 *                         Runs in the context of the HW driver, usually an ISR.
 * @param[in]    ctx: User context, passed to callback as first argument. Can be NULL.
 * @return       EZ_DRV_STATUS_OK on success,
 *               EZ_DRV_STATUS_ERR_ARG if inst or driver_name is NULL, or the
-*               handle is already bound,
-*               EZ_DRV_STATUS_ERR_DRV_NOT_FOUND if no HW driver has the name.
+*               handle is already open,
+*               EZ_DRV_STATUS_ERR_DRV_NOT_FOUND if no HW driver has the name,
+*               EZ_DRV_STATUS_BUSY if an operation is in flight on the driver,
+*               EZ_DRV_STATUS_ERR_GENERIC if the maximum number of open handles
+*               (255) is reached, or the HW driver status otherwise.
 *
-* @see ezSpi_UnregisterInstance, ezDrvCallback
+* @post On EZ_DRV_STATUS_OK the handle is open, the bus is initialized and the
+*       driver is idle. Otherwise the handle is not bound and the open count is
+*       unchanged.
+* @see ezSpi_Close, ezSpiDriver, ezHwSpiInterface, ezDrvCallback
 * @warning The callback runs inside ezDriver_NotifyEvent(), in the context of
 *          the HW driver, usually an ISR. It must not block.
-*
-* @isr_safe{no}
-* @blocking{no}
-*
-* \b Example
-* @code
-* static ezSpiHandle_t spi0_handle;   // Static: the handle must stay valid while bound
-* static AppSpiCtx_t app_ctx;         // Passed to the callback, see ezSpi_TransferAsync()
-*
-* EZ_DRV_STATUS BindSpi0(void)
-* {
-*     EZ_DRV_STATUS status = ezSpi_RegisterInstance(&spi0_handle, "spi0", OnSpiEvent, &app_ctx);
-*     if(status != EZ_DRV_STATUS_OK)
-*     {
-*         return status;
-*     }
-*     return EZ_DRV_STATUS_OK;
-* }
-* @endcode
-*
-*****************************************************************************/
-EZ_DRV_STATUS ezSpi_RegisterInstance(ezSpiHandle_t *inst,
-                                     const char *driver_name,
-                                     ezDrvCallback callback,
-                                     void *ctx);
-
-
-/*****************************************************************************
-* Function: ezSpi_UnregisterInstance
-*//**
-* @brief Unbind a handle from its HW driver.
-*
-* @details Clears hw, on_event and ctx of the handle. Refused only when this
-*          handle has an operation in flight. An operation of another handle
-*          does not block it.
-*
-* @param[in]    inst: Handle registered with ezSpi_RegisterInstance().
-* @return       EZ_DRV_STATUS_OK on success,
-*               EZ_DRV_STATUS_ERR_ARG if inst is NULL,
-*               EZ_DRV_STATUS_BUSY if this handle has an operation in flight.
-*
-* @see ezSpi_RegisterInstance
-*
-* @isr_safe{no}
-* @blocking{no}
-*
-*****************************************************************************/
-EZ_DRV_STATUS ezSpi_UnregisterInstance(ezSpiHandle_t *inst);
-
-
-/*****************************************************************************
-* Function: ezSpi_Initialize
-*//**
-* @brief Initialize the SPI peripheral of the HW driver.
-*
-* @details Calls the initialize function of the HW driver with driver_h and
-*          config. The config is passed as is, the SPI component does not check
-*          or copy it. The driver is taken for the call and released after it.
-*          It is marked initialized only when the HW function returns
-*          EZ_DRV_STATUS_OK, and that status is returned. A failed call marks the
-*          driver as not initialized, also when it was initialized before.
-*          Calling it again on an initialized driver calls the HW function
-*          again.
-*
-*          Whether it blocks depends on the HW driver. The SPI component adds no
-*          wait, but the HW initialize function is synchronous (there is no
-*          async variant), so it may block.
-*
-* @param[in]    inst: Registered handle.
-* @param[in]    config: SPI configuration.
-* @return       EZ_DRV_STATUS_OK on success,
-*               EZ_DRV_STATUS_ERR_ARG if config is NULL,
-*               EZ_DRV_STATUS_ERR_DRV_NOT_FOUND if the handle is not registered,
-*               EZ_DRV_STATUS_BUSY if an operation is in flight,
-*               EZ_DRV_STATUS_ERR_INF_NOT_EXIST if the HW driver has no
-*               initialize function, or the HW driver status otherwise.
-*
-* @pre ezSpi_RegisterInstance() succeeded for inst.
-* @post On EZ_DRV_STATUS_OK the driver is initialized and idle.
-* @see ezSpiConfig_t, ezHwSpi_Initialize
+* @warning The SPI component is not a lock. Call it from one task, or let the
+*          upper layer serialize the calls on the same HW driver.
 *
 * @isr_safe{no}
 * @blocking{yes}
 *
 * \b Example
 * @code
-* static ezSpiConfig_t spi0_config = {
-*     EZ_SPI_MODE_MASTER,
-*     EZ_SPI_CPOL0_CPHA0,
-*     EZ_SPI_BIT_ORDER_MSB_FIRST,
-*     1000000U,   // 1 MHz
-*     8U,         // 8 bits per frame
-* };
+* static ezSpiHandle_t spi0_handle;   // Static: must stay valid while open
+* static AppSpiCtx_t app_ctx;         // Passed to the callback, see ezSpi_TransferAsync()
 *
-* EZ_DRV_STATUS InitSpi0(void)
+* EZ_DRV_STATUS OpenSpi0(void)
 * {
-*     EZ_DRV_STATUS status = ezSpi_Initialize(&spi0_handle, &spi0_config);
+*     EZ_DRV_STATUS status = ezSpi_Open(&spi0_handle, "spi0", OnSpiEvent, &app_ctx);
 *     if(status != EZ_DRV_STATUS_OK)
 *     {
-*         return status;
+*         return status;               // Nothing is left bound: the call can be repeated
 *     }
 *     return EZ_DRV_STATUS_OK;
 * }
 * @endcode
 *
 *****************************************************************************/
-EZ_DRV_STATUS ezSpi_Initialize(ezSpiHandle_t *inst, ezSpiConfig_t *config);
+EZ_DRV_STATUS ezSpi_Open(ezSpiHandle_t *inst,
+                         const char *driver_name,
+                         ezDrvCallback callback,
+                         void *ctx);
+
+
+/*****************************************************************************
+* Function: ezSpi_Close
+*//**
+* @brief Unbind a handle from its HW driver.
+*
+* @details Clears hw, on_event and ctx of the handle and counts the handle as
+*          closed. If the handle holds the bus lock, the lock is released. When
+*          it was the last open handle of the driver, the deinitialize function
+*          of the HW driver is called, if it has one. Refused only when this handle has an
+*          operation in flight. An operation of another handle does not block it.
+*
+*          The handle is unbound even if the HW driver reports an error. The error
+*          is returned after the cleanup is finished. A handle which is not open
+*          is accepted and stays empty.
+*
+* @param[in]    inst: Handle opened with ezSpi_Open(), or never opened.
+* @return       EZ_DRV_STATUS_OK on success,
+*               EZ_DRV_STATUS_ERR_ARG if inst is NULL,
+*               EZ_DRV_STATUS_BUSY if this handle has an operation in flight,
+*               or the HW driver status of deinitialize otherwise.
+*
+* @post On EZ_DRV_STATUS_OK, and on a HW error, the handle is not open.
+* @see ezSpi_Open
+* @warning The SPI component is not a lock. Call it from one task, or let the
+*          upper layer serialize the calls on the same HW driver.
+*
+* @isr_safe{no}
+* @blocking{yes}
+*
+*****************************************************************************/
+EZ_DRV_STATUS ezSpi_Close(ezSpiHandle_t *inst);
+
+
+/*****************************************************************************
+* Function: ezSpi_LockBus
+*//**
+* @brief Reserve the bus for a handle, for a sequence of several transfers.
+*
+* @details The bus is shared by all the handles open on the HW driver. A device
+*          which needs several transfers in a row (for example chip select low,
+*          command, data, chip select high) locks the bus first, so that no other
+*          handle transfers in between.
+*
+*          With a lock function in the HW driver, the call waits up to
+*          timeout_millis for the bus (for example on an RTOS mutex) and returns
+*          EZ_DRV_STATUS_TIMEOUT if it is not free in time. Without one (no RTOS),
+*          nothing can wait: the call is a try-lock, timeout_millis is ignored and
+*          it returns EZ_DRV_STATUS_BUSY when another handle holds the bus. The
+*          caller retries later, for example in the next loop iteration.
+*
+*          While a handle holds the bus, every transfer of another handle returns
+*          EZ_DRV_STATUS_BUSY and the HW is not called. The lock is not recursive.
+*          It is independent of the busy state of a single operation: the holder
+*          can run any number of transfers.
+*
+* @param[in]    inst: Open handle.
+* @param[in]    timeout_millis: Longest time to wait for the bus. Ignored without a HW lock function.
+* @return       EZ_DRV_STATUS_OK when the handle holds the bus,
+*               EZ_DRV_STATUS_ERR_DRV_NOT_FOUND if the handle is not open,
+*               EZ_DRV_STATUS_ERR_ARG if the handle already holds the bus,
+*               EZ_DRV_STATUS_BUSY if another handle holds the bus (no HW lock function),
+*               EZ_DRV_STATUS_TIMEOUT if the bus was not free in time,
+*               or the HW driver status otherwise.
+*
+* @pre ezSpi_Open() succeeded for inst.
+* @post On EZ_DRV_STATUS_OK the handle holds the bus until ezSpi_UnlockBus() or ezSpi_Close().
+* @see ezSpi_UnlockBus
+* @warning Task or main-loop context only, never from an ISR. Always unlock, also on error paths.
+*
+* @isr_safe{no}
+* @blocking{yes}
+*
+* \b Example
+* @code
+* EZ_DRV_STATUS status = ezSpi_LockBus(&spi0_handle, 100U);
+* if(status != EZ_DRV_STATUS_OK)
+* {
+*     return status;
+* }
+* // ... GPIO chip select low, ezSpi_TransmitSync() or ezSpi_TransmitAsync() and wait, chip select high ...
+* status = ezSpi_UnlockBus(&spi0_handle);
+* if(status != EZ_DRV_STATUS_OK)
+* {
+*     return status;
+* }
+* @endcode
+*
+*****************************************************************************/
+EZ_DRV_STATUS ezSpi_LockBus(ezSpiHandle_t *inst, uint32_t timeout_millis);
+
+
+/*****************************************************************************
+* Function: ezSpi_UnlockBus
+*//**
+* @brief Give the bus back.
+*
+* @details The lock is released first, then the unlock function of the HW driver
+*          is called, if it has one. Only the handle which holds the bus can
+*          unlock it.
+*
+* @param[in]    inst: Open handle which holds the bus.
+* @return       EZ_DRV_STATUS_OK on success,
+*               EZ_DRV_STATUS_ERR_DRV_NOT_FOUND if the handle is not open,
+*               EZ_DRV_STATUS_ERR_ARG if the handle does not hold the bus,
+*               or the HW driver status of unlock otherwise.
+*
+* @pre ezSpi_LockBus() succeeded for inst.
+* @post The bus is free, also when the HW unlock reports an error.
+* @see ezSpi_LockBus
+*
+* @isr_safe{no}
+* @blocking{no}
+*
+*****************************************************************************/
+EZ_DRV_STATUS ezSpi_UnlockBus(ezSpiHandle_t *inst);
 
 
 /*****************************************************************************
@@ -536,19 +648,17 @@ EZ_DRV_STATUS ezSpi_Initialize(ezSpiHandle_t *inst, ezSpiConfig_t *config);
 * @param[in]    rx_length: Number of bytes to receive.
 * @param[in]    timeout_millis: Timeout in milliseconds.
 * @return       EZ_DRV_STATUS_OK on success,
-*               EZ_DRV_STATUS_ERR_DRV_NOT_FOUND if the handle is not registered,
-*               EZ_DRV_STATUS_ERR_NOT_INITIALIZED if ezSpi_Initialize() has not
-*               succeeded,
+*               EZ_DRV_STATUS_ERR_DRV_NOT_FOUND if the handle is not open,
 *               EZ_DRV_STATUS_BUSY if an operation is in flight on the driver,
 *               EZ_DRV_STATUS_ERR_INF_NOT_EXIST if the HW driver has no such
 *               function, or the HW driver status otherwise (e.g. EZ_DRV_STATUS_TIMEOUT).
 *
-* @pre ezSpi_Initialize() succeeded for the driver of inst.
+* @pre ezSpi_Open() succeeded for inst.
 * @warning The SPI component is not a lock. The caller must serialize the calls
 *          on the same HW driver.
 * @note The buffers and lengths are not checked by this component, the HW
 *       driver validates them. See ezHwSpiInterface.
-* @see ezSpi_TransferAsync, ezSpi_Initialize
+* @see ezSpi_TransferAsync, ezSpi_Open
 *
 * @isr_safe{no}
 * @blocking{yes}
@@ -597,7 +707,7 @@ EZ_DRV_STATUS ezSpi_TransferSync(ezSpiHandle_t *inst,
 * @param[in]    rx_length: Number of bytes to receive.
 * @return       Same as ezSpi_TransferSync().
 *
-* @pre ezSpi_Initialize() succeeded for the driver of inst.
+* @pre ezSpi_Open() succeeded for inst.
 * @post On EZ_DRV_STATUS_OK the driver is busy until the end event is reported
 * @warning tx_data and rx_data must stay valid until the end event is reported.
 *          The SPI component does not copy them.
@@ -607,7 +717,7 @@ EZ_DRV_STATUS ezSpi_TransferSync(ezSpiHandle_t *inst,
 *          on the same HW driver.
 * @note The buffers and lengths are not checked by this component, the HW
 *       driver validates them. See ezHwSpiInterface.
-* @see ezSpi_RegisterInstance, ezDriver_NotifyEvent, ezHwSpiInterface
+* @see ezSpi_Open, ezDriver_NotifyEvent, ezHwSpiInterface
 *
 * @isr_safe{no}
 * @blocking{no}
@@ -665,7 +775,7 @@ EZ_DRV_STATUS ezSpi_TransferAsync(ezSpiHandle_t *inst,
 * @param[in]    timeout_millis: Timeout in milliseconds.
 * @return       Same as ezSpi_TransferSync().
 *
-* @pre ezSpi_Initialize() succeeded for the driver of inst.
+* @pre ezSpi_Open() succeeded for inst.
 * @note The buffers and lengths are not checked by this component, the HW
 *       driver validates them. See ezHwSpiInterface.
 * @see ezSpi_TransmitAsync, ezSpi_TransferSync
@@ -692,7 +802,7 @@ EZ_DRV_STATUS ezSpi_TransmitSync(ezSpiHandle_t *inst,
 * @param[in]    length: Number of bytes to transmit.
 * @return       Same as ezSpi_TransferSync().
 *
-* @pre ezSpi_Initialize() succeeded for the driver of inst.
+* @pre ezSpi_Open() succeeded for inst.
 * @warning tx_data must stay valid until the end event is reported.
 * @note The buffers and lengths are not checked by this component, the HW
 *       driver validates them. See ezHwSpiInterface.
@@ -720,7 +830,7 @@ EZ_DRV_STATUS ezSpi_TransmitAsync(ezSpiHandle_t *inst,
 * @param[in]    timeout_millis: Timeout in milliseconds.
 * @return       Same as ezSpi_TransferSync().
 *
-* @pre ezSpi_Initialize() succeeded for the driver of inst.
+* @pre ezSpi_Open() succeeded for inst.
 * @note The buffers and lengths are not checked by this component, the HW
 *       driver validates them. See ezHwSpiInterface.
 * @see ezSpi_ReceiveAsync, ezSpi_TransferSync
@@ -747,7 +857,7 @@ EZ_DRV_STATUS ezSpi_ReceiveSync(ezSpiHandle_t *inst,
 * @param[in]    length: Number of bytes to receive.
 * @return       Same as ezSpi_TransferSync().
 *
-* @pre ezSpi_Initialize() succeeded for the driver of inst.
+* @pre ezSpi_Open() succeeded for inst.
 * @warning rx_data must stay valid until the end event is reported.
 * @note The buffers and lengths are not checked by this component, the HW
 *       driver validates them. See ezHwSpiInterface.
@@ -761,52 +871,6 @@ EZ_DRV_STATUS ezSpi_ReceiveAsync(ezSpiHandle_t *inst,
                                  uint8_t *rx_data,
                                  size_t length);
 
-
-/*****************************************************************************
-* Function: ezSpi_ChipSelect
-*//**
-* @brief Control the chip select line.
-*
-* @details Synchronous: returns the status of the HW chip select function. The
-*          SPI component adds no wait. The transfer functions do not change the
-*          chip select line, so the caller selects the device before a transfer
-*          and deselects it after.
-*
-* @param[in]    inst: Registered handle.
-* @param[in]    select: true to select the device, false to deselect.
-* @return       Same as ezSpi_TransferSync().
-*
-* @pre ezSpi_Initialize() succeeded for the driver of inst.
-* @see ezSpi_TransferSync, ezHwSpi_ChipSelect
-*
-* @isr_safe{no}
-* @blocking{yes}
-*
-* \b Example
-* @code
-* uint8_t cmd[1] = {0x9FU};
-* uint8_t id[3] = {0U, 0U, 0U};
-* EZ_DRV_STATUS status = ezSpi_ChipSelect(&spi0_handle, true);
-* if(status != EZ_DRV_STATUS_OK)
-* {
-*     return status;
-* }
-* status = ezSpi_TransferSync(&spi0_handle, cmd, sizeof(cmd), id, sizeof(id), 100U);
-*
-* // Deselect even if the transfer failed, then report the first error
-* EZ_DRV_STATUS cs_status = ezSpi_ChipSelect(&spi0_handle, false);
-* if(status != EZ_DRV_STATUS_OK)
-* {
-*     return status;
-* }
-* if(cs_status != EZ_DRV_STATUS_OK)
-* {
-*     return cs_status;
-* }
-* @endcode
-*
-*****************************************************************************/
-EZ_DRV_STATUS ezSpi_ChipSelect(ezSpiHandle_t *inst, bool select);
 
 #endif /* EZ_SPI == 1 */
 
