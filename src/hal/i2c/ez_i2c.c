@@ -58,7 +58,6 @@ static struct Node hw_driver_list = EZ_LINKEDLIST_INIT_NODE(hw_driver_list);
 static struct ezI2cDriver *ezI2c_FindDriver(const char *name);
 
 static EZ_DRV_STATUS ezI2c_Begin(ezI2cHandle_t *inst,
-                                 bool require_initialized,
                                  bool is_async,
                                  struct ezI2cDriver **drv_out);
 
@@ -85,7 +84,14 @@ EZ_DRV_STATUS ezI2c_SystemRegisterHwDriver(struct ezI2cDriver *hw_driver)
         return EZ_DRV_STATUS_ERR_ARG;
     }
 
-    hw_driver->initialized = false;
+    if((hw_driver->interface.lock == NULL) != (hw_driver->interface.unlock == NULL))
+    {
+        EZERROR("lock and unlock must be both set or both NULL");
+        return EZ_DRV_STATUS_ERR_ARG;
+    }
+
+    hw_driver->open_count = 0U;
+    hw_driver->lock_owner = NULL;
     hw_driver->base.state = 0U;
     hw_driver->base.user = NULL;
     EZ_LINKEDLIST_ADD_TAIL(&hw_driver_list, &hw_driver->ll_node);
@@ -108,19 +114,25 @@ EZ_DRV_STATUS ezI2c_SystemUnregisterHwDriver(struct ezI2cDriver *hw_driver)
         return EZ_DRV_STATUS_BUSY;
     }
 
-    hw_driver->initialized = false;
+    if(hw_driver->open_count != 0U)
+    {
+        EZERROR("%u handle(s) are still open", (unsigned)hw_driver->open_count);
+        return EZ_DRV_STATUS_BUSY;
+    }
+
     EZ_LINKEDLIST_UNLINK_NODE(&hw_driver->ll_node);
     return EZ_DRV_STATUS_OK;
 }
 
-EZ_DRV_STATUS ezI2c_RegisterInstance(ezI2cHandle_t *inst,
-                                     const char *driver_name,
-                                     ezDrvCallback callback,
-                                     void *ctx)
+EZ_DRV_STATUS ezI2c_Open(ezI2cHandle_t *inst,
+                         const char *driver_name,
+                         ezDrvCallback callback,
+                         void *ctx)
 {
-    struct ezI2cDriver *i2c_drv = NULL;
+    EZ_DRV_STATUS status = EZ_DRV_STATUS_OK;
+    struct ezI2cDriver *drv = NULL;
 
-    EZTRACE("ezI2c_RegisterInstance()");
+    EZTRACE("ezI2c_Open()");
     if((inst == NULL) || (driver_name == NULL))
     {
         return EZ_DRV_STATUS_ERR_ARG;
@@ -128,80 +140,181 @@ EZ_DRV_STATUS ezI2c_RegisterInstance(ezI2cHandle_t *inst,
 
     if(inst->drv_handle.hw != NULL)
     {
-        EZERROR("The handle is already bound, unregister it first");
+        EZERROR("The handle is already open, close it first");
         return EZ_DRV_STATUS_ERR_ARG;
     }
 
-    i2c_drv = ezI2c_FindDriver(driver_name);
-    if(i2c_drv == NULL)
+    drv = ezI2c_FindDriver(driver_name);
+    if(drv == NULL)
     {
         return EZ_DRV_STATUS_ERR_DRV_NOT_FOUND;
     }
 
-    EZDEBUG("Found driver!");
-    inst->drv_handle.hw = i2c_drv;
+    if(drv->open_count == UINT8_MAX)
+    {
+        EZERROR("Too many open handles on driver %s", drv->base.name);
+        return EZ_DRV_STATUS_ERR_GENERIC;
+    }
+
+    if(!ezDriver_Acquire(&inst->drv_handle, &drv->base, false))
+    {
+        EZERROR("Driver is busy");
+        return EZ_DRV_STATUS_BUSY;
+    }
+
+    if((drv->open_count == 0U) && (drv->interface.initialize != NULL))
+    {
+        status = drv->interface.initialize(drv->interface.driver_h);
+    }
+
+    if(!ezDriver_Release(&inst->drv_handle, &drv->base))
+    {
+        EZDEBUG("Driver was already released");
+    }
+
+    if(status != EZ_DRV_STATUS_OK)
+    {
+        return status;
+    }
+
+    inst->drv_handle.hw = drv;
     inst->drv_handle.on_event = callback;
     inst->drv_handle.ctx = ctx;
+    drv->open_count++;
+    EZDEBUG("Driver %s opened, %u handle(s)", drv->base.name, (unsigned)drv->open_count);
     return EZ_DRV_STATUS_OK;
 }
 
-EZ_DRV_STATUS ezI2c_UnregisterInstance(ezI2cHandle_t *inst)
+EZ_DRV_STATUS ezI2c_Close(ezI2cHandle_t *inst)
 {
+    EZ_DRV_STATUS status = EZ_DRV_STATUS_OK;
+    EZ_DRV_STATUS unlock_status = EZ_DRV_STATUS_OK;
     struct ezI2cDriver *drv = NULL;
 
-    EZTRACE("ezI2c_UnregisterInstance()");
+    EZTRACE("ezI2c_Close()");
     if(inst == NULL)
     {
         return EZ_DRV_STATUS_ERR_ARG;
     }
 
     drv = (struct ezI2cDriver*)ezDriver_GetHw(&inst->drv_handle);
-    if((drv != NULL) &&
-       EZ_DRV_STATE_IS_SET(&drv->base, EZ_DRV_STATE_BUSY) &&
+    if(drv == NULL)
+    {
+        /* Never opened: nothing to do */
+        return EZ_DRV_STATUS_OK;
+    }
+
+    if(EZ_DRV_STATE_IS_SET(&drv->base, EZ_DRV_STATE_BUSY) &&
        (drv->base.user == &inst->drv_handle))
     {
         EZERROR("The handle has an operation in flight");
         return EZ_DRV_STATUS_BUSY;
     }
 
+    if(drv->lock_owner == &inst->drv_handle)
+    {
+        /* Never leave the bus locked behind a closed handle */
+        drv->lock_owner = NULL;
+        if(drv->interface.unlock != NULL)
+        {
+            unlock_status = drv->interface.unlock(drv->interface.driver_h);
+            if(unlock_status != EZ_DRV_STATUS_OK)
+            {
+                EZERROR("unlock on close failed: %d", (int)unlock_status);
+            }
+        }
+    }
+
     inst->drv_handle.hw = NULL;
     inst->drv_handle.on_event = NULL;
     inst->drv_handle.ctx = NULL;
-    EZDEBUG("unregister success");
-    return EZ_DRV_STATUS_OK;
+    if(drv->open_count > 0U)
+    {
+        drv->open_count--;
+    }
+
+    if((drv->open_count == 0U) && (drv->interface.deinitialize != NULL))
+    {
+        status = drv->interface.deinitialize(drv->interface.driver_h);
+        if(status != EZ_DRV_STATUS_OK)
+        {
+            EZERROR("deinitialize failed: %d", (int)status);
+        }
+    }
+
+    EZDEBUG("Driver %s closed, %u handle(s) left", drv->base.name, (unsigned)drv->open_count);
+    return status;
 }
 
-EZ_DRV_STATUS ezI2c_Initialize(ezI2cHandle_t *inst, ezI2cConfig_t *config)
+EZ_DRV_STATUS ezI2c_LockBus(ezI2cHandle_t *inst, uint32_t timeout_millis)
 {
-    EZ_DRV_STATUS status = EZ_DRV_STATUS_ERR_INF_NOT_EXIST;
+    EZ_DRV_STATUS status = EZ_DRV_STATUS_OK;
     struct ezI2cDriver *drv = NULL;
 
-    EZTRACE("ezI2c_Initialize()");
-    if(config == NULL)
+    EZTRACE("ezI2c_LockBus()");
+    if(inst == NULL)
     {
+        return EZ_DRV_STATUS_ERR_DRV_NOT_FOUND;
+    }
+
+    drv = (struct ezI2cDriver*)ezDriver_GetHw(&inst->drv_handle);
+    if(drv == NULL)
+    {
+        return EZ_DRV_STATUS_ERR_DRV_NOT_FOUND;
+    }
+
+    if(drv->lock_owner == &inst->drv_handle)
+    {
+        EZERROR("The handle already holds the bus");
         return EZ_DRV_STATUS_ERR_ARG;
     }
 
-    status = ezI2c_Begin(inst, false, false, &drv);
-    if(status != EZ_DRV_STATUS_OK)
+    if(drv->interface.lock != NULL)
     {
-        return status;
+        /* RTOS: the HW driver waits until the holder unlocks */
+        status = drv->interface.lock(drv->interface.driver_h, timeout_millis);
+    }
+    else if(drv->lock_owner != NULL)
+    {
+        /* No RTOS: nothing can wait, this is a try-lock */
+        status = EZ_DRV_STATUS_BUSY;
     }
 
-    status = EZ_DRV_STATUS_ERR_INF_NOT_EXIST;
-    if(drv->interface.initialize != NULL)
+    if(status == EZ_DRV_STATUS_OK)
     {
-        status = drv->interface.initialize(drv->interface.driver_h, config);
+        drv->lock_owner = &inst->drv_handle;    /* Only the holder writes it */
     }
-    ezI2c_End(inst, drv, status, false);
-
-    drv->initialized = (status == EZ_DRV_STATUS_OK);
-    if(drv->initialized)
-    {
-        EZDEBUG("Driver %s initialized", drv->base.name);
-    }
-
     return status;
+}
+
+EZ_DRV_STATUS ezI2c_UnlockBus(ezI2cHandle_t *inst)
+{
+    struct ezI2cDriver *drv = NULL;
+
+    EZTRACE("ezI2c_UnlockBus()");
+    if(inst == NULL)
+    {
+        return EZ_DRV_STATUS_ERR_DRV_NOT_FOUND;
+    }
+
+    drv = (struct ezI2cDriver*)ezDriver_GetHw(&inst->drv_handle);
+    if(drv == NULL)
+    {
+        return EZ_DRV_STATUS_ERR_DRV_NOT_FOUND;
+    }
+
+    if(drv->lock_owner != &inst->drv_handle)
+    {
+        EZERROR("The handle does not hold the bus");
+        return EZ_DRV_STATUS_ERR_ARG;
+    }
+
+    drv->lock_owner = NULL;     /* Clear before the HW unlock, or the next owner would be overwritten */
+    if(drv->interface.unlock != NULL)
+    {
+        return drv->interface.unlock(drv->interface.driver_h);
+    }
+    return EZ_DRV_STATUS_OK;
 }
 
 EZ_DRV_STATUS ezI2c_TransmitSync(ezI2cHandle_t *inst,
@@ -215,7 +328,7 @@ EZ_DRV_STATUS ezI2c_TransmitSync(ezI2cHandle_t *inst,
     struct ezI2cDriver *drv = NULL;
 
     EZTRACE("ezI2c_TransmitSync()");
-    status = ezI2c_Begin(inst, true, false, &drv);
+    status = ezI2c_Begin(inst, false, &drv);
     if(status != EZ_DRV_STATUS_OK)
     {
         return status;
@@ -245,7 +358,7 @@ EZ_DRV_STATUS ezI2c_TransmitAsync(ezI2cHandle_t *inst,
     struct ezI2cDriver *drv = NULL;
 
     EZTRACE("ezI2c_TransmitAsync()");
-    status = ezI2c_Begin(inst, true, true, &drv);
+    status = ezI2c_Begin(inst, true, &drv);
     if(status != EZ_DRV_STATUS_OK)
     {
         return status;
@@ -275,7 +388,7 @@ EZ_DRV_STATUS ezI2c_ReceiveSync(ezI2cHandle_t *inst,
     struct ezI2cDriver *drv = NULL;
 
     EZTRACE("ezI2c_ReceiveSync()");
-    status = ezI2c_Begin(inst, true, false, &drv);
+    status = ezI2c_Begin(inst, false, &drv);
     if(status != EZ_DRV_STATUS_OK)
     {
         return status;
@@ -305,7 +418,7 @@ EZ_DRV_STATUS ezI2c_ReceiveAsync(ezI2cHandle_t *inst,
     struct ezI2cDriver *drv = NULL;
 
     EZTRACE("ezI2c_ReceiveAsync()");
-    status = ezI2c_Begin(inst, true, true, &drv);
+    status = ezI2c_Begin(inst, true, &drv);
     if(status != EZ_DRV_STATUS_OK)
     {
         return status;
@@ -332,7 +445,7 @@ EZ_DRV_STATUS ezI2c_Probe(ezI2cHandle_t *inst,
     struct ezI2cDriver *drv = NULL;
 
     EZTRACE("ezI2c_Probe()");
-    status = ezI2c_Begin(inst, true, false, &drv);
+    status = ezI2c_Begin(inst, false, &drv);
     if(status != EZ_DRV_STATUS_OK)
     {
         return status;
@@ -375,7 +488,6 @@ static struct ezI2cDriver *ezI2c_FindDriver(const char *name)
 /* Find the HW driver of the handle, check it and take it for an operation.
  * On EZ_DRV_STATUS_OK the caller must call ezI2c_End(). */
 static EZ_DRV_STATUS ezI2c_Begin(ezI2cHandle_t *inst,
-                                 bool require_initialized,
                                  bool is_async,
                                  struct ezI2cDriver **drv_out)
 {
@@ -394,10 +506,10 @@ static EZ_DRV_STATUS ezI2c_Begin(ezI2cHandle_t *inst,
         return EZ_DRV_STATUS_ERR_DRV_NOT_FOUND;
     }
 
-    if(require_initialized && !drv->initialized)
+    if((drv->lock_owner != NULL) && (drv->lock_owner != &inst->drv_handle))
     {
-        EZERROR("Driver is not initialized");
-        return EZ_DRV_STATUS_ERR_NOT_INITIALIZED;
+        EZERROR("The bus is locked by another handle");
+        return EZ_DRV_STATUS_BUSY;
     }
 
     if(!ezDriver_Acquire(&inst->drv_handle, &drv->base, is_async))

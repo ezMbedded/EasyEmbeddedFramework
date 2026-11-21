@@ -55,17 +55,15 @@ static struct Node hw_driver_list = EZ_LINKEDLIST_INIT_NODE(hw_driver_list);
 *****************************************************************************/
 static struct ezGpioDriver *ezGpio_FindDriver(const char *name);
 
-static EZ_DRV_STATUS ezGpio_Lookup(ezGpioHandle_t *inst,
-                                   bool require_initialized,
-                                   struct ezGpioDriver **drv_out);
+static EZ_DRV_STATUS ezGpio_Lookup(ezGpioHandle_t *inst, struct ezGpioDriver **drv_out);
 
-static EZ_DRV_STATUS ezGpio_Begin(ezGpioHandle_t *inst,
-                                  bool require_initialized,
-                                  struct ezGpioDriver **drv_out);
+static EZ_DRV_STATUS ezGpio_Begin(ezGpioHandle_t *inst, struct ezGpioDriver **drv_out);
 
-static void ezGpio_RollbackSubscription(ezGpioHandle_t *inst,
-                                        struct ezGpioDriver *drv,
-                                        bool newly_subscribed);
+static struct ezGpioListener *ezGpio_FindListener(struct ezGpioDriver *drv, uint16_t pin);
+
+static struct ezGpioListener *ezGpio_FindFreeListener(struct ezGpioDriver *drv);
+
+static void ezGpio_RemoveListeners(struct ezGpioDriver *drv, const ezDrvHandle_t *handle);
 
 static void ezGpio_End(ezGpioHandle_t *inst, struct ezGpioDriver *drv);
 
@@ -75,6 +73,8 @@ static void ezGpio_End(ezGpioHandle_t *inst, struct ezGpioDriver *drv);
 *****************************************************************************/
 EZ_DRV_STATUS ezGpio_SystemRegisterHwDriver(struct ezGpioDriver *hw_gpio_driver)
 {
+    uint8_t index = 0U;
+
     EZTRACE("ezGpio_SystemRegisterHwDriver()");
     if((hw_gpio_driver == NULL) || (hw_gpio_driver->base.name == NULL))
     {
@@ -88,7 +88,12 @@ EZ_DRV_STATUS ezGpio_SystemRegisterHwDriver(struct ezGpioDriver *hw_gpio_driver)
         return EZ_DRV_STATUS_ERR_ARG;
     }
 
-    hw_gpio_driver->initialized = false;
+    hw_gpio_driver->open_count = 0U;
+    for(index = 0U; index < (uint8_t)EZ_GPIO_MAX_LISTENERS; index++)
+    {
+        hw_gpio_driver->listeners[index].handle = NULL;
+        hw_gpio_driver->listeners[index].pin = 0U;
+    }
     hw_gpio_driver->base.state = 0U;
     hw_gpio_driver->base.user = NULL;
     EZ_LINKEDLIST_ADD_TAIL(&hw_driver_list, &hw_gpio_driver->ll_node);
@@ -112,21 +117,25 @@ EZ_DRV_STATUS ezGpio_SystemUnregisterHwDriver(struct ezGpioDriver *hw_gpio_drive
         return EZ_DRV_STATUS_BUSY;
     }
 
-    hw_gpio_driver->initialized = false;
-    hw_gpio_driver->base.state = 0U;
+    if(hw_gpio_driver->open_count != 0U)
+    {
+        EZERROR("%u handle(s) are still open", (unsigned)hw_gpio_driver->open_count);
+        return EZ_DRV_STATUS_BUSY;
+    }
+
     EZ_LINKEDLIST_UNLINK_NODE(&hw_gpio_driver->ll_node);
     return EZ_DRV_STATUS_OK;
 }
 
 
-EZ_DRV_STATUS ezGpio_RegisterInstance(ezGpioHandle_t *inst,
-                                      const char *driver_name,
-                                      ezDrvCallback callback,
-                                      void *ctx)
+EZ_DRV_STATUS ezGpio_Open(ezGpioHandle_t *inst,
+                          const char *driver_name,
+                          ezDrvCallback callback,
+                          void *ctx)
 {
     struct ezGpioDriver *gpio_drv = NULL;
 
-    EZTRACE("ezGpio_RegisterInstance()");
+    EZTRACE("ezGpio_Open()");
     if((inst == NULL) || (driver_name == NULL))
     {
         return EZ_DRV_STATUS_ERR_ARG;
@@ -134,7 +143,7 @@ EZ_DRV_STATUS ezGpio_RegisterInstance(ezGpioHandle_t *inst,
 
     if(inst->drv_handle.hw != NULL)
     {
-        EZERROR("The handle is already bound, unregister it first");
+        EZERROR("The handle is already open, close it first");
         return EZ_DRV_STATUS_ERR_ARG;
     }
 
@@ -144,44 +153,55 @@ EZ_DRV_STATUS ezGpio_RegisterInstance(ezGpioHandle_t *inst,
         return EZ_DRV_STATUS_ERR_DRV_NOT_FOUND;
     }
 
-    EZDEBUG("Found driver!");
+    if(gpio_drv->open_count == UINT8_MAX)
+    {
+        EZERROR("Too many open handles on driver %s", gpio_drv->base.name);
+        return EZ_DRV_STATUS_ERR_GENERIC;
+    }
+
     inst->drv_handle.hw = gpio_drv;
     inst->drv_handle.on_event = callback;
     inst->drv_handle.ctx = ctx;
+    gpio_drv->open_count++;
+    EZDEBUG("Driver %s opened, %u handle(s)", gpio_drv->base.name, (unsigned)gpio_drv->open_count);
     return EZ_DRV_STATUS_OK;
 }
 
 
-EZ_DRV_STATUS ezGpio_UnregisterInstance(ezGpioHandle_t *inst)
+EZ_DRV_STATUS ezGpio_Close(ezGpioHandle_t *inst)
 {
     struct ezGpioDriver *drv = NULL;
 
-    EZTRACE("ezGpio_UnregisterInstance()");
+    EZTRACE("ezGpio_Close()");
     if(inst == NULL)
     {
         return EZ_DRV_STATUS_ERR_ARG;
     }
 
     drv = (struct ezGpioDriver*)ezDriver_GetHw(&inst->drv_handle);
-    if(drv != NULL)
+    if(drv == NULL)
     {
-        if(EZ_DRV_STATE_IS_SET(&drv->base, EZ_DRV_STATE_BUSY) &&
-           (drv->base.user == &inst->drv_handle))
-        {
-            EZERROR("The handle has an operation in flight");
-            return EZ_DRV_STATUS_BUSY;
-        }
-
-        if(ezDriver_Unsubscribe(&inst->drv_handle, &drv->base))
-        {
-            EZDEBUG("pin events of the handle are stopped");
-        }
+        /* Never opened: nothing to do */
+        return EZ_DRV_STATUS_OK;
     }
 
+    if(EZ_DRV_STATE_IS_SET(&drv->base, EZ_DRV_STATE_BUSY) &&
+       (drv->base.user == &inst->drv_handle))
+    {
+        EZERROR("The handle has an operation in flight");
+        return EZ_DRV_STATUS_BUSY;
+    }
+
+    ezGpio_RemoveListeners(drv, &inst->drv_handle);
     inst->drv_handle.hw = NULL;
     inst->drv_handle.on_event = NULL;
     inst->drv_handle.ctx = NULL;
-    EZDEBUG("unregister success");
+    if(drv->open_count > 0U)
+    {
+        drv->open_count--;
+    }
+
+    EZDEBUG("Driver %s closed, %u handle(s) left", drv->base.name, (unsigned)drv->open_count);
     return EZ_DRV_STATUS_OK;
 }
 
@@ -190,6 +210,7 @@ EZ_DRV_STATUS ezGpio_Initialize(ezGpioHandle_t *inst, uint16_t pin_index, ezHwGp
 {
     EZ_DRV_STATUS status = EZ_DRV_STATUS_ERR_INF_NOT_EXIST;
     struct ezGpioDriver *drv = NULL;
+    struct ezGpioListener *listener = NULL;
     bool newly_subscribed = false;
 
     EZTRACE("ezGpio_Initialize()");
@@ -198,30 +219,46 @@ EZ_DRV_STATUS ezGpio_Initialize(ezGpioHandle_t *inst, uint16_t pin_index, ezHwGp
         return EZ_DRV_STATUS_ERR_ARG;
     }
 
-    status = ezGpio_Lookup(inst, false, &drv);
+    status = ezGpio_Lookup(inst, &drv);
     if(status != EZ_DRV_STATUS_OK)
     {
         return status;
     }
 
     /* Subscribe BEFORE the HW call: the HW driver may arm the interrupt inside
-     * init_pin, and an event is delivered only while the handle listens.
-     * ezDriver_Subscribe() is not allowed while the driver is busy. */
+     * init_pin, and an event is delivered only to a pin which has a listener.
+     * The pin is written first and the handle last, so the ISR never sees a
+     * half-written entry. */
     if(config->intr_mode != EZ_INTERRUPT_NONE)
     {
-        newly_subscribed = !(EZ_DRV_STATE_IS_SET(&drv->base, EZ_DRV_STATE_LISTENING) &&
-                             (drv->base.user == &inst->drv_handle));
-        if(!ezDriver_Subscribe(&inst->drv_handle, &drv->base))
+        listener = ezGpio_FindListener(drv, pin_index);
+        if((listener != NULL) && (listener->handle != &inst->drv_handle))
         {
-            EZERROR("Driver is busy or listened by another handle");
+            EZERROR("Pin %u is listened by another handle", (unsigned)pin_index);
             return EZ_DRV_STATUS_BUSY;
+        }
+
+        if(listener == NULL)
+        {
+            listener = ezGpio_FindFreeListener(drv);
+            if(listener == NULL)
+            {
+                EZERROR("All the pin subscriptions are used");
+                return EZ_DRV_STATUS_ERR_GENERIC;
+            }
+            listener->pin = pin_index;
+            listener->handle = &inst->drv_handle;
+            newly_subscribed = true;
         }
     }
 
     if(!ezDriver_Acquire(&inst->drv_handle, &drv->base, false))
     {
         EZERROR("Driver is busy");
-        ezGpio_RollbackSubscription(inst, drv, newly_subscribed);
+        if(newly_subscribed)
+        {
+            listener->handle = NULL;
+        }
         return EZ_DRV_STATUS_BUSY;
     }
 
@@ -232,14 +269,26 @@ EZ_DRV_STATUS ezGpio_Initialize(ezGpioHandle_t *inst, uint16_t pin_index, ezHwGp
     }
     ezGpio_End(inst, drv);
 
-    drv->initialized = (status == EZ_DRV_STATUS_OK);
-    if(drv->initialized)
+    if(status != EZ_DRV_STATUS_OK)
     {
-        EZDEBUG("Driver %s initialized", drv->base.name);
+        /* A subscription which existed before the call is kept */
+        if(newly_subscribed)
+        {
+            listener->handle = NULL;
+        }
+    }
+    else if(config->intr_mode == EZ_INTERRUPT_NONE)
+    {
+        /* The handle does not want interrupts on this pin anymore */
+        listener = ezGpio_FindListener(drv, pin_index);
+        if((listener != NULL) && (listener->handle == &inst->drv_handle))
+        {
+            listener->handle = NULL;
+        }
     }
     else
     {
-        ezGpio_RollbackSubscription(inst, drv, newly_subscribed);
+        EZDEBUG("Pin %u initialized with an interrupt", (unsigned)pin_index);
     }
 
     return status;
@@ -252,7 +301,7 @@ EZ_GPIO_PIN_STATE ezGpio_ReadPin(ezGpioHandle_t *inst, uint16_t pin_index)
     struct ezGpioDriver *drv = NULL;
 
     EZTRACE("ezGpio_ReadPin()");
-    if(ezGpio_Begin(inst, true, &drv) != EZ_DRV_STATUS_OK)
+    if(ezGpio_Begin(inst, &drv) != EZ_DRV_STATUS_OK)
     {
         return EZ_GPIO_PIN_ERROR;
     }
@@ -272,7 +321,7 @@ EZ_DRV_STATUS ezGpio_WritePin(ezGpioHandle_t *inst, uint16_t pin_index, EZ_GPIO_
     struct ezGpioDriver *drv = NULL;
 
     EZTRACE("ezGpio_WritePin()");
-    status = ezGpio_Begin(inst, true, &drv);
+    status = ezGpio_Begin(inst, &drv);
     if(status != EZ_DRV_STATUS_OK)
     {
         return status;
@@ -294,7 +343,7 @@ EZ_DRV_STATUS ezGpio_TogglePin(ezGpioHandle_t *inst, uint16_t pin_index)
     struct ezGpioDriver *drv = NULL;
 
     EZTRACE("ezGpio_TogglePin()");
-    status = ezGpio_Begin(inst, true, &drv);
+    status = ezGpio_Begin(inst, &drv);
     if(status != EZ_DRV_STATUS_OK)
     {
         return status;
@@ -334,9 +383,7 @@ static struct ezGpioDriver *ezGpio_FindDriver(const char *name)
 
 
 /* Find the HW driver of the handle and check it. Nothing is changed. */
-static EZ_DRV_STATUS ezGpio_Lookup(ezGpioHandle_t *inst,
-                                   bool require_initialized,
-                                   struct ezGpioDriver **drv_out)
+static EZ_DRV_STATUS ezGpio_Lookup(ezGpioHandle_t *inst, struct ezGpioDriver **drv_out)
 {
     struct ezGpioDriver *drv = NULL;
 
@@ -353,12 +400,6 @@ static EZ_DRV_STATUS ezGpio_Lookup(ezGpioHandle_t *inst,
         return EZ_DRV_STATUS_ERR_DRV_NOT_FOUND;
     }
 
-    if(require_initialized && !drv->initialized)
-    {
-        EZERROR("Driver is not initialized");
-        return EZ_DRV_STATUS_ERR_NOT_INITIALIZED;
-    }
-
     *drv_out = drv;
     return EZ_DRV_STATUS_OK;
 }
@@ -366,12 +407,10 @@ static EZ_DRV_STATUS ezGpio_Lookup(ezGpioHandle_t *inst,
 
 /* Find the HW driver of the handle, check it and take it for a (sync) operation.
  * On EZ_DRV_STATUS_OK the caller must call ezGpio_End(). */
-static EZ_DRV_STATUS ezGpio_Begin(ezGpioHandle_t *inst,
-                                  bool require_initialized,
-                                  struct ezGpioDriver **drv_out)
+static EZ_DRV_STATUS ezGpio_Begin(ezGpioHandle_t *inst, struct ezGpioDriver **drv_out)
 {
     struct ezGpioDriver *drv = NULL;
-    EZ_DRV_STATUS status = ezGpio_Lookup(inst, require_initialized, &drv);
+    EZ_DRV_STATUS status = ezGpio_Lookup(inst, &drv);
 
     if(status != EZ_DRV_STATUS_OK)
     {
@@ -389,15 +428,49 @@ static EZ_DRV_STATUS ezGpio_Begin(ezGpioHandle_t *inst,
 }
 
 
-/* Undo the subscription made by ezGpio_Initialize() when it did not complete.
- * A subscription which existed before the call is kept. */
-static void ezGpio_RollbackSubscription(ezGpioHandle_t *inst,
-                                        struct ezGpioDriver *drv,
-                                        bool newly_subscribed)
+/* Find the subscription of a pin. Return NULL if nobody listens to it. */
+static struct ezGpioListener *ezGpio_FindListener(struct ezGpioDriver *drv, uint16_t pin)
 {
-    if(newly_subscribed && !ezDriver_Unsubscribe(&inst->drv_handle, &drv->base))
+    uint8_t index = 0U;
+
+    for(index = 0U; index < (uint8_t)EZ_GPIO_MAX_LISTENERS; index++)
     {
-        EZERROR("Cannot remove the subscription");
+        if((drv->listeners[index].handle != NULL) && (drv->listeners[index].pin == pin))
+        {
+            return &drv->listeners[index];
+        }
+    }
+    return NULL;
+}
+
+
+/* Find an unused subscription entry. Return NULL if the table is full. */
+static struct ezGpioListener *ezGpio_FindFreeListener(struct ezGpioDriver *drv)
+{
+    uint8_t index = 0U;
+
+    for(index = 0U; index < (uint8_t)EZ_GPIO_MAX_LISTENERS; index++)
+    {
+        if(drv->listeners[index].handle == NULL)
+        {
+            return &drv->listeners[index];
+        }
+    }
+    return NULL;
+}
+
+
+/* End all the subscriptions of a handle. The subscriptions of other handles are kept. */
+static void ezGpio_RemoveListeners(struct ezGpioDriver *drv, const ezDrvHandle_t *handle)
+{
+    uint8_t index = 0U;
+
+    for(index = 0U; index < (uint8_t)EZ_GPIO_MAX_LISTENERS; index++)
+    {
+        if(drv->listeners[index].handle == handle)
+        {
+            drv->listeners[index].handle = NULL;
+        }
     }
 }
 
